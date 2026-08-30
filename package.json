@@ -1,0 +1,23 @@
+{
+  "name": "streampolis",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @streampolis/client",
+    "dev:game": "npm run dev --workspace @streampolis/game-server",
+    "dev:api": "npm run dev --workspace @streampolis/api",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "shot": "node tools/shoot.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

@@ -1,0 +1,11 @@
+import { chromium } from 'playwright';
+const url = process.argv[2] ?? 'http://127.0.0.1:5273/?spin=0&count=1&only=nude';
+const fn = process.argv[3] ?? 'rest';
+const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox','--disable-dev-shm-usage'] });
+const p = await b.newPage({ viewport: { width: 400, height: 300 } });
+const errs = []; p.on('pageerror', e => errs.push(e.message));
+await p.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+await p.waitForFunction(() => window.__ready === true, { timeout: 60000 }).catch(() => errs.push('no ready'));
+console.log(JSON.stringify(await p.evaluate((f) => window.__lab?.[f]?.() ?? null, fn), null, 1));
+if (errs.length) console.log('ERRORS', errs);
+await b.close();
