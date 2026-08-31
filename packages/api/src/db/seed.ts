@@ -1,9 +1,16 @@
 /**
  * Seed de desenvolvimento.
  *
- * Os catálogos (gifts, itens, pacotes, flags) já vêm da migration 0005 — quem
- * cobra é o banco, e o preço não pode depender de um script ter rodado. O que
- * este arquivo cria são as CONTAS de desenvolvimento que o game server e o
+ * Gifts, pacotes e flags vêm da migration 0005 — quem cobra é o banco, e o
+ * preço não pode depender de um script ter rodado.
+ *
+ * O CATÁLOGO DE ITENS é a exceção, e por um motivo aprendido na marra: ele
+ * estava escrito duas vezes, em `shared/items.ts` e em SQL, e as duas listas
+ * saíram do lugar. O sintoma foi comprar um móvel novo e a API responder
+ * "item inexistente" — a loja mostrava o que a economia não conhecia. Aqui ele
+ * é ESPELHADO a partir de `shared`, que é a fonte única.
+ *
+ * Este arquivo também cria as CONTAS de desenvolvimento que o game server e o
  * cliente usam para entrar no mundo antes do cadastro existir.
  *
  *   node --env-file-if-exists=.env src/db/seed.ts
@@ -16,6 +23,7 @@ import { config } from '../config.ts';
 import { pool, closePool } from './pool.ts';
 import { withTransaction } from '../db/tx.ts';
 import { DEFAULT_AVATAR_DTO } from '../auth/identity.ts';
+import { ITEM_CATALOG } from '../shared.ts';
 
 interface DevUser {
   username: string;
@@ -29,6 +37,35 @@ interface DevUser {
    * dizendo que dá no mesmo quem você escolhe.
    */
   look?: Partial<typeof DEFAULT_AVATAR_DTO>;
+}
+
+/**
+ * Espelha `ITEM_CATALOG` na tabela `items`. Idempotente: roda a cada seed e
+ * atualiza nome, preço e disponibilidade de quem já existe.
+ */
+async function mirrorCatalog(): Promise<number> {
+  await withTransaction(async (client) => {
+    for (const item of ITEM_CATALOG) {
+      await client.query(
+        `INSERT INTO streampolis.items
+           (id, type, name, rarity, credits_price, coins_price, asset_id, footprint_x, footprint_y, active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (id) DO UPDATE SET
+           type = EXCLUDED.type, name = EXCLUDED.name, rarity = EXCLUDED.rarity,
+           credits_price = EXCLUDED.credits_price, coins_price = EXCLUDED.coins_price,
+           asset_id = EXCLUDED.asset_id,
+           footprint_x = EXCLUDED.footprint_x, footprint_y = EXCLUDED.footprint_y,
+           active = EXCLUDED.active`,
+        [
+          item.id, item.type, item.name, item.rarity,
+          item.creditsPrice, item.coinsPrice, item.assetId,
+          item.footprint?.[0] ?? null, item.footprint?.[1] ?? null,
+          item.active,
+        ],
+      );
+    }
+  });
+  return ITEM_CATALOG.length;
 }
 
 const DEV_PASSWORD = 'streampolis-dev';
@@ -131,6 +168,8 @@ export async function seed(log: (msg: string) => void = console.log): Promise<vo
   if (config.isProd) {
     throw new Error('seed de desenvolvimento não roda em produção');
   }
+  log(`  catálogo: ${await mirrorCatalog()} itens espelhados de shared/items.ts`);
+
   const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
   for (const user of DEV_USERS) {
     const id = await seedUser(user, passwordHash);

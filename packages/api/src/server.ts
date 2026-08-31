@@ -8,7 +8,7 @@ import { getBalances, listTransactions, sendGift } from './economy/EconomyServic
 import { loadIdentity, signSessionToken } from './auth/identity.ts';
 import { assertWearable, readAvatar, saveAvatar, validateAvatar } from './profile/AvatarService.ts';
 import { recordPKResult, listPKHistory } from './pk/PkRecords.ts';
-import { canEnter, getHome, getOrCreateHomeOf, setVisibility } from './world/Homes.ts';
+import { canEnter, getHome, getOrCreateHomeOf, saveLayout, setVisibility } from './world/Homes.ts';
 import { closeLive, listLives, openLive } from './world/Lives.ts';
 import { optionalUser, requireService, requireUser, type AuthedRequest } from './http/middleware/auth.ts';
 import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
@@ -218,6 +218,32 @@ app.get('/me/home', requireUser, async (req: AuthedRequest, res, next) => {
 });
 
 const visibilitySchema = z.object({ visibility: z.enum(['open', 'friends', 'private']) });
+
+/**
+ * A planta do apartamento. O corpo é a lista COMPLETA de peças colocadas —
+ * substituir a planta inteira é mais simples de validar do que aceitar um
+ * diff, e o modo de construção já tem a lista toda na mão.
+ */
+app.put('/me/home/layout', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = req.body as { placements?: unknown };
+    if (!Array.isArray(body?.placements)) {
+      res.status(400).json({ error: 'bad_request' });
+      return;
+    }
+    const placements = body.placements.map((p) => {
+      const o = p as Record<string, unknown>;
+      return { itemId: String(o.itemId ?? ''), x: Number(o.x), z: Number(o.z), turn: Number(o.turn) };
+    });
+    const home = await getOrCreateHomeOf(req.userId as string);
+    const bad = await saveLayout(req.userId as string, home.apartmentId, placements);
+    if (bad) {
+      res.status(422).json({ error: bad.reason, itemId: bad.itemId });
+      return;
+    }
+    res.json({ home: await getOrCreateHomeOf(req.userId as string) });
+  } catch (err) { next(err); }
+});
 
 app.put('/me/home/visibility', requireUser, async (req: AuthedRequest, res, next) => {
   try {

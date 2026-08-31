@@ -230,7 +230,10 @@ function curtain(ctx: StyleContext, side: number, opts: { length: number; thick:
 
 /** The mass at the back of the head — usually most of the silhouette. */
 function backMass(ctx: StyleContext, opts: { length: number; thick: number; width: number }): Station[][] {
-  return [-0.66, -0.23, 0.23, 0.66].map((x) => drape(ctx, {
+  // Six strands, not four: from directly behind, four of the volume needed to
+  // read as hair are four tubes, and the avatar's back is exactly where the
+  // camera sits while you walk.
+  return [-0.78, -0.47, -0.16, 0.16, 0.47, 0.78].map((x) => drape(ctx, {
     dir: V(x * opts.width, 0, -1),
     startY: 0.40,
     length: opts.length,
@@ -378,7 +381,7 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
     locks: (ctx) => [
       ...curtain(ctx, -1, { length: 1.75, thick: 0.115, z: -0.10 }),
       ...curtain(ctx, 1, { length: 1.75, thick: 0.115, z: -0.10 }),
-      ...backMass(ctx, { length: 1.85, thick: 0.115, width: 0.5 }),
+      ...backMass(ctx, { length: 1.85, thick: 0.092, width: 0.5 }),
       ...fan(ctx, 6, { fromX: -0.46, toX: 0.46, y: 0.60, z: 0.66 },
         (u) => V((u - 0.5) * 1.4, -0.35, 0.6), { length: 0.42, thick: 0.085, sag: 0.8, jitter: 0.02 }),
     ],
@@ -390,7 +393,7 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
     locks: (ctx) => [
       ...curtain(ctx, -1, { length: 3.3, thick: 0.125, z: -0.05 }),
       ...curtain(ctx, 1, { length: 3.3, thick: 0.125, z: -0.05 }),
-      ...backMass(ctx, { length: 3.5, thick: 0.135, width: 0.7 }),
+      ...backMass(ctx, { length: 3.5, thick: 0.105, width: 0.7 }),
       ...fan(ctx, 5, { fromX: -0.42, toX: 0.42, y: 0.62, z: 0.64 },
         (u) => V((u - 0.5) * 1.8, -0.3, 0.5), { length: 0.5, thick: 0.080, sag: 0.9, jitter: 0.02 }),
     ],

@@ -1,0 +1,76 @@
+/* Modo de construção. Mesma linguagem de vidro do resto da interface: a
+   informação vive nas bordas e o 3D respira no meio. */
+
+.build__open {
+  position: absolute;
+  right: 16px;
+  bottom: 150px;
+  z-index: 6;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(17, 20, 31, 0.82);
+  backdrop-filter: blur(12px);
+  color: #e8e6e1;
+  font: 600 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+.build__open:hover { background: rgba(124, 92, 255, 0.28); }
+
+.build {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  /* Acima da barra de navegação: as duas disputavam o mesmo rodapé e a paleta
+     ficava atrás dos botões de aba. */
+  bottom: 84px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(17, 20, 31, 0.86);
+  backdrop-filter: blur(14px);
+  color: #e8e6e1;
+  font: 13px/1.4 system-ui, sans-serif;
+}
+
+.build__head { display: flex; align-items: center; gap: 12px; }
+.build__hint { color: #9aa0ad; font-size: 12px; }
+.build__hint kbd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  font: 600 11px/1 ui-monospace, monospace;
+}
+.build__close { margin-left: auto; }
+
+.build__palette {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.build__empty { margin: 4px 0; color: #9aa0ad; }
+
+.build button {
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: 600 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.build button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.build button:disabled { opacity: 0.4; cursor: default; }
+
+.build__actions { display: flex; align-items: center; gap: 8px; }
+.build__spacer { flex: 1; }
+.build__selected { color: #4fd8ff; font-weight: 600; }
+.build__status { color: #39d98a; }
+.build__save { background: rgba(124, 92, 255, 0.34) !important; border-color: rgba(124, 92, 255, 0.5) !important; }

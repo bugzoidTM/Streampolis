@@ -469,3 +469,120 @@ export function monitor(lib: MatLib, w = 0.62, h = 0.36): Prop {
   boxUV(body, 0.3);
   return [{ geo: body, mat: lib.painted(0x1a1d22, 0.45) }];
 }
+
+/**
+ * A television on a low stand. The panel comes back as its own part so the
+ * scene can light it — a dark rectangle on a stand reads as a broken TV.
+ */
+export function tvSet(lib: MatLib, w = 1.15, h = 0.66): Prop {
+  const body = merge([
+    place(rbox(w, h, 0.05, 0.012), 0, h / 2 + 0.30, 0),
+    place(cyl(0.035, 0.035, 0.22, 8), 0, 0.20, 0),
+    place(rbox(w * 0.42, 0.03, 0.24, 0.01), 0, 0.015, 0),
+    // Low stand under it: a TV floating at eye height reads as a monitor.
+    place(rbox(w * 1.05, 0.28, 0.36, 0.02), 0, -0.001, -0.02),
+  ]);
+  boxUV(body, 0.35);
+  const panel = place(box(w - 0.06, h - 0.06, 0.01), 0, h / 2 + 0.30, 0.031);
+  return [
+    { geo: body, mat: lib.painted(0x1b1e24, 0.45) },
+    { geo: panel, mat: lib.emissive(0x2f6fd8, 1.1) },
+  ];
+}
+
+/** A desktop tower with a lit side panel — the streamer's status symbol. */
+export function pcTower(lib: MatLib): Prop {
+  const shell = merge([
+    place(rbox(0.22, 0.46, 0.46, 0.012), 0, 0.23, 0),
+    place(box(0.02, 0.40, 0.40), 0.111, 0.23, 0),
+  ]);
+  boxUV(shell, 0.3);
+  const lit = merge([
+    place(box(0.005, 0.36, 0.36), 0.118, 0.23, 0),
+    place(cyl(0.055, 0.055, 0.02, 12).rotateZ(Math.PI / 2), 0.10, 0.32, 0.12),
+    place(cyl(0.055, 0.055, 0.02, 12).rotateZ(Math.PI / 2), 0.10, 0.14, 0.12),
+  ]);
+  return [
+    { geo: shell, mat: lib.painted(0x16181d, 0.42, 0.2) },
+    { geo: lit, mat: lib.emissive(0x7c5cff, 0.9) },
+  ];
+}
+
+/** A microphone on a boom arm, clamped to a desk edge. */
+export function micBoom(lib: MatLib): Prop {
+  const arm = merge([
+    place(rbox(0.07, 0.06, 0.09, 0.01), 0, 0.03, 0),
+    place(cyl(0.014, 0.014, 0.40, 8), 0, 0.24, 0),
+    place(cyl(0.012, 0.012, 0.46, 8).rotateZ(Math.PI / 2.6), 0.16, 0.44, 0),
+    place(cyl(0.012, 0.012, 0.30, 8).rotateZ(-Math.PI / 2.2), 0.36, 0.36, 0),
+  ]);
+  boxUV(arm, 0.25);
+  const head = merge([
+    place(cyl(0.045, 0.040, 0.16, 12), 0.44, 0.27, 0, Math.PI / 7, 0, 0),
+    place(new THREE.TorusGeometry(0.048, 0.006, 5, 14), 0.44, 0.35, 0, Math.PI / 2, 0, 0),
+  ]);
+  return [
+    { geo: arm, mat: lib.painted(0x1a1c21, 0.5) },
+    { geo: head, mat: lib.metal('#9aa0a8', 0.35) },
+  ];
+}
+
+/** An RGB strip: the cheapest thing that makes a room read as "setup". */
+export function ledStrip(lib: MatLib, w = 1.6, tint = 0x7c5cff): Prop {
+  const rail = place(rbox(w, 0.035, 0.035, 0.008), 0, 0, 0);
+  boxUV(rail, 0.3);
+  return [
+    { geo: rail, mat: lib.painted(0x202329, 0.6) },
+    { geo: place(box(w - 0.04, 0.016, 0.006), 0, -0.006, 0.019), mat: lib.emissive(tint, 1.6) },
+  ];
+}
+
+/** A tall floor plant. Reads at a distance where a pot plant does not. */
+export function tallPlant(lib: MatLib, h = 1.35): Prop {
+  const rnd = mulberry32(4711);
+  const pot = merge([
+    place(cyl(0.20, 0.16, 0.30, 14), 0, 0.15, 0),
+    place(new THREE.TorusGeometry(0.20, 0.018, 6, 16), 0, 0.29, 0, Math.PI / 2, 0, 0),
+  ]);
+  boxUV(pot, 0.3);
+  const leaves: THREE.BufferGeometry[] = [];
+  const stems: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 9; i++) {
+    const a = rnd() * Math.PI * 2;
+    const t = 0.35 + rnd() * 0.65;
+    const y = 0.30 + t * (h - 0.30);
+    const reach = (0.10 + rnd() * 0.26) * (0.4 + t);
+    stems.push(place(cyl(0.010, 0.008, y - 0.28, 6), Math.cos(a) * reach * 0.3, (y + 0.28) / 2, Math.sin(a) * reach * 0.3));
+    // A leaf is a flattened sphere; at this scale the silhouette is all of it.
+    const leaf = sph(0.16 + rnd() * 0.08, 8, 6);
+    leaf.scale(1, 0.22, 0.6);
+    leaves.push(place(leaf, Math.cos(a) * reach, y, Math.sin(a) * reach, rnd() * 0.5 - 0.25, a, rnd() * 0.4 - 0.2));
+  }
+  return [
+    { geo: pot, mat: lib.painted(0xb08363, 0.7) },
+    { geo: merge(stems), mat: lib.painted(0x4a6b3a, 0.8) },
+    { geo: merge(leaves), mat: lib.painted(0x3f7a45, 0.72) },
+  ];
+}
+
+/** A stack of books and a mug: the small stuff that says somebody lives here. */
+export function trinkets(lib: MatLib, seed = 7): Prop {
+  const rnd = mulberry32(seed * 977);
+  const books: THREE.BufferGeometry[] = [];
+  let y = 0;
+  for (let i = 0; i < 4; i++) {
+    const t = 0.035 + rnd() * 0.02;
+    books.push(place(rbox(0.16 + rnd() * 0.05, t, 0.22, 0.004), (rnd() - 0.5) * 0.03, y + t / 2, (rnd() - 0.5) * 0.03, 0, rnd() * 0.3 - 0.15, 0));
+    y += t;
+  }
+  const stack = merge(books);
+  boxUV(stack, 0.3);
+  const mug = merge([
+    place(cyl(0.042, 0.038, 0.095, 12), 0.20, 0.048, 0.04),
+    place(new THREE.TorusGeometry(0.028, 0.008, 5, 10), 0.246, 0.055, 0.04, 0, Math.PI / 2, 0),
+  ]);
+  return [
+    { geo: stack, mat: lib.painted(0x8a5f4a, 0.75) },
+    { geo: mug, mat: lib.painted(0xd8683f, 0.4) },
+  ];
+}

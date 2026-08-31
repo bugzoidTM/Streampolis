@@ -86,19 +86,34 @@ export const ITEM_CATALOG: ItemDef[] = [
 
   // --- Furniture ---
   furn('fur_sofa_01',    'Sofá Modular',  'common', 900,  null, [3, 2]),
+  furn('fur_sofa_02',    'Sofá de Dois',  'common', 700,  null, [3, 2]),
   furn('fur_chair_01',   'Poltrona',      'common', 420,  null, [1, 1]),
+  furn('fur_stool_01',   'Banqueta',      'common', 180,  null, [1, 1]),
+  furn('fur_deskchair_01','Cadeira Gamer','common', 520,  null, [1, 1]),
   furn('fur_table_01',   'Mesa de Centro','common', 380,  null, [2, 1]),
   furn('fur_bed_01',     'Cama',          'common', 1200, null, [2, 3]),
   furn('fur_rug_01',     'Tapete',        'common', 260,  null, [3, 2]),
+  furn('fur_rug_02',     'Tapete Grande', 'common', 380,  null, [4, 3]),
   furn('fur_plant_01',   'Planta',        'common', 190,  null, [1, 1]),
+  furn('fur_planttall_01','Planta Alta',  'common', 320,  null, [1, 1]),
   furn('fur_shelf_01',   'Estante',       'common', 640,  null, [2, 1]),
   furn('fur_lamp_01',    'Luminária',     'common', 220,  null, [1, 1]),
+  furn('fur_ceiling_01', 'Pendente',      'common', 240,  null, [1, 1]),
   furn('fur_desk_01',    'Mesa de Setup', 'rare',   1400, null, [2, 1]),
+  furn('fur_tv_01',      'TV',            'rare',   1100, null, [2, 1]),
   furn('fur_neon_01',    'Neon de Parede','rare',   null, 180,  [2, 1]),
+  furn('fur_led_01',     'Fita LED RGB',  'common', 280,  null, [3, 1]),
+  furn('fur_art_01',     'Quadro',        'common', 240,  null, [1, 1]),
+  furn('fur_art_02',     'Quadro Largo',  'common', 340,  null, [2, 1]),
+  furn('fur_books_01',   'Livros e Caneca','common', 120,  null, [1, 1]),
 
   // --- Stream gear ---
   { id: 'gear_ring_01',  type: 'stream_gear', name: 'Ring Light',   rarity: 'rare', creditsPrice: 1600, coinsPrice: null, assetId: 'gear_ring_01',  footprint: [1, 1], active: true },
   { id: 'gear_backdrop_01', type: 'stream_gear', name: 'Backdrop LED', rarity: 'epic', creditsPrice: null, coinsPrice: 640, assetId: 'gear_backdrop_01', footprint: [4, 1], active: true },
+  { id: 'gear_pc_01',    type: 'stream_gear', name: 'PC Gamer',     rarity: 'rare', creditsPrice: 1900, coinsPrice: null, assetId: 'gear_pc_01',    footprint: [1, 1], active: true },
+  { id: 'gear_mic_01',   type: 'stream_gear', name: 'Microfone',    rarity: 'rare', creditsPrice: 980,  coinsPrice: null, assetId: 'gear_mic_01',   footprint: [1, 1], active: true },
+  { id: 'gear_cam_01',   type: 'stream_gear', name: 'Câmera',       rarity: 'rare', creditsPrice: 1450, coinsPrice: null, assetId: 'gear_cam_01',   footprint: [1, 1], active: true },
+  { id: 'gear_monitor_01', type: 'stream_gear', name: 'Monitor',    rarity: 'common', creditsPrice: 760, coinsPrice: null, assetId: 'gear_monitor_01', footprint: [1, 1], active: true },
 
   // --- Surfaces ---
   { id: 'floor_wood_01',  type: 'floor', name: 'Piso Madeira',  rarity: 'common', creditsPrice: 0,   coinsPrice: null, assetId: 'floor_wood_01',  active: true },

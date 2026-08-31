@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AvatarConfig } from '@streampolis/shared';
 import { World } from '../game/World.js';
+import { BuildBar } from './BuildBar.js';
 import { NetworkClient } from '../network/NetworkClient.js';
 import { describeIntent, isLiveIntent, openWorld, type WorldIntent } from '../network/session.js';
 import type { AnyWorldConnection } from '../network/WorldConnection.js';
@@ -33,6 +34,9 @@ export interface WorldViewProps {
 export function WorldView(props: WorldViewProps) {
   const ref = useRef<HTMLCanvasElement>(null);
   const worldRef = useRef<World | null>(null);
+  // O World nasce dentro de um efeito; a barra precisa dele como ESTADO para
+  // remontar quando ele fica pronto.
+  const [ready, setReady] = useState<World | null>(null);
   const [status, setStatus] = useState<'loading' | 'online' | 'offline' | 'failed'>('loading');
   const [message, setMessage] = useState<string>(describeIntent(props.intent));
   const [inLive, setInLive] = useState(false);
@@ -93,6 +97,7 @@ export function WorldView(props: WorldViewProps) {
       world.setPaused(props.paused === true);
       await world.start();
       if (cancelled) return;
+      setReady(world);
       setStatus(world.online ? 'online' : 'offline');
       setInLive(isLiveIntent(props.intent.kind) && world.online);
     };
@@ -112,6 +117,7 @@ export function WorldView(props: WorldViewProps) {
       window.removeEventListener('resize', onResize);
       useSessionStore.getState().detach();
       worldRef.current = null;
+      setReady(null);
       world?.dispose();
     };
     // As props são lidas uma vez, na montagem, de propósito: reconectar no meio
@@ -132,6 +138,8 @@ export function WorldView(props: WorldViewProps) {
         style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', display: 'block', background: '#0b0d12' }}
       />
       {inLive && <LiveView />}
+      {/* Só o dono redecora. Visitante vê a mobília, não as alças. */}
+      <BuildBar world={ready} canEdit={props.intent.kind === 'apartment' && !inLive} />
       {status !== 'online' && (
         <div className="world-status" role="status">
           {status === 'loading' && message}

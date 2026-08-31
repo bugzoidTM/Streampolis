@@ -1,4 +1,4 @@
-import type { AvatarConfig, Currency, LiveSummary } from '@streampolis/shared';
+import type { HomePlacement, AvatarConfig, Currency, LiveSummary } from '@streampolis/shared';
 
 /**
  * Cliente HTTP da API.
@@ -56,6 +56,15 @@ export interface MeResponse {
   profile: PublicProfile | null;
   inventory: string[];
   following: string[];
+}
+
+export interface ApiHome {
+  apartmentId: string;
+  ownerId: string;
+  ownerName: string;
+  layoutId: string;
+  visibility: 'open' | 'friends' | 'private';
+  decor: HomePlacement[];
 }
 
 export interface PurchaseResponse {
@@ -202,6 +211,21 @@ export class ApiClient {
 
   inventory(): Promise<{ items: string[] }> {
     return this.call('/me/inventory');
+  }
+
+  home(): Promise<{ home: ApiHome }> {
+    return this.call('/me/home');
+  }
+
+  /**
+   * Manda a planta INTEIRA. A API confere posse, limites e sobreposição e
+   * devolve a casa como ficou — quem decide onde o sofá cabe é ela.
+   */
+  saveHomeLayout(placements: readonly HomePlacement[]): Promise<{ home: ApiHome }> {
+    return this.call('/me/home/layout', {
+      method: 'PUT',
+      body: JSON.stringify({ placements }),
+    });
   }
 
   /** Salvar a aparência devolve um token novo: o antigo ainda veste a roupa velha. */

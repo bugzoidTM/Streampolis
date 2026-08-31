@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import type { HomePlacement } from '@streampolis/shared';
+import { InteriorScene } from './scenes/InteriorScene.js';
 import {
   DEFAULT_AVATAR,
   GIFT_BY_ID,
@@ -417,6 +419,25 @@ export class World {
       particles: this.gifts?.activeParticles ?? 0,
       local: this.connection ? this.connection.predictor.stats : { solo: this.solo },
     };
+  }
+
+  /**
+   * The room the player owns, furnished. Only an interior can be furnished, so
+   * anywhere else this is a no-op rather than an error — the caller is the UI,
+   * and the UI should not have to know which scene class is on screen.
+   */
+  applyHomeLayout(list: readonly HomePlacement[]): boolean {
+    const scene = this.scene as { setPlacements?: (l: readonly HomePlacement[]) => void } | null;
+    if (!scene?.setPlacements) return false;
+    scene.setPlacements(list);
+    return true;
+  }
+
+  /** Handles build mode needs to drive picking against this world. */
+  get editable(): { canvas: HTMLCanvasElement; camera: THREE.Camera; scene: InteriorScene } | null {
+    const scene = this.scene;
+    if (!scene || !(scene instanceof InteriorScene)) return null;
+    return { canvas: this.renderer.webgl.domElement, camera: this.camera.camera, scene };
   }
 
   dispose(): void {

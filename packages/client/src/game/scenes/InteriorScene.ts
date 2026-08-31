@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
-  SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS,
-  type Fixture, type SceneId, type SceneLayout,
+  PLACEABLES, SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS,
+  type Fixture, type HomePlacement, type SceneId, type SceneLayout,
 } from '@streampolis/shared';
 import { makeCameraTransparent, type Framing } from '../CameraManager.js';
 import type { GradeLook } from '../Renderer.js';
@@ -12,7 +12,8 @@ import { buildRoomShell, type ShellStyle } from '../props/Room.js';
 import { VideoWall } from '../props/Screen.js';
 import {
   armchair, bed, ceilingLamp, coffeeTable, desk, deskChair, deskGear, floorLamp,
-  kitchenette, monitor, potPlant, rug, shelf, sofa, stool, wallArt, wallNeon,
+  kitchenette, ledStrip, micBoom, monitor, pcTower, potPlant, rug, shelf, sofa,
+  stool, tallPlant, trinkets, tvSet, wallArt, wallNeon,
 } from '../props/Interior.js';
 import {
   barrier, beamMaterial, beamMesh, cameraRig, counter, displayPodium, elevatorDoor,
@@ -51,6 +52,19 @@ export interface InteriorStyle {
 
 interface Updatable { update(dt: number): void }
 
+/**
+ * Which placed props are also light sources, and how much. Practical lamps in
+ * a room the player furnishes have to actually light it, or a corner with a
+ * lamp in it looks exactly like a corner without one.
+ */
+const PRACTICAL_LIGHT: Record<string, { color: number; power: number; range: number; height: number }> = {
+  floor_lamp:   { color: 0xffe2b8, power: 5.0, range: 5.0, height: 1.45 },
+  ceiling_lamp: { color: 0xffe8c8, power: 6.5, range: 7.0, height: 2.30 },
+  led_strip:    { color: 0x7c5cff, power: 2.2, range: 3.2, height: 0.05 },
+  wall_neon:    { color: 0xff3d9a, power: 2.6, range: 3.4, height: 0.10 },
+  tv_set:       { color: 0x2f6fd8, power: 2.4, range: 3.6, height: 0.90 },
+};
+
 export class InteriorScene extends SceneBase {
   readonly id: SceneId;
   readonly look: GradeLook;
@@ -60,6 +74,9 @@ export class InteriorScene extends SceneBase {
   protected layout: SceneLayout;
   protected style: InteriorStyle;
   private updatables: Updatable[] = [];
+  private placedRoot = new THREE.Group();
+  private placedProps: Prop[] = [];
+  private placedNodes: THREE.Object3D[] = [];
 
   constructor(id: SceneId, layout: SceneLayout, style: InteriorStyle) {
     super();
@@ -85,6 +102,8 @@ export class InteriorScene extends SceneBase {
     for (const d of shell.disposables) this.own(d);
 
     this.buildFixtures();
+    this.placedRoot.name = 'placed';
+    this.add(this.placedRoot);
     this.dress();
 
     for (const s of SCENE_SPAWNS[this.id]) {
@@ -95,6 +114,69 @@ export class InteriorScene extends SceneBase {
 
   /** Hook for the bespoke touches a specific room needs. */
   protected dress(): void {}
+
+  /**
+   * The furniture the OWNER put here, as opposed to the layout's own fixtures.
+   *
+   * Deliberately not baked: build mode moves these one at a time, and a bake
+   * would have to be torn down and rebuilt on every drag. A room holds a few
+   * dozen of them, which is a few dozen draw calls — the right trade for
+   * something the player edits live.
+   */
+  setPlacements(list: readonly HomePlacement[]): void {
+    for (const p of this.placedProps) disposeProp(p);
+    this.placedProps = [];
+    this.placedRoot.clear();
+    this.placedNodes = [];
+
+    for (const p of list) {
+      const def = PLACEABLES[p.itemId];
+      if (!def) continue;
+      const f: Fixture = {
+        kind: def.kind, x: p.x, z: p.z, ry: (p.turn * Math.PI) / 2, y: def.y ?? 0,
+        w: def.w, h: def.h, d: def.d, tint: def.tint, color: def.color,
+        hw: def.hw, hd: def.hd,
+      };
+      const prop = this.staticProp(f, (_k, make) => make());
+      if (!prop) continue;
+      this.placedProps.push(prop);
+
+      const node = singleProp(prop);
+      node.applyMatrix4(xform(f.x, f.y ?? 0, f.z, f.ry ?? 0, 1));
+      node.userData.placementIndex = this.placedNodes.length;
+      this.placedRoot.add(node);
+      this.placedNodes.push(node);
+
+      // A lamp that emits nothing is furniture-shaped, not a lamp.
+      const glow = PRACTICAL_LIGHT[def.kind];
+      if (glow) {
+        const light = new THREE.PointLight(glow.color, glow.power * (this.style.practicals ?? 1), glow.range, 2);
+        light.position.set(f.x, (f.y ?? 0) + glow.height, f.z);
+        this.placedRoot.add(light);
+      }
+    }
+
+    // Walk-through items stay walk-through; the rest join the collider table
+    // so a sofa you placed is a sofa you bump into.
+    this.colliders = [
+      ...SCENE_COLLIDERS[this.id],
+      ...list.flatMap((p) => {
+        const def = PLACEABLES[p.itemId];
+        if (!def || def.hw === undefined || def.mount !== 'floor') return [];
+        const even = p.turn % 2 === 0;
+        return [{
+          kind: 'rect' as const,
+          x: p.x, z: p.z,
+          hw: even ? def.hw : (def.hd ?? def.hw),
+          hd: even ? (def.hd ?? def.hw) : def.hw,
+          ry: 0,
+        }];
+      }),
+    ];
+  }
+
+  /** World-space nodes of the placed furniture, for build-mode picking. */
+  get placementNodes(): readonly THREE.Object3D[] { return this.placedNodes; }
 
   protected track(u: Updatable): void { this.updatables.push(u); }
 
@@ -141,6 +223,12 @@ export class InteriorScene extends SceneBase {
       case 'bed': return stamp(key, () => bed(lib, f.w ?? 1.4, f.d ?? 2.0));
       case 'rug': return stamp(key, () => rug(lib, f.w ?? 1.8, f.d ?? 1.2, f.tint ?? '#8a6f62'));
       case 'pot_plant': return stamp(key, () => potPlant(lib, 1));
+      case 'plant_tall': return stamp(key, () => tallPlant(lib, f.h ?? 1.35));
+      case 'tv_set': return stamp(key, () => tvSet(lib, f.w ?? 1.15, f.h ?? 0.66));
+      case 'pc_tower': return stamp(key, () => pcTower(lib));
+      case 'mic_boom': return stamp(key, () => micBoom(lib));
+      case 'led_strip': return stamp(key, () => ledStrip(lib, f.w ?? 1.6, f.color ?? 0x7c5cff));
+      case 'trinkets': return stamp(key, () => trinkets(lib, 7));
       case 'floor_lamp': return stamp(key, () => floorLamp(lib, f.h ?? 1.55));
       case 'ceiling_lamp': return stamp(key, () => ceilingLamp(lib, 0.5));
       case 'wall_art': return stamp(key, () => wallArt(lib, f.w ?? 0.7, f.h ?? 0.9, f.color ?? 0x8ea9c4));
