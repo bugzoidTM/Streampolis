@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MovementController, sanitizeIntent, SPEED_AUDIT_WINDOW_MS } from '../src/sim/Movement.js';
-import { applyMoveIntent, FIXED_DT, INTENT_QUEUE_LIMIT, MAX_SPEED, PLAY_AREA } from '../src/shared.js';
+import {
+  applyMoveIntent, FIXED_DT, INTENT_QUEUE_LIMIT, MAX_SPEED, PLAYER_RADIUS, PLAY_AREA,
+  PLAZA, SCENE_AREA, SCENE_COLLIDERS,
+} from '../src/shared.js';
 
 const AREA = PLAY_AREA.central_plaza;
 const SPAWN = { x: 0, y: 0, z: 0, yaw: 0, moving: false };
@@ -106,6 +109,40 @@ describe('MovementController', () => {
       mc.step();
     }
     assert.equal(mc.stats.teleports, 0, 'correr honestamente não pode ser punido');
+  });
+
+  it('não deixa atravessar a fonte da praça', () => {
+    // Anda em linha reta do leste para o centro: a fonte tem que barrar.
+    const mc = new MovementController(
+      { x: 12, y: 0, z: 0, yaw: 0, moving: false },
+      PLAY_AREA.central_plaza,
+      () => 0,
+      SCENE_COLLIDERS.central_plaza,
+      SCENE_AREA.central_plaza ?? null,
+    );
+    for (let i = 1; i <= 240; i++) {
+      mc.enqueue({ dx: -1, dz: 0, yaw: Math.PI / 2, run: true, seq: i });
+      mc.step();
+    }
+    const monument = PLAZA.stairInner + PLAZA.stairSteps * 0.42;
+    assert.ok(mc.current.x >= monument + PLAYER_RADIUS - 1e-6,
+      `parou em x=${mc.current.x.toFixed(2)}, dentro do monumento (raio ${monument.toFixed(2)})`);
+  });
+
+  it('mantém o jogador dentro do disco da praça', () => {
+    const mc = new MovementController(
+      { x: 0, y: 0, z: 20, yaw: 0, moving: false },
+      PLAY_AREA.central_plaza,
+      () => 0,
+      SCENE_COLLIDERS.central_plaza,
+      SCENE_AREA.central_plaza ?? null,
+    );
+    for (let i = 1; i <= 400; i++) {
+      mc.enqueue({ dx: 0, dz: 1, yaw: 0, run: true, seq: i });
+      mc.step();
+    }
+    assert.ok(Math.hypot(mc.current.x, mc.current.z) <= PLAZA.radius + 1e-6,
+      `saiu para ${Math.hypot(mc.current.x, mc.current.z).toFixed(2)} m`);
   });
 
   it('place() força correção no próximo tick', () => {

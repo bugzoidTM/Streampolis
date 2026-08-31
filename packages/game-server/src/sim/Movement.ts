@@ -6,7 +6,10 @@ import {
   MAX_INTENTS_PER_TICK,
   MAX_SPEED,
   maxStepDistance,
+  resolveCollision,
+  type Area,
   type Bounds,
+  type Collider,
   type Kinematic,
   type MoveIntent,
 } from '../shared.js';
@@ -97,6 +100,13 @@ export class MovementController {
     spawn: Pose,
     private area: Bounds,
     private readonly now: () => number = Date.now,
+    /**
+     * Scene blockers. The server decides where a player may stand, and the
+     * client predicts with this same table (SPECs §21) — without it a player
+     * walks through the fountain on the server while bouncing off it locally.
+     */
+    private colliders: readonly Collider[] = [],
+    private walkable: Area | null = null,
   ) {
     this.pose = { ...spawn };
     this.auditAnchor = { x: spawn.x, z: spawn.z, at: this.now() };
@@ -110,8 +120,10 @@ export class MovementController {
     return this.lastAcceptedSeq;
   }
 
-  setArea(area: Bounds): void {
+  setArea(area: Bounds, colliders: readonly Collider[] = [], walkable: Area | null = null): void {
     this.area = area;
+    this.colliders = colliders;
+    this.walkable = walkable;
   }
 
   /** Force-move (spawn, teleport by the server, scene change). Resets the audit. */
@@ -158,6 +170,9 @@ export class MovementController {
       const intent = this.queue.shift() as MoveIntent;
       const next = applyMoveIntent(this.pose, intent, this.area);
 
+      // Speed is judged BEFORE collision: being pushed out of a blocker can
+      // move a player further than they asked, and that is the server's own
+      // doing, not a speed hack.
       if (stepExceedsSpeed(this.pose, next)) {
         // Unreachable through applyMoveIntent by construction; if it fires,
         // either MAX_SPEED changed under us or the integrator was tampered with.
@@ -175,8 +190,12 @@ export class MovementController {
         continue;
       }
 
+      const solved = this.colliders.length > 0 || this.walkable
+        ? resolveCollision(next, this.colliders, this.walkable)
+        : next;
+
       moved = moved || next.moving;
-      this.pose = { x: next.x, y: this.pose.y, z: next.z, yaw: next.yaw, moving: next.moving };
+      this.pose = { x: solved.x, y: this.pose.y, z: solved.z, yaw: next.yaw, moving: next.moving };
       this.lastAcceptedSeq = intent.seq;
     }
 

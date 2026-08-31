@@ -3,6 +3,8 @@ import {
   DEFAULT_AVATAR,
   MSG,
   PLAY_AREA,
+  SCENE_AREA,
+  SCENE_COLLIDERS,
   TICK_MS,
   type AnimState,
   type AvatarConfig,
@@ -112,7 +114,13 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
     const spawn = spawnFor(this.sceneId, this.joinCounter++);
     this.sessions.set(client.sessionId, {
       identity,
-      movement: new MovementController(spawn, PLAY_AREA[this.sceneId]),
+      movement: new MovementController(
+        spawn,
+        PLAY_AREA[this.sceneId],
+        Date.now,
+        SCENE_COLLIDERS[this.sceneId],
+        SCENE_AREA[this.sceneId] ?? null,
+      ),
       lastEmoteAt: 0,
     });
 

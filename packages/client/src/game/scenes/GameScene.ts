@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { SceneId } from '@streampolis/shared';
+import { resolveCollision, type Area, type Collider, type SceneId } from '@streampolis/shared';
 import type { GradeLook } from '../Renderer.js';
 import { Environment, type SkyParams } from '../Environment.js';
 import { MatLib } from '../props/Materials.js';
@@ -21,17 +21,13 @@ export interface GameScene {
   dispose(): void;
 }
 
-/** Axis-aligned-in-local-space blocker; `ry` rotates it around Y. */
-export interface RectCollider { kind: 'rect'; x: number; z: number; hw: number; hd: number; ry: number }
-export interface CircleCollider { kind: 'circle'; x: number; z: number; r: number }
-export type Collider = RectCollider | CircleCollider;
-
-/** Walkable limit of a scene. */
-export type Bounds =
-  | { kind: 'circle'; x: number; z: number; r: number }
-  | { kind: 'rect'; x: number; z: number; hw: number; hd: number };
-
-const PLAYER_RADIUS = 0.28;
+/**
+ * Collision types and the solver now live in @streampolis/shared: the server
+ * has to reach the same verdict as the scene, and two implementations of
+ * "can I stand here" drift the moment one of them is tuned.
+ */
+export type { Collider, RectCollider, CircleCollider } from '@streampolis/shared';
+export type Bounds = Area;
 
 /**
  * Shared plumbing: resource tracking, the collision solver and the lighting
@@ -98,53 +94,8 @@ export abstract class SceneBase implements GameScene {
    * every visible avatar (SPECs §15).
    */
   clamp(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3 {
-    const out = to.clone();
-    for (let pass = 0; pass < 2; pass++) {
-      for (const c of this.colliders) {
-        if (c.kind === 'circle') {
-          const dx = out.x - c.x, dz = out.z - c.z;
-          const d = Math.hypot(dx, dz);
-          const min = c.r + PLAYER_RADIUS;
-          if (d < min) {
-            if (d < 1e-4) { out.x = c.x + min; continue; }
-            out.x = c.x + (dx / d) * min;
-            out.z = c.z + (dz / d) * min;
-          }
-        } else {
-          const cos = Math.cos(-c.ry), sin = Math.sin(-c.ry);
-          const rx = (out.x - c.x) * cos - (out.z - c.z) * sin;
-          const rz = (out.x - c.x) * sin + (out.z - c.z) * cos;
-          const hw = c.hw + PLAYER_RADIUS, hd = c.hd + PLAYER_RADIUS;
-          if (Math.abs(rx) < hw && Math.abs(rz) < hd) {
-            const px = hw - Math.abs(rx);
-            const pz = hd - Math.abs(rz);
-            let nx = rx, nz = rz;
-            if (px < pz) nx = Math.sign(rx || 1) * hw;
-            else nz = Math.sign(rz || 1) * hd;
-            const bc = Math.cos(c.ry), bs = Math.sin(c.ry);
-            out.x = c.x + nx * bc - nz * bs;
-            out.z = c.z + nx * bs + nz * bc;
-          }
-        }
-      }
-    }
-    const b = this.bounds;
-    if (b) {
-      if (b.kind === 'circle') {
-        const dx = out.x - b.x, dz = out.z - b.z;
-        const d = Math.hypot(dx, dz);
-        const max = b.r - PLAYER_RADIUS;
-        if (d > max && d > 1e-4) {
-          out.x = b.x + (dx / d) * max;
-          out.z = b.z + (dz / d) * max;
-        }
-      } else {
-        out.x = THREE.MathUtils.clamp(out.x, b.x - b.hw + PLAYER_RADIUS, b.x + b.hw - PLAYER_RADIUS);
-        out.z = THREE.MathUtils.clamp(out.z, b.z - b.hd + PLAYER_RADIUS, b.z + b.hd - PLAYER_RADIUS);
-      }
-    }
-    out.y = to.y;
-    return out;
+    const solved = resolveCollision({ x: to.x, z: to.z }, this.colliders, this.bounds);
+    return new THREE.Vector3(solved.x, to.y, solved.z);
   }
 
   dispose() {

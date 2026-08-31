@@ -2,6 +2,8 @@ import type { Room } from 'colyseus.js';
 import {
   MSG,
   PLAY_AREA,
+  SCENE_AREA,
+  SCENE_COLLIDERS,
   TICK_MS,
   type AnimState,
   type ChatMessage,
@@ -65,8 +67,13 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   private disposed = false;
 
   constructor(readonly room: Room<S>) {
-    const area = PLAY_AREA[room.state?.sceneId ?? 'central_plaza'];
-    this.predictor = new Predictor({ x: 0, z: 0, yaw: 0, moving: false }, area);
+    const sceneId = room.state?.sceneId ?? 'central_plaza';
+    this.predictor = new Predictor(
+      { x: 0, z: 0, yaw: 0, moving: false },
+      PLAY_AREA[sceneId],
+      SCENE_COLLIDERS[sceneId],
+      SCENE_AREA[sceneId] ?? null,
+    );
     this.wire();
   }
 

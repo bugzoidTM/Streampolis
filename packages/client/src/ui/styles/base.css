@@ -53,3 +53,21 @@ button:disabled { cursor: not-allowed; }
   text-transform: uppercase;
   color: var(--sp-text-3);
 }
+
+/* Connection state over the 3D view. Bottom-left so it never covers the
+   avatar, and pointer-transparent so it cannot eat a click on the world. */
+.world-status {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 5;
+  padding: 8px 14px;
+  border-radius: var(--sp-r-pill);
+  background: rgba(8, 10, 16, 0.62);
+  border: 1px solid var(--sp-line-2);
+  color: var(--sp-text-2);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}

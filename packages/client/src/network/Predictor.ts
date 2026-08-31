@@ -1,7 +1,10 @@
 import {
   applyMoveIntent,
   clampYaw,
+  resolveCollision,
+  type Area,
   type Bounds,
+  type Collider,
   type Kinematic,
   type MoveCorrection,
   type MoveIntent,
@@ -28,7 +31,13 @@ export class Predictor {
   /** Corrections applied so far — a debug overlay reads this. */
   private corrections = 0;
 
-  constructor(spawn: Kinematic, private area: Bounds) {
+  constructor(
+    spawn: Kinematic,
+    private area: Bounds,
+    /** Same table the server uses, or prediction disagrees at every bench. */
+    private colliders: readonly Collider[] = [],
+    private walkable: Area | null = null,
+  ) {
     this.pose = { ...spawn };
   }
 
@@ -40,8 +49,10 @@ export class Predictor {
     return { pending: this.pending.length, corrections: this.corrections, seq: this.seq };
   }
 
-  setArea(area: Bounds): void {
+  setArea(area: Bounds, colliders: readonly Collider[] = [], walkable: Area | null = null): void {
     this.area = area;
+    this.colliders = colliders;
+    this.walkable = walkable;
   }
 
   /** Hard reset — used on join and on a scene change. */
@@ -56,7 +67,7 @@ export class Predictor {
    */
   step(dx: number, dz: number, yaw: number, run: boolean): MoveIntent {
     const intent: MoveIntent = { dx, dz, yaw: clampYaw(yaw), run, seq: ++this.seq };
-    this.pose = applyMoveIntent(this.pose, intent, this.area);
+    this.pose = this.integrate(this.pose, intent);
     this.pending.push(intent);
     // A player that idles while the socket stalls would otherwise grow this
     // forever; the server only ever consumes a few per tick anyway.
@@ -86,8 +97,15 @@ export class Predictor {
       moving: this.pose.moving,
     };
     for (const intent of this.pending) {
-      pose = applyMoveIntent(pose, intent, this.area);
+      pose = this.integrate(pose, intent);
     }
     this.pose = pose;
+  }
+
+  private integrate(from: Kinematic, intent: MoveIntent): Kinematic {
+    const next = applyMoveIntent(from, intent, this.area);
+    if (this.colliders.length === 0 && !this.walkable) return next;
+    const solved = resolveCollision(next, this.colliders, this.walkable);
+    return { x: solved.x, z: solved.z, yaw: next.yaw, moving: next.moving };
   }
 }

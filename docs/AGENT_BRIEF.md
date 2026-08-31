@@ -24,6 +24,30 @@ packages/api/             API REST + economia + Postgres
 tools/                    shoot.mjs (screenshot), probe.mjs (dump de estado)
 ```
 
+## Como rodar o jogo inteiro
+
+Três processos, e só o primeiro é obrigatório para ver a cidade:
+
+```
+npm run dev --workspace @streampolis/client        # Vite em :5273
+npm run dev --workspace @streampolis/game-server   # Colyseus em :2567
+npm run e2e --workspace @streampolis/game-server   # prova do §69, sem navegador
+```
+
+Sem `?token=`, o cliente roda **offline**: mesma praça, mesma câmera, avatar
+local integrado pela mesma `applyMoveIntent` do servidor. Com o game server no
+ar, `http://127.0.0.1:5273/?view=world&token=ana&name=Ana` entra de verdade (o
+token de desenvolvimento É o id do usuário enquanto a API não emite os reais).
+`?view=lab` continua abrindo o laboratório de avatares.
+
+## Onde a colisão mora
+
+Em `packages/shared/src/collision.ts`, e só ali. O servidor decide onde dá para
+pisar e o cliente prevê com a MESMA tabela; se alguém escrever um segundo
+solver, o jogador atravessa a fonte de um lado e bate nela do outro. As
+posições dos props vêm de `packages/shared/src/layout.ts` pelo mesmo motivo: a
+cena desenha a partir da tabela de onde os colliders são gerados.
+
 ## Como rodar e como VER o resultado
 
 O servidor de dev já está no ar em `http://127.0.0.1:5273` (Vite, com HMR —
@@ -39,6 +63,12 @@ spshot --url='http://127.0.0.1:5273/?...' --out=shots/nome.png --w=700 --h=900 -
 Isso grava `shots/nome.png` e um `.json` irmão com `renderer.info` e os erros de
 console. **Sempre leia o PNG com a ferramenta Read depois de capturar.** Um
 build que compila não é evidência de que está bonito; olhe a imagem.
+
+Para conferir o multiplayer de verdade: `node tools/mp-check.mjs` sobe uma
+página real como Ana e um segundo jogador headless via colyseus.js, e imprime
+quantos avatares o cliente desenhou. Duas páginas 3D ao mesmo tempo no
+SwiftShader se matam de fome e estouram a reserva de assento — por isso o
+segundo jogador não renderiza.
 
 `node tools/probe.mjs '<url>' <fn>` chama `window.__lab.<fn>()` e imprime o JSON
 — use para inspecionar posições de bone, bounding boxes etc. em vez de adivinhar.
