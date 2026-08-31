@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { loft, assemble, mergeGeometries, type Station } from './Loft.js';
 import { BONE_INDEX, type BuiltRig } from './Skeleton.js';
-import { type FaceShape, sculptHead, headRadius, headCentre } from './BodyBuilder.js';
+import { type FaceShape, skullPoint, headRadius, headCentre } from './BodyBuilder.js';
 import {
   makeSkinMaterial, makeHairMaterial, makeIrisMaterial, makeScleraMaterial,
   makeLipMaterial, makeMouthMaterial, makeHighlightMaterial,
@@ -55,13 +55,6 @@ const EXPRESSIONS: Record<Expression, Pose> = {
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
-/** Point on the sculpted skin for a direction, pushed out by `lift` radii. */
-function skin(dir: THREE.Vector3, R: number, face: FaceShape, lift = 0): THREE.Vector3 {
-  const n = dir.clone().normalize();
-  const p = sculptHead(n, R, face);
-  return lift ? p.addScaledVector(n, lift * R) : p;
-}
-
 /** A tapered tube through a run of directions on the face. */
 function feature(
   dirs: Array<[number, number, number]>,
@@ -71,7 +64,7 @@ function feature(
   face: FaceShape,
 ): Station[] {
   return dirs.map((d, i) => ({
-    pos: skin(V(d[0], d[1], d[2]), R, face, lifts[i]),
+    pos: skullPoint(V(d[0], d[1], d[2]), R, face, lifts[i]),
     radiusX: radii[i][0] * R,
     radiusZ: radii[i][1] * R,
     bone: 'Head' as const,
@@ -122,7 +115,7 @@ function ears(R: number, face: FaceShape): THREE.BufferGeometry {
   for (const side of [-1, 1]) {
     // Ears sit BEHIND the widest point of the skull. Anchored at the widest
     // point they landed on the cheek and read as spectacles in profile.
-    const anchor = skin(V(side, -0.02, -0.34), R, face);
+    const anchor = skullPoint(V(side, -0.02, -0.34), R, face);
 
     // The helix, from the top of the ear round the back to the lobe.
     const helix: Station[] = [];
@@ -257,7 +250,7 @@ export function buildFaceRig(
 
   for (const side of [-1, 1]) {
     const dir = EYE_DIR(side);
-    const surface = skin(dir, R, face);
+    const surface = skullPoint(dir, R, face);
     const eye = new THREE.Group();
     // Sunk into the socket by most of its radius, which is what stops the
     // eyeball reading as a marble stuck on the front of the face.
@@ -335,7 +328,7 @@ export function buildFaceRig(
   // Two halves hinged at the midline: a smile is the corners rising, and a
   // mouth that can only scale or rotate as one piece cannot do that.
   const mouth = new THREE.Group();
-  const mouthCentre = skin(V(0, -0.38, 0.94), R, face);
+  const mouthCentre = skullPoint(V(0, -0.38, 0.94), R, face);
   mouth.position.copy(mouthCentre);
   group.add(mouth);
 

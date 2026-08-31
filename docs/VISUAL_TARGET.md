@@ -32,18 +32,27 @@ delas alcançar o alvo, troque a captura e escreva aqui o que mudou.
 
 ## O alvo, por área
 
-### Personagem — a maior distância
-O avatar é o produto que o jogador compra roupa para vestir, e é onde estamos
-mais longe. O alvo pede:
+### Personagem — quatro entregas feitas
+O avatar é o produto que o jogador compra roupa para vestir. O que o alvo
+pedia, e onde está:
 
-- **Feições como geometria**: nariz, boca, sobrancelha e orelha modelados, não
-  pintados. Hoje a cabeça é uma cápsula com duas esferas de olho.
-- **Olhos** com íris (anel escuro + brilho pequeno) e cílio como forma sólida.
-- **Cabelo em mechas** com espessura, não uma casca sobre o crânio.
-- **Mãos com cinco dedos.** O código chama a mão atual de *mitten* — e ela é
-  mesmo uma luva.
-- **Quatro expressões** no mínimo (neutro, sorriso, surpresa, foco). Uma live é
-  um rosto reagindo; sem isso o host é um manequim que dança.
+- ~~**Feições como geometria**~~ — nariz, boca, sobrancelha e orelha modelados
+  (`Face.ts`). Nariz e orelha entram fundidos na geometria da cabeça: nenhum
+  draw call a mais e nenhuma chance de descolar do crânio.
+- ~~**Olhos** com íris, pupila, brilho e cílio~~ — todos como calota esférica
+  sobre o globo, não como disco chapado.
+- ~~**Quatro expressões**~~ — neutro, sorriso, surpresa e foco, interpoladas a
+  12 Hz. `setAnim` já as escolhe: dançar sorri, presente surpreende, perder um
+  PK concentra.
+- ~~**Mãos com cinco dedos**~~ — palma, quatro dedos e polegar. Todos pesam no
+  osso `Hand`: o rig não tem juntas de dedo e inventá-las obrigaria a
+  retargetar todo clipe. O que se compra é silhueta.
+- ~~**Cabelo em mechas**~~ — `Hair.ts`, nove estilos sobre base + mechas +
+  franja + laterais + volume traseiro. Tudo funde numa geometria só, então um
+  estilo com trinta mechas ainda custa um draw call.
+
+O que falta no personagem: dedos articulados (exige ossos novos), cabelo que
+reage ao movimento, e roupa com corte de verdade — gola, punho, caimento.
 
 **Os três defeitos de geometria estão corrigidos** (Sprint Avatar A) e agora
 são medidos, não julgados:
@@ -141,14 +150,33 @@ pelo próprio jogo. Não há coluna "alvo" para a UI porque ela é o alvo.
 
 ## Ordem de ataque
 
-1. **Costura do corpo** (pé, cintura, vão entre as pernas). Correção de
-   geometria; sem ela, roupa nova nasce quebrada.
-2. **Rosto e mãos.** Destrava avatar, loja, feed e perfil de uma vez só.
-3. **Cabelo em mechas.** A peça mais comprada do gênero e hoje a mais fraca.
-4. **Roupa com corte** — gola, punho, barra, caimento.
+1. ~~**Costura do corpo**~~ (pé, cintura, vão entre as pernas) — feito, e agora
+   defendido pelo portão.
+2. ~~**Rosto e mãos.**~~ — feito.
+3. ~~**Cabelo em mechas.**~~ — feito, nove estilos.
+4. **Roupa com corte** — gola, punho, barra, caimento. É o próximo: hoje toda
+   peça é o corpo inflado, o que resolveu a cintura mas não dá corte a nada.
+   O ombro da manga ainda é o ponto mais fraco.
 5. **Cor e vida na praça.**
 6. **Catálogo de móveis.** A loja cria a pressão; o apartamento a transforma em
    permanência.
+
+### Ferramentas de revisão
+
+| Comando | O que responde |
+|---|---|
+| `npm run gate:avatar` | as 120 combinações estão geometricamente sãs? (portão, sai não-zero) |
+| `node tools/face-sheet.mjs` | cada preset de rosto, em cada expressão, em vários giros |
+| `node tools/face-sheet.mjs --styles=a,b,c --zoom=1.7` | os estilos de cabelo, de frente, de lado e de costas |
+| `node tools/hand-shot.mjs` | a mão de perto, em três vistas |
+
+Duas armadilhas que custaram tempo e valem para qualquer revisão futura:
+
+- **gire o avatar, não a cabeça.** Torcer o pescoço 150° para ver a nuca traz o
+  rabo de cavalo para a frente do peito e revisa uma pose que ninguém segura.
+- **enquadre o que você está julgando.** Cabelo longo vive quase todo ABAIXO de
+  um retrato de cabeça e ombros; num recorte desses ele parece curto e o bug
+  está no enquadramento, não na geometria.
 
 ## Como as referências foram feitas
 

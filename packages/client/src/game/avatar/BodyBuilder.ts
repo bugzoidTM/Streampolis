@@ -399,6 +399,23 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
   return out;
 }
 
+/**
+ * A point on the sculpted skull for a direction, optionally lifted off it by
+ * `lift` head-radii. Everything that has to sit ON the head — feature, lash,
+ * hair cap, lock — goes through here, which is what makes it impossible for a
+ * part to float off the skull when a face preset reshapes it.
+ */
+export function skullPoint(
+  dir: THREE.Vector3,
+  R: number,
+  face: FaceShape,
+  lift = 0,
+): THREE.Vector3 {
+  const n = dir.clone().normalize();
+  const p = sculptHead(n, R, face);
+  return lift ? p.addScaledVector(n, lift * R) : p;
+}
+
 export function buildHead(rig: BuiltRig, face: FaceShape, headBoneIndex: number): THREE.BufferGeometry {
   const R = headRadius(rig, face);
   const geo = new THREE.SphereGeometry(R, 48, 36);

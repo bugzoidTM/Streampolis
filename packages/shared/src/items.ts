@@ -37,6 +37,8 @@ export const ITEM_CATALOG: ItemDef[] = [
   wear('hair_long_01',   'hair', 'Longo Liso',     'rare',   680,  null),
   wear('hair_braids_01', 'hair', 'Tranças',        'rare',   680,  null),
   wear('hair_mohawk_01', 'hair', 'Moicano Neon',   'epic',   null, 320),
+  wear('hair_crop_01',   'hair', 'Corte Curto',    'common', 240,  null),
+  wear('hair_wave_01',   'hair', 'Ondas Jogadas',  'rare',   680,  null),
 
   // --- Tops ---
   wear('top_tee_01',     'top', 'Camiseta Lisa',   'common', 0,    null),

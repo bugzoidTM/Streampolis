@@ -50,6 +50,32 @@ const HAIR = args.hair === '1'
   : ['', '', '', ''];
 const rows = [];
 
+// `--styles=a,b,c` reviews hair instead of expressions: same portrait framing,
+// one column per style, because hair is judged on the head or not at all.
+const styles = args.styles ? args.styles.split(',') : null;
+if (styles) {
+  for (const yaw of yaws) {
+    const cells = [];
+    for (const st of styles) {
+      const png = await page.evaluate(
+        ([cfg, expr, y, z]) => window.__lab.portrait(cfg, expr, y, z),
+        [{ facePreset: 0, bodyPreset: 0, skinTone: 3, hair: st, hairColor: Number(args.hairColor ?? 1) },
+         'neutral', yaw, Number(args.zoom ?? 1)],
+      );
+      const file = path.join('tiles', `${st}_y${String(yaw).replace('.', '')}.png`);
+      await writeFile(path.join(out, file), Buffer.from(png.split(',')[1], 'base64'));
+      cells.push({ file, label: st.replace(/^hair_|_01$/g, '') });
+      process.stdout.write('·');
+    }
+    rows.push({ label: `giro ${yaw.toFixed(2)}`, cells });
+  }
+  process.stdout.write('\n');
+  await writeSheet(rows, styles.length, `Cabelo — ${styles.length} estilos × ${yaws.length} giros`);
+  await browser.close();
+  console.log(JSON.stringify({ tiles: rows.length * styles.length, errors: errors.slice(0, 5) }, null, 2));
+  process.exit(0);
+}
+
 for (const f of faces) {
   for (const yaw of yaws) {
     const cells = [];
@@ -68,23 +94,26 @@ for (const f of faces) {
 }
 process.stdout.write('\n');
 
-const html = `<!doctype html><meta charset="utf-8"><style>
+await writeSheet(rows, expressions.length, `Rosto — ${faces.length} presets × ${expressions.length} expressões × ${yaws.length} giros`);
+await browser.close();
+console.log(JSON.stringify({ tiles: rows.length * expressions.length, errors: errors.slice(0, 5) }, null, 2));
+
+async function writeSheet(rows, cols, title) {
+  const html = `<!doctype html><meta charset="utf-8"><style>
   body { margin:0; background:#0b0d12; color:#e8e6e1; font:11px ui-monospace,monospace; }
   h1 { font:600 15px system-ui,sans-serif; padding:14px 16px 8px; margin:0; }
-  .row { display:grid; grid-template-columns:120px repeat(${expressions.length}, 1fr); gap:4px; padding:0 12px 4px; align-items:center; }
+  .row { display:grid; grid-template-columns:120px repeat(${cols}, 1fr); gap:4px; padding:0 12px 4px; align-items:center; }
   .row > b { font:600 11px system-ui,sans-serif; color:#9aa0ad; }
   figure { margin:0; background:#11141f; border:1px solid #232838; border-radius:6px; overflow:hidden; }
   img { display:block; width:100%; }
   figcaption { padding:3px; text-align:center; color:#6f7686; }
 </style>
-<h1>Rosto — ${faces.length} presets × ${expressions.length} expressões × ${yaws.length} giros</h1>
+<h1>${title}</h1>
 ${rows.map((r) => `<div class="row"><b>${r.label}</b>${r.cells.map((c) =>
   `<figure><img src="${c.file}"><figcaption>${c.label}</figcaption></figure>`).join('')}</div>`).join('')}`;
 
-await writeFile(path.join(out, 'sheet.html'), html);
-const sheet = await browser.newPage({ viewport: { width: 120 + expressions.length * 260, height: 1000 } });
-await sheet.goto(`file://${path.resolve(path.join(out, 'sheet.html'))}`, { waitUntil: 'load' });
-await sheet.screenshot({ path: path.join(out, 'sheet.png'), fullPage: true });
-await browser.close();
-
-console.log(JSON.stringify({ tiles: rows.length * expressions.length, errors: errors.slice(0, 5) }, null, 2));
+  await writeFile(path.join(out, 'sheet.html'), html);
+  const sheet = await browser.newPage({ viewport: { width: 120 + cols * 260, height: 1000 } });
+  await sheet.goto(`file://${path.resolve(path.join(out, 'sheet.html'))}`, { waitUntil: 'load' });
+  await sheet.screenshot({ path: path.join(out, 'sheet.png'), fullPage: true });
+}

@@ -49,9 +49,12 @@ export function AvatarLab() {
     const key = new THREE.SpotLight(0xfff2e2, 9, 16, Math.PI * 0.3, 0.6, 1.4);
     key.position.set(2.6, 3.4, 3.2);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.bias = -0.0008;
-    key.shadow.normalBias = 0.02;
+    // A review rig can afford a 4k map and a normal bias scaled to a 22 cm
+    // head rather than to a room.
+    key.shadow.mapSize.set(4096, 4096);
+    key.shadow.radius = 2;
+    key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.008;
     scene.add(key, key.target);
     const rim = new THREE.SpotLight(0x9fc6ff, 6, 15, Math.PI * 0.32, 0.75, 1.4);
     rim.position.set(-3.0, 2.8, -2.6);
@@ -186,25 +189,32 @@ export function AvatarLab() {
          * it gets a review loop of its own rather than being judged from a
          * full-body tile 40 px wide.
          */
-        portrait: (cfg: Partial<AvatarConfig>, expression: string, headYaw = 0) => {
+        portrait: (cfg: Partial<AvatarConfig>, expression: string, headYaw = 0, zoom = 1) => {
           const avatar = new Avatar({ ...DEFAULT_AVATAR, ...cfg });
           group.add(avatar.root);
           try {
             avatar.setExpression(expression as never);
             // Settle the blend instantly instead of waiting on real seconds.
             for (let i = 0; i < 40; i++) avatar.animate(0.05, 0);
-            avatar.rig.bones.Head.rotation.y = headYaw;
-            avatar.rig.bones.Head.updateMatrixWorld(true);
+            // Turn the whole avatar, not the neck. Twisting the head 150° to
+            // see the back of a style swings a ponytail round to the chest and
+            // reviews a pose nobody will ever hold.
+            group.rotation.y = headYaw;
+            group.updateMatrixWorld(true);
 
+            // `zoom > 1` pulls back: a ponytail or a waist-length style lives
+            // mostly BELOW a head-and-shoulders crop, and cannot be reviewed
+            // in one.
             const head = avatar.eyeHeight;
-            camera.position.set(0, head + 0.02, 0.62);
-            camera.lookAt(0, head + 0.01, 0);
+            camera.position.set(0, head + 0.02 - 0.20 * (zoom - 1), 0.62 * zoom);
+            camera.lookAt(0, head + 0.01 - 0.22 * (zoom - 1), 0);
             key.target.position.set(0, head, 0);
             rim.target.position.set(0, head, 0);
             env.update(camera);
             renderer.render(0.016);
             return canvas.toDataURL('image/png');
           } finally {
+            group.rotation.y = 0;
             group.remove(avatar.root);
             avatar.dispose();
             key.target.position.copy(focus);

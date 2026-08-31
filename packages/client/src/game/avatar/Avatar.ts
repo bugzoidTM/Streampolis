@@ -5,7 +5,8 @@ import { buildRig, PROPORTION_PRESETS, type BuiltRig, BONE_INDEX } from './Skele
 import { buildBody, buildHead, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
 import { buildFaceStatic, buildFaceRig, type Expression, type FaceRig } from './Face.js';
 import { mergeGeometries } from './Loft.js';
-import { buildHair, TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS } from './Wardrobe.js';
+import { TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS } from './Wardrobe.js';
+import { buildHair } from './Hair.js';
 import { makeSkinMaterial, EYE_COLORS } from './Materials.js';
 
 /**
@@ -152,7 +153,12 @@ export class Avatar {
     this.buildGarment('bottom', BOTTOM_BUILDERS);
     this.buildGarment('shoes', SHOE_BUILDERS);
 
-    const hair = buildHair(this.rig, this.config.hair, this.config.hairColor);
+    const hair = buildHair(
+      this.rig,
+      FACE_PRESETS[this.config.facePreset % FACE_PRESETS.length],
+      this.config.hair,
+      this.config.hairColor,
+    );
     if (hair) {
       hair.bind(this.rig.skeleton);
       hair.frustumCulled = false;
