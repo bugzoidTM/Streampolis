@@ -30,6 +30,11 @@ const WEARABLE: Partial<Record<ItemType, keyof AvatarConfig>> = {
   accessory: 'accessory',
 };
 
+const SHOT_FOR: Partial<Record<ItemType, 'full' | 'bust' | 'legs' | 'feet'>> = {
+  hair: 'bust', accessory: 'bust', top: 'bust',
+  bottom: 'legs', shoes: 'feet',
+};
+
 const GLYPH: Partial<Record<ItemType, string>> = {
   furniture: '🛋️', floor: '🪵', wall: '🎨', decor: '🪴', stream_gear: '🎙️',
 };
@@ -167,11 +172,14 @@ function ItemCard({ item, avatar, owned, onBuy, onWear }: CardProps) {
   // O avatar de quem está olhando, vestindo a peça. É o motivo de a loja
   // existir como tela em vez de lista.
   const preview = slot && avatar ? ({ ...avatar, [slot]: item.id } as AvatarConfig) : null;
+  // Cada tipo no seu enquadramento. Calça em busto e tênis de corpo inteiro
+  // eram cards que não mostravam a peça.
+  const shot = SHOT_FOR[item.type] ?? 'bust';
   const poster = usePoster(preview, {
-    shot: item.type === 'shoes' ? 'full' : 'bust',
+    shot,
     at: 1.5,
     width: 220,
-    height: item.type === 'shoes' ? 300 : 240,
+    height: shot === 'legs' ? 300 : shot === 'feet' ? 200 : 240,
   });
 
   return (

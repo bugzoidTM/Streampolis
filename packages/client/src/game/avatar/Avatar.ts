@@ -5,7 +5,8 @@ import { buildRig, PROPORTION_PRESETS, type BuiltRig, BONE_INDEX } from './Skele
 import { buildBody, buildHead, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
 import { buildFaceStatic, buildFaceRig, type Expression, type FaceRig } from './Face.js';
 import { mergeGeometries } from './Loft.js';
-import { TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS } from './Wardrobe.js';
+import { TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS, type Builder, type GarmentBuild } from './Wardrobe.js';
+import { ACCESSORY_BUILDERS } from './Accessories.js';
 import { buildHair } from './Hair.js';
 import { makeSkinMaterial, EYE_COLORS } from './Materials.js';
 
@@ -129,29 +130,40 @@ export class Avatar {
     }
   }
 
-  private buildGarment(
-    slot: 'top' | 'bottom' | 'shoes',
-    registry: Record<string, (r: BuiltRig, s: typeof BODY_PRESETS[number], c: string) => { geometry: THREE.BufferGeometry; material: THREE.Material }>,
-  ) {
+  /**
+   * Builds one wardrobe slot. A builder may return several parts, because a
+   * varsity jacket's sleeves are not the colour of its body and a shoe's sole
+   * is not the colour of its upper — one mesh per material, all bound to the
+   * same skeleton, grouped so the slot is still swapped as one thing.
+   */
+  private buildGarment(slot: 'top' | 'bottom' | 'shoes' | 'accessory', registry: Record<string, Builder>) {
     const id = this.config[slot];
     const builder = registry[id];
     if (!id || !builder) { this.setPart(slot, null); return; }
     const shape = BODY_PRESETS[this.config.bodyPreset % BODY_PRESETS.length];
-    const { geometry, material } = builder(this.rig, shape, ITEM_COLORS[id] ?? '#cccccc');
-    const mesh = new THREE.SkinnedMesh(geometry, material);
-    mesh.name = slot;
-    mesh.bind(this.rig.skeleton);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
-    this.setPart(slot, mesh);
-    this.disposables.push(material);
+    const built = builder(this.rig, shape, ITEM_COLORS[id] ?? '#cccccc');
+    const parts: GarmentBuild[] = Array.isArray(built) ? built : [built];
+
+    const group = new THREE.Group();
+    group.name = slot;
+    for (const { geometry, material } of parts) {
+      const mesh = new THREE.SkinnedMesh(geometry, material);
+      mesh.name = slot;
+      mesh.bind(this.rig.skeleton);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      group.add(mesh);
+      this.disposables.push(material);
+    }
+    this.setPart(slot, group);
   }
 
   rebuildWardrobe() {
     this.buildGarment('top', TOP_BUILDERS);
     this.buildGarment('bottom', BOTTOM_BUILDERS);
     this.buildGarment('shoes', SHOE_BUILDERS);
+    this.buildGarment('accessory', ACCESSORY_BUILDERS);
 
     const hair = buildHair(
       this.rig,

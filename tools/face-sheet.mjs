@@ -52,6 +52,8 @@ const rows = [];
 
 // `--styles=a,b,c` reviews hair instead of expressions: same portrait framing,
 // one column per style, because hair is judged on the head or not at all.
+// `--slot=accessory` reviews the accessory registry with the same framing.
+const slot = args.slot ?? 'hair';
 const styles = args.styles ? args.styles.split(',') : null;
 if (styles) {
   for (const yaw of yaws) {
@@ -59,18 +61,23 @@ if (styles) {
     for (const st of styles) {
       const png = await page.evaluate(
         ([cfg, expr, y, z]) => window.__lab.portrait(cfg, expr, y, z),
-        [{ facePreset: 0, bodyPreset: 0, skinTone: 3, hair: st, hairColor: Number(args.hairColor ?? 1) },
-         'neutral', yaw, Number(args.zoom ?? 1)],
+        [{
+          facePreset: 0, bodyPreset: 0, skinTone: 3,
+          hairColor: Number(args.hairColor ?? 1),
+          ...(slot === 'accessory'
+            ? { accessory: st, hair: args.hair ?? 'hair_crop_01' }
+            : { hair: st }),
+        }, 'neutral', yaw, Number(args.zoom ?? 1)],
       );
-      const file = path.join('tiles', `${st}_y${String(yaw).replace('.', '')}.png`);
+      const file = path.join('tiles', `${st}_y${String(yaw).replace('.', '').replace('-', 'm')}.png`);
       await writeFile(path.join(out, file), Buffer.from(png.split(',')[1], 'base64'));
-      cells.push({ file, label: st.replace(/^hair_|_01$/g, '') });
+      cells.push({ file, label: st.replace(/^(hair|acc)_|_01$/g, '') });
       process.stdout.write('·');
     }
     rows.push({ label: `giro ${yaw.toFixed(2)}`, cells });
   }
   process.stdout.write('\n');
-  await writeSheet(rows, styles.length, `Cabelo — ${styles.length} estilos × ${yaws.length} giros`);
+  await writeSheet(rows, styles.length, `${slot === 'accessory' ? 'Acessórios' : 'Cabelo'} — ${styles.length} itens × ${yaws.length} giros`);
   await browser.close();
   console.log(JSON.stringify({ tiles: rows.length * styles.length, errors: errors.slice(0, 5) }, null, 2));
   process.exit(0);

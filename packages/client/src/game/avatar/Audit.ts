@@ -41,6 +41,8 @@ export interface SkinLeak {
 }
 
 export interface AvatarAudit {
+  /** False when the bottom is a skirt, which is exempt from the leg gap. */
+  bottomIsLegged: boolean;
   shoeGap: number;
   /** Worst gap across the sampled heights below the knee. */
   legGap: number;
@@ -134,13 +136,23 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
     // ---- Legs ------------------------------------------------------------
     const knee = rw.LeftLeg.y;
     const ankle = rw.LeftFoot.y;
+    // Is the bottom garment two legs or one volume? A skirt has no gap
+    // between the knees BY DESIGN, and failing it for that is the gate being
+    // wrong about the garment rather than the garment being broken. Four
+    // crossings at knee height means two separate tubes; two means a skirt.
+    const bottomIsLegged = (() => {
+      const xs = crossingsEven(probes, knee - 0.02, rw.LeftLeg.z, ['bottom']);
+      return xs.length >= 4;
+    })();
+    const slots = bottomIsLegged ? ['body', 'bottom', 'shoes'] : ['body', 'shoes'];
+
     const legGapByHeight: Array<{ y: number; gap: number; xs?: number[] }> = [];
     for (const t of [0.0, 0.35, 0.7]) {
       const y = THREE.MathUtils.lerp(knee, ankle + 0.06, t);
       let gap = Infinity;
       let worstXs: number[] = [];
       for (const zOff of [-0.02, 0, 0.02]) {
-        const xs = crossingsEven(probes, y, rw.LeftLeg.z + zOff, ['body', 'bottom', 'shoes']);
+        const xs = crossingsEven(probes, y, rw.LeftLeg.z + zOff, slots);
         const g = midGap(xs);
         if (g < gap) { gap = g; worstXs = xs.map((x) => +x.toFixed(3)); }
       }
@@ -163,8 +175,13 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
       const arcs: number[] = [];
       for (let a = -42; a <= 42; a += 7) arcs.push(a);
       for (let a = 138; a <= 222; a += 7) arcs.push(a);
+      // The WAIST SEAM, not the whole trunk. Above the navel, coverage is a
+      // design decision — a tank bares the shoulders on purpose, and a gate
+      // that reads that as a hole in the shirt bans sleeveless clothing.
+      // What the contract promises is that no combination of top and bottom
+      // opens a band of skin where they meet, and that is this band.
       const from = rw.Hips.y - 0.10 * h;
-      const to = rw.Neck.y - 0.06 * h;
+      const to = rw.Spine.y + 0.05 * h;
       const R = 0.9;
 
       for (let i = 0; i <= 14; i++) {
@@ -211,6 +228,7 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
 
     leaks.sort((a, b) => b.depth - a.depth);
     return {
+      bottomIsLegged,
       shoeGap: +shoeGap.toFixed(4),
       legGap,
       legGapByHeight,

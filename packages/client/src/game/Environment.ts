@@ -191,7 +191,12 @@ export class Environment implements LightRig {
     const capture = new THREE.Scene();
     const skyClone = this.sky.clone() as Sky;
     capture.add(skyClone);
-    this.envRT = this.pmrem.fromScene(capture, 0.04);
+    // Sigma 0.04 left the sun disc as one blazing texel in the top mip, and a
+    // clearcoat surface magnified it into a hard white SQUARE — most visible
+    // as a patch on every avatar's forehead outdoors. Nothing in this world is
+    // a mirror: the environment is here for bounce light, so it gets blurred
+    // until the sun is a glow rather than a pixel.
+    this.envRT = this.pmrem.fromScene(capture, 0.35);
     this.scene.environment = this.envRT.texture;
     skyClone.geometry.dispose();
   }

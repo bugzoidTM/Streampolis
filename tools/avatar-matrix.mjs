@@ -12,6 +12,7 @@
  *
  *   node tools/avatar-matrix.mjs [--url=…] [--out=shots/matrix] [--group=core]
  *                               [--no-images] [--tiles] [--limit=N] [--index=33,34]
+ *                               [--label=<regex sobre o rótulo>]
  */
 import { chromium } from 'playwright';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
@@ -59,8 +60,11 @@ await page.waitForTimeout(1200);
 const limits = await page.evaluate(() => window.__lab.limits());
 const all = await page.evaluate(() => window.__lab.matrix());
 const pick = args.index ? new Set(args.index.split(',').map(Number)) : null;
+const label = args.label ? new RegExp(args.label) : null;
 const wanted = all
-  .filter((e) => (group === 'all' || e.group === group) && (!pick || pick.has(e.index)))
+  .filter((e) => (group === 'all' || e.group === group)
+    && (!pick || pick.has(e.index))
+    && (!label || label.test(e.label)))
   .slice(0, limit);
 
 await rm(out, { recursive: true, force: true });

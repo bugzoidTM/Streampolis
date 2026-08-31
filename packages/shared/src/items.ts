@@ -46,23 +46,43 @@ export const ITEM_CATALOG: ItemDef[] = [
   wear('top_jacket_01',  'top', 'Jaqueta Bomber',  'rare',   890,  null),
   wear('top_blazer_01',  'top', 'Blazer',          'rare',   890,  null),
   wear('top_holo_01',    'top', 'Top Holográfico', 'epic',   null, 480),
+  wear('top_tank_01',    'top', 'Regata',          'common', 220,  null),
+  wear('top_shirt_01',   'top', 'Camisa Social',   'common', 360,  null),
+  wear('top_knit_01',    'top', 'Tricô Gola Alta', 'rare',   740,  null),
+  wear('top_puffer_01',  'top', 'Puffer',          'rare',   940,  null),
+  wear('top_varsity_01', 'top', 'Jaqueta College', 'epic',   null, 520),
 
   // --- Bottoms ---
   wear('bottom_jeans_01','bottom', 'Jeans',        'common', 0,    null),
   wear('bottom_cargo_01','bottom', 'Cargo',        'common', 280,  null),
   wear('bottom_skirt_01','bottom', 'Saia Plissada','common', 280,  null),
   wear('bottom_track_01','bottom', 'Calça Track',  'rare',   620,  null),
+  wear('bottom_shorts_01','bottom','Bermuda',      'common', 240,  null),
+  wear('bottom_wide_01', 'bottom', 'Pantalona',    'rare',   660,  null),
+  wear('bottom_leather_01','bottom','Calça Couro', 'epic',   null, 420),
+  wear('bottom_skirtlong_01','bottom','Saia Longa','rare',   660,  null),
 
   // --- Shoes ---
   wear('shoes_sneaker_01','shoes','Tênis Básico',  'common', 0,    null),
   wear('shoes_boot_01',  'shoes', 'Coturno',       'common', 340,  null),
   wear('shoes_glow_01',  'shoes', 'Tênis Glow',    'epic',   null, 260),
+  wear('shoes_chunky_01','shoes', 'Tênis Chunky',  'rare',   720,  null),
+  wear('shoes_hitop_01', 'shoes', 'Cano Alto',     'common', 380,  null),
+  wear('shoes_loafer_01','shoes', 'Mocassim',      'common', 340,  null),
+  wear('shoes_heel_01',  'shoes', 'Salto',         'rare',   700,  null),
+  wear('shoes_sandal_01','shoes', 'Sandália',      'common', 200,  null),
 
   // --- Accessories ---
   wear('acc_glasses_01', 'accessory', 'Óculos',    'common', 180,  null),
   wear('acc_cap_01',     'accessory', 'Boné',      'common', 180,  null),
   wear('acc_headset_01', 'accessory', 'Headset',   'rare',   540,  null),
   wear('acc_halo_01',    'accessory', 'Halo',      'legendary', null, 1200),
+  wear('acc_shades_01',  'accessory', 'Óculos Escuros', 'common', 240, null),
+  wear('acc_beanie_01',  'accessory', 'Gorro',     'common', 200,  null),
+  wear('acc_earrings_01','accessory', 'Argolas',   'common', 220,  null),
+  wear('acc_chain_01',   'accessory', 'Corrente',  'rare',   580,  null),
+  wear('acc_scarf_01',   'accessory', 'Cachecol',  'common', 260,  null),
+  wear('acc_mask_01',    'accessory', 'Bandana',   'rare',   520,  null),
 
   // --- Furniture ---
   furn('fur_sofa_01',    'Sofá Modular',  'common', 900,  null, [3, 2]),

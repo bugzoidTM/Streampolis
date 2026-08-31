@@ -1,4 +1,5 @@
 import { DEFAULT_AVATAR, type AvatarConfig } from '@streampolis/shared';
+import { TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS } from '../game/avatar/Wardrobe.js';
 
 /**
  * The regression matrix. Nothing new enters the wardrobe while any of these
@@ -16,9 +17,14 @@ export const MATRIX_TOPS = ['top_tee_01', 'top_hoodie_01', 'top_blazer_01'];
 export const MATRIX_BOTTOMS = ['bottom_jeans_01', 'bottom_cargo_01', 'bottom_skirt_01'];
 export const MATRIX_SHOES = ['shoes_sneaker_01', 'shoes_boot_01', 'shoes_glow_01'];
 
-/** Catalogue items outside the core cross product, checked once per body. */
-const SWEEP_TOPS = ['top_jacket_01', 'top_holo_01'];
-const SWEEP_BOTTOMS = ['bottom_track_01'];
+/**
+ * Catalogue items outside the core cross product, checked once per body. Read
+ * from the BUILDER REGISTRIES rather than listed by hand: an item added to the
+ * wardrobe and forgotten here is an item the gate never sees, and the gate
+ * exists precisely because a new garment inherits old defects.
+ */
+const outside = (registry: Record<string, unknown>, core: string[]) =>
+  Object.keys(registry).filter((id) => !core.includes(id));
 
 export interface MatrixEntry {
   index: number;
@@ -68,11 +74,14 @@ export function buildMatrix(): MatrixEntry[] {
     }
   }
   for (const body of MATRIX_BODIES) {
-    for (const top of SWEEP_TOPS) {
+    for (const top of outside(TOP_BUILDERS, MATRIX_TOPS)) {
       out.push(entry(out.length, 'sweep', body, top, MATRIX_BOTTOMS[0], MATRIX_SHOES[0]));
     }
-    for (const bottom of SWEEP_BOTTOMS) {
+    for (const bottom of outside(BOTTOM_BUILDERS, MATRIX_BOTTOMS)) {
       out.push(entry(out.length, 'sweep', body, MATRIX_TOPS[0], bottom, MATRIX_SHOES[0]));
+    }
+    for (const shoes of outside(SHOE_BUILDERS, MATRIX_SHOES)) {
+      out.push(entry(out.length, 'sweep', body, MATRIX_TOPS[0], MATRIX_BOTTOMS[0], shoes));
     }
   }
   return out;

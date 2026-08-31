@@ -20,7 +20,12 @@ import { Avatar } from '../avatar/Avatar.js';
  *    obturador.
  */
 
-export type PosterShot = 'full' | 'bust';
+/**
+ * Como a peça é enquadrada no card da loja. Uma calça num busto e um tênis de
+ * corpo inteiro são a mesma falha: a loja existe para responder "como isso
+ * ficaria em mim?", e não responde nada se a peça não couber no quadro.
+ */
+export type PosterShot = 'full' | 'bust' | 'legs' | 'feet';
 
 export interface PosterOptions {
   shot?: PosterShot;
@@ -150,7 +155,7 @@ function shoot(
   const step = 1 / 30;
   for (let t = 0; t < o.at; t += step) avatar.animate(step, 0);
   // Três quartos: de frente o avatar vira foto 3x4 de documento.
-  avatar.root.rotation.y = turn ?? (o.shot === 'bust' ? 0.42 : 0.34);
+  avatar.root.rotation.y = turn ?? (o.shot === 'bust' ? 0.42 : o.shot === 'feet' ? 0.62 : 0.34);
   avatar.root.updateMatrixWorld(true);
 
   s.scene.add(avatar.root);
@@ -165,6 +170,14 @@ function shoot(
     // mais quadro do que a coroa do crânio.
     s.camera.position.set(0.34, crown * 0.97, 1.62);
     s.camera.lookAt(0, crown * 0.86, 0);
+  } else if (o.shot === 'legs') {
+    // Da cintura ao chão: é onde vive uma calça, e o quadro tem de sobrar um
+    // pouco embaixo para o sapato não ficar cortado na borda.
+    s.camera.position.set(0.52, crown * 0.34, 2.05);
+    s.camera.lookAt(0, crown * 0.27, 0);
+  } else if (o.shot === 'feet') {
+    s.camera.position.set(0.40, crown * 0.16, 1.05);
+    s.camera.lookAt(0, crown * 0.07, 0);
   } else {
     s.camera.position.set(0.66, crown * 0.62, 3.7);
     s.camera.lookAt(0, crown * 0.52, 0);
