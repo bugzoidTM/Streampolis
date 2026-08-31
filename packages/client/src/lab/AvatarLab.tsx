@@ -149,6 +149,38 @@ export function AvatarLab() {
         matrix: () => buildMatrix().map(({ index, label, group: g }) => ({ index, label, group: g })),
 
         /**
+         * A hand, framed close. Same reason as the portrait: five fingers are
+         * invisible at body scale, and a defect nobody can see is a defect
+         * nobody fixes.
+         */
+        handShot: (cfg: Partial<AvatarConfig>, yaw = 0) => {
+          const avatar = new Avatar({ ...DEFAULT_AVATAR, ...cfg });
+          group.add(avatar.root);
+          const prev = group.rotation.y;
+          try {
+            group.rotation.y = yaw;
+            const p = avatar.rig.restWorld.LeftHand;
+            // The hand moves with the group, so the framing has to follow it
+            // through the same rotation or the camera stares at empty floor.
+            const centre = new THREE.Vector3(p.x, p.y - 0.06, p.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+            // The offset stays in world space: rotating the avatar is the
+            // whole point, and a camera that rotates with it shows one view
+            // three times.
+            camera.position.copy(centre).add(new THREE.Vector3(0, 0.06, 0.50));
+            camera.lookAt(centre);
+            key.target.position.copy(centre);
+            env.update(camera);
+            renderer.render(0.016);
+            return canvas.toDataURL('image/png');
+          } finally {
+            group.rotation.y = prev;
+            group.remove(avatar.root);
+            avatar.dispose();
+            key.target.position.copy(focus);
+          }
+        },
+
+        /**
          * A head, framed as a portrait, in one expression and one yaw. The
          * face is the part of the avatar a live puts on screen for hours, so
          * it gets a review loop of its own rather than being judged from a

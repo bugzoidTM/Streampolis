@@ -165,12 +165,98 @@ export function arm(rig: BuiltRig, s: BodyShape, side: 'Left' | 'Right'): Statio
     { pos: between(rig, L('ForeArm'), L('Hand'), 0.3), radiusX: 0.043 * t, radiusZ: 0.04 * t, bone: L('ForeArm') },
     // Wrist — flattened, which is what makes a forearm read as a forearm.
     { pos: between(rig, L('ForeArm'), L('Hand'), 0.92), radiusX: 0.031 * t, radiusZ: 0.024 * t, bone: L('ForeArm'), blendBone: L('Hand'), blendWeight: 0.4 },
-    { pos: rw[L('Hand')].clone().add(V(0, -0.012, 0)), radiusX: 0.036 * t, radiusZ: 0.021 * t, bone: L('Hand'), squareness: 2.6 },
-    // Stylised mitten hand: one soft volume, no individual fingers.
-    { pos: rw[L('Hand')].clone().add(V(0, -0.072, 0.004)), radiusX: 0.038 * t, radiusZ: 0.022 * t, bone: L('Hand'), squareness: 2.8 },
-    { pos: rw[L('Hand')].clone().add(V(0, -0.115, 0.006)), radiusX: 0.03 * t, radiusZ: 0.019 * t, bone: L('Hand'), squareness: 2.6 },
-    { pos: rw[L('Hand')].clone().add(V(0, -0.138, 0.006)), radiusX: 0.014 * t, radiusZ: 0.012 * t, bone: L('Hand') },
+    // The chain stops at the base of the palm. Everything past the wrist is
+    // built by hand() as separate digits.
+    { pos: rw[L('Hand')].clone().add(V(0, -0.012, 0)), radiusX: 0.032 * t, radiusZ: 0.020 * t, bone: L('Hand'), squareness: 2.6 },
   ];
+}
+
+/**
+ * A hand: palm, four fingers and a thumb.
+ *
+ * The old one was a single soft volume that the code itself called a mitten.
+ * Five digits is not detail for its own sake — wave, clap, the heart gesture,
+ * reacting to a gift and every selfie pose in the product are made of fingers,
+ * and a mitten can only ever mime them.
+ *
+ * Every digit skins to the Hand bone, so they move as one piece: the rig has
+ * no finger joints and inventing them would retarget every clip. What this
+ * buys is silhouette, and silhouette is the whole complaint.
+ */
+export function hand(rig: BuiltRig, s: BodyShape, side: 'Left' | 'Right'): Station[][] {
+  const L = (n: string) => `${side}${n}` as BoneName;
+  const rw = rig.restWorld;
+  const t = limbGirth(s);
+  const bone = L('Hand');
+  const sign = side === 'Left' ? 1 : -1;
+
+  const wrist = rw[bone].clone().add(V(0, -0.010, 0));
+  const knuckles = rw[bone].clone().add(V(0, -0.078 * t, 0.004));
+  const at = (u: number) => new THREE.Vector3().lerpVectors(wrist, knuckles, u);
+
+  // Palm: wide across the knuckles, thin front to back. That flatness is most
+  // of what separates a hand from the end of an arm.
+  const palm: Station[] = [
+    { pos: wrist, radiusX: 0.032 * t, radiusZ: 0.020 * t, bone, blendBone: L('ForeArm'), blendWeight: 0.35, squareness: 2.7 },
+    { pos: at(0.5), radiusX: 0.038 * t, radiusZ: 0.021 * t, bone, squareness: 3.0 },
+    { pos: knuckles, radiusX: 0.039 * t, radiusZ: 0.018 * t, bone, squareness: 3.2 },
+  ];
+
+  const out: Station[][] = [palm];
+
+  // Spacing under one diameter, so the fingers touch at the knuckle and part
+  // toward the tips. Splayed digits read as a rubber glove.
+  const FINGERS = [
+    { x:  0.025, len: 0.058, r: 0.0112 },
+    { x:  0.0085, len: 0.064, r: 0.0116 },
+    { x: -0.0085, len: 0.059, r: 0.0106 },
+    { x: -0.025, len: 0.046, r: 0.0092 },
+  ];
+
+  for (const f of FINGERS) {
+    const base = knuckles.clone().add(V(sign * f.x * t, 0.005 * t, 0.001));
+    const st: Station[] = [];
+    for (let i = 0; i <= 3; i++) {
+      const u = i / 3;
+      // A relaxed hand curls forward. Straight fingers read as a salute, and
+      // the avatar spends most of its life standing still.
+      const curl = Math.pow(u, 1.5) * 0.52;
+      st.push({
+        pos: base.clone().add(V(
+          sign * f.x * t * u * 0.20,
+          -f.len * t * u,
+          f.len * t * curl,
+        )),
+        radiusX: f.r * t * (1 - u * 0.30),
+        radiusZ: f.r * t * 0.94 * (1 - u * 0.26),
+        bone,
+        squareness: 2.3,
+      });
+    }
+    out.push(st);
+  }
+
+  // Thumb: off the side of the palm, swinging forward and down — the one digit
+  // that does not share the plane of the others, which is why it reads.
+  const thumbBase = at(0.34).add(V(sign * 0.024 * t, 0, 0.006 * t));
+  const thumb: Station[] = [];
+  for (let i = 0; i <= 3; i++) {
+    const u = i / 3;
+    thumb.push({
+      pos: thumbBase.clone().add(V(
+        sign * 0.016 * t * u,
+        -0.034 * t * u,
+        (0.026 + 0.040 * u) * t * u,
+      )),
+      radiusX: 0.015 * t * (1 - u * 0.32),
+      radiusZ: 0.014 * t * (1 - u * 0.26),
+      bone,
+      squareness: 2.4,
+    });
+  }
+  out.push(thumb);
+
+  return out;
 }
 
 export function leg(rig: BuiltRig, s: BodyShape, side: 'Left' | 'Right'): Station[] {
@@ -350,10 +436,27 @@ export function buildBody(rig: BuiltRig, shape: BodyShape, segments = 20): THREE
   const parts = [
     loft(torso(rig, shape), { segments, capStart: true, capEnd: false, subdivisions: sub, uvOffset: [0, 0], uvScale: [0.5, 0.5] }),
     loft(neck(rig, shape), { segments: Math.round(segments * 0.7), capStart: false, capEnd: true, subdivisions: sub, uvOffset: [0.5, 0], uvScale: [0.25, 0.2] }),
-    loft(arm(rig, shape, 'Left'), { segments: Math.round(segments * 0.8), capStart: true, capEnd: true, subdivisions: sub, uvOffset: [0, 0.5], uvScale: [0.25, 0.5] }),
-    loft(arm(rig, shape, 'Right'), { segments: Math.round(segments * 0.8), capStart: true, capEnd: true, subdivisions: sub, uvOffset: [0.25, 0.5], uvScale: [0.25, 0.5] }),
+    // No end cap on the arm: the palm closes it. A domed cap there pushed a
+    // hard ring of skin out through the back of the hand.
+    loft(arm(rig, shape, 'Left'), { segments: Math.round(segments * 0.8), capStart: true, capEnd: false, subdivisions: sub, uvOffset: [0, 0.5], uvScale: [0.25, 0.5] }),
+    loft(arm(rig, shape, 'Right'), { segments: Math.round(segments * 0.8), capStart: true, capEnd: false, subdivisions: sub, uvOffset: [0.25, 0.5], uvScale: [0.25, 0.5] }),
     loft(leg(rig, shape, 'Left'), { segments: Math.round(segments * 0.9), capStart: true, capEnd: true, subdivisions: sub, uvOffset: [0.5, 0.5], uvScale: [0.25, 0.5] }),
     loft(leg(rig, shape, 'Right'), { segments: Math.round(segments * 0.9), capStart: true, capEnd: true, subdivisions: sub, uvOffset: [0.75, 0.5], uvScale: [0.25, 0.5] }),
   ];
+
+  // Digits are small and numerous, so they get a coarser ring than a limb;
+  // at this scale the cost is all in the ring count, not in the count of parts.
+  for (const side of ['Left', 'Right'] as const) {
+    const uvx = side === 'Left' ? 0.5 : 0.75;
+    hand(rig, shape, side).forEach((stations, i) => {
+      parts.push(loft(stations, {
+        segments: i === 0 ? Math.round(segments * 0.6) : 8,
+        capStart: true, capEnd: true, capRound: i === 0 ? 0.35 : 0.9,
+        subdivisions: 2,
+        uvOffset: [uvx, 0.2], uvScale: [0.25, 0.3],
+      }));
+    });
+  }
+
   return assemble(parts);
 }
