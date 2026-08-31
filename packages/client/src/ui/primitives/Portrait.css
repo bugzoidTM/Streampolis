@@ -1,0 +1,26 @@
+.sp-portrait {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--sp-surface-2);
+  box-shadow: inset 0 0 0 var(--sp-portrait-border, 2px) var(--sp-portrait-ring, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.sp-portrait svg { display: block; }
+
+.sp-portrait.is-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--sp-live);
+  animation: sp-portrait-pulse 2.4s var(--sp-ease) infinite;
+}
+
+@keyframes sp-portrait-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}

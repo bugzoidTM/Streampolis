@@ -30,6 +30,16 @@ export interface LoftOptions {
   segments: number;
   capStart?: boolean;
   capEnd?: boolean;
+  /**
+   * Cap dome height as a fraction of the end ring's smaller radius. A flat disc
+   * catches the key light as a hard plate — the very artefact that made the
+   * first pass read as a shop mannequin — so caps are domed by default.
+   * 0 falls back to the old flat disc, which is only ever right for a cap that
+   * is fully buried inside another volume.
+   */
+  capRound?: number;
+  /** Rings between the end ring and the dome's pole. */
+  capRings?: number;
   /** Sample count between stations; >1 subdivides for a smoother silhouette. */
   subdivisions?: number;
   /** Offsets the whole loft's UV island so parts do not overlap in UV space. */
@@ -175,22 +185,65 @@ export function loft(stationsIn: Station[], opts: LoftOptions): Built {
     }
   }
 
-  const addCap = (stIdx: number, flip: boolean) => {
-    const st = stations[stIdx];
-    const centre = out.positions.length / 3;
-    const t = tangents[stIdx];
-    const dir = flip ? t.clone().negate() : t.clone();
-    out.positions.push(st.pos.x, st.pos.y, st.pos.z);
-    out.normals.push(dir.x, dir.y, dir.z);
-    out.uvs.push(uvOff[0] + uvScl[0] * 0.5, uvOff[1] + (flip ? 0 : uvScl[1]));
+  const pushVertex = (p: THREE.Vector3, st: Station, u: number, vRow: number) => {
+    out.positions.push(p.x, p.y, p.z);
+    out.normals.push(0, 1, 0);
+    out.uvs.push(uvOff[0] + u * uvScl[0], uvOff[1] + vRow * uvScl[1]);
     const bw = st.blendWeight ?? 0;
     out.skinIndices.push(BONE_INDEX[st.bone], BONE_INDEX[st.blendBone ?? st.bone], 0, 0);
     out.skinWeights.push(1 - bw, bw, 0, 0);
+  };
 
+  const addCap = (stIdx: number, flip: boolean) => {
+    const st = stations[stIdx];
+    const dir = flip ? tangents[stIdx].clone().negate() : tangents[stIdx].clone();
+    const n = normals[stIdx];
+    const b = binormals[stIdx];
+    const sc = st.scale ?? 1;
+    const rx = st.radiusX * sc;
+    const rz = st.radiusZ * sc;
+    const sq = st.squareness ?? 2;
+    const roll = st.roll ?? 0;
+    const vRow = flip ? 0 : 1;
+    const round = opts.capRound ?? 0.85;
+    const height = Math.min(rx, rz) * round;
+    const rings = height > 1e-5 ? Math.max(1, opts.capRings ?? 2) : 0;
     const base = stIdx * ring;
+    const first = out.positions.length / 3;
+
+    for (let k = 1; k <= rings; k++) {
+      // Quarter-ellipse profile, so the dome meets the tube tangentially
+      // instead of creasing at the seam.
+      const ang = (k / (rings + 1)) * Math.PI * 0.5;
+      const shrink = Math.cos(ang);
+      const centre = st.pos.clone().addScaledVector(dir, height * Math.sin(ang));
+      for (let j = 0; j <= N; j++) {
+        const a = (j / N) * Math.PI * 2 + roll;
+        const [px, pz] = profilePoint(a, rx * shrink, rz * shrink, sq);
+        const p = centre.clone().addScaledVector(n, px).addScaledVector(b, pz);
+        pushVertex(p, st, j / N, vRow);
+      }
+    }
+
+    const pole = out.positions.length / 3;
+    pushVertex(st.pos.clone().addScaledVector(dir, height), st, 0.5, vRow);
+
+    let prev = base;
+    for (let k = 0; k < rings; k++) {
+      const cur = first + k * ring;
+      for (let j = 0; j < N; j++) {
+        const a = prev + j;
+        const c = cur + j;
+        // The dome grows along -tangent on a start cap, which reverses the
+        // path order and therefore the winding.
+        if (flip) out.indices.push(a, c, a + 1, a + 1, c, c + 1);
+        else out.indices.push(a, a + 1, c, a + 1, c + 1, c);
+      }
+      prev = cur;
+    }
     for (let j = 0; j < N; j++) {
-      if (flip) out.indices.push(centre, base + j, base + j + 1);
-      else out.indices.push(centre, base + j + 1, base + j);
+      if (flip) out.indices.push(prev + j, pole, prev + j + 1);
+      else out.indices.push(prev + j, prev + j + 1, pole);
     }
   };
 

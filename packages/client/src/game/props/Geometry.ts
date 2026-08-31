@@ -161,6 +161,67 @@ export function instance(
   return mesh;
 }
 
+/** One baked geometry plus the material it draws with. */
+export interface PropPart {
+  geo: THREE.BufferGeometry;
+  mat: THREE.Material;
+  cast?: boolean;
+  receive?: boolean;
+}
+
+/** A prop is a handful of parts, one per material it needs. */
+export type Prop = PropPart[];
+
+/** Draws every copy of a prop in one instanced call per material. */
+export function instanceProp(prop: Prop, matrices: THREE.Matrix4[]): THREE.InstancedMesh[] {
+  return prop.map((p) => instance(p.geo, p.mat, matrices, { cast: p.cast, receive: p.receive }));
+}
+
+/** Single copy of a prop, as a plain group — for one-offs that never repeat. */
+export function singleProp(prop: Prop): THREE.Group {
+  const g = new THREE.Group();
+  for (const p of prop) {
+    const m = new THREE.Mesh(p.geo, p.mat);
+    m.castShadow = p.cast ?? true;
+    m.receiveShadow = p.receive ?? true;
+    g.add(m);
+  }
+  return g;
+}
+
+/**
+ * Bakes many placed copies of props into one geometry per material.
+ *
+ * Instancing is the right tool when a prop repeats verbatim; this is the tool
+ * for the opposite case — a dozen unique buildings that nevertheless share the
+ * same four materials, which then cost four draw calls in total instead of
+ * forty-eight.
+ */
+export function bakeProps(items: Array<{ prop: Prop; matrix: THREE.Matrix4 }>): Prop {
+  const groups = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; cast: boolean; receive: boolean }>();
+  for (const { prop, matrix } of items) {
+    for (const part of prop) {
+      let g = groups.get(part.mat);
+      if (!g) { g = { geos: [], cast: part.cast ?? true, receive: part.receive ?? true }; groups.set(part.mat, g); }
+      const clone = part.geo.clone();
+      clone.applyMatrix4(matrix);
+      g.geos.push(clone);
+    }
+  }
+  const out: Prop = [];
+  for (const [mat, g] of groups) {
+    const merged = merge(g.geos);
+    for (const c of g.geos) c.dispose();
+    out.push({ geo: merged, mat, cast: g.cast, receive: g.receive });
+  }
+  return out;
+}
+
+/** Releases the source geometry of a prop that was only used as a stamp. */
+export function disposeProp(prop: Prop) {
+  for (const p of prop) p.geo.dispose();
+}
+
 export function xform(
   x: number, y: number, z: number,
   ry = 0, s = 1, rx = 0, rz = 0,

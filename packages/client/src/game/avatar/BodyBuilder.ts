@@ -51,29 +51,48 @@ export interface BodyParts {
   headHeight: number;
 }
 
+/**
+ * The torso profile, station by station, laid out on real landmarks rather
+ * than on even divisions of the spine: the narrowest ring has to sit above the
+ * iliac crest and below the lowest rib, otherwise the trunk reads as a slab no
+ * matter how the radii are tuned. Section centres also drift in Z — glutes
+ * back, belly and chest forward — because a body's silhouette from the side is
+ * an S, not a column.
+ */
 function torso(rig: BuiltRig, s: BodyShape): Station[] {
   const m = s.mass;
   const rw = rig.restWorld;
-  const hipY = rw.Hips.y;
-  const spine2Y = rw.Spine2.y;
+  const h = rig.proportions.height;
+  // Offsets are quoted for the nominal 1.72 m rig and scale with it; anchoring
+  // on the bones keeps the profile correct for the long/short-torso presets.
+  const hip = (d: number) => rw.Hips.y + d * h;
+  const sp = (d: number) => rw.Spine.y + d * h;
+  const sp1 = (d: number) => rw.Spine1.y + d * h;
+  const sp2 = (d: number) => rw.Spine2.y + d * h;
 
   return [
-    // Rounded pelvic floor. A flat cap here reads as a plastic doll seam, so
-    // the loft tapers to a near-point that the leg volumes swallow.
-    { pos: V(0, hipY - 0.168, 0.004), radiusX: 0.030 * m, radiusZ: 0.028 * m, bone: 'Hips', squareness: 2.2 },
-    { pos: V(0, hipY - 0.150, 0.004), radiusX: 0.072 * m * s.hips, radiusZ: 0.062 * m, bone: 'Hips', squareness: 2.2 },
-    { pos: V(0, hipY - 0.115, 0.004), radiusX: 0.112 * m * s.hips, radiusZ: 0.090 * m, bone: 'Hips', squareness: 2.4 },
-    { pos: V(0, hipY - 0.045, 0.002), radiusX: 0.146 * m * s.hips, radiusZ: 0.104 * m, bone: 'Hips', squareness: 2.5 },
-    { pos: V(0, hipY + 0.035, 0),     radiusX: 0.138 * m * s.hips, radiusZ: 0.099 * m, bone: 'Hips', blendBone: 'Spine', blendWeight: 0.35, squareness: 2.4 },
-    // Waist — the narrowest point of the torso.
-    { pos: V(0, rw.Spine.y + 0.03, -0.004), radiusX: 0.124 * m * s.waist, radiusZ: 0.094 * m * s.waist, bone: 'Spine', blendBone: 'Spine1', blendWeight: 0.4, squareness: 2.3 },
-    { pos: V(0, rw.Spine1.y + 0.03, -0.002), radiusX: 0.148 * m, radiusZ: 0.107 * m, bone: 'Spine1', blendBone: 'Spine2', blendWeight: 0.35, squareness: 2.3 },
-    // Rib cage / chest.
-    { pos: V(0, spine2Y - 0.02, 0.004), radiusX: 0.158 * m * s.chest, radiusZ: 0.114 * m * s.chest, bone: 'Spine2', squareness: 2.5 },
-    { pos: V(0, spine2Y + 0.052, 0.002), radiusX: 0.168 * m * s.shoulders, radiusZ: 0.108 * m, bone: 'Spine2', squareness: 2.7 },
-    // Clavicle shelf — squared off so the shoulders have a readable corner.
-    { pos: V(0, spine2Y + 0.098, -0.004), radiusX: 0.150 * m * s.shoulders, radiusZ: 0.092 * m, bone: 'Spine2', squareness: 3.0 },
-    { pos: V(0, rw.Neck.y - 0.012, -0.004), radiusX: 0.098 * m, radiusZ: 0.076 * m, bone: 'Spine2', blendBone: 'Neck', blendWeight: 0.45, squareness: 2.4 },
+    // Pelvic floor. Near-point so the domed cap is swallowed by the thighs;
+    // a wide ring here is what produced the flat plate between the legs.
+    { pos: V(0, hip(-0.157), -0.004), radiusX: 0.040 * m, radiusZ: 0.044 * m, bone: 'Hips', squareness: 2.1 },
+    { pos: V(0, hip(-0.129), -0.008), radiusX: 0.086 * m * s.hips, radiusZ: 0.078 * m, bone: 'Hips', squareness: 2.1 },
+    // Glute fold: the deepest point front-to-back on the whole trunk.
+    { pos: V(0, hip(-0.089), -0.014), radiusX: 0.124 * m * s.hips, radiusZ: 0.098 * m, bone: 'Hips', squareness: 2.2 },
+    { pos: V(0, hip(-0.043), -0.012), radiusX: 0.138 * m * s.hips, radiusZ: 0.104 * m, bone: 'Hips', squareness: 2.3 },
+    { pos: V(0, hip(0.009), -0.004), radiusX: 0.130 * m * s.hips, radiusZ: 0.098 * m, bone: 'Hips', blendBone: 'Spine', blendWeight: 0.4, squareness: 2.2 },
+    // Waist. Narrowest ring of the trunk, and noticeably shallower than it is
+    // wide — a circular waist is the single tell of a lofted mannequin.
+    { pos: V(0, sp(-0.025), 0.002), radiusX: 0.114 * m * s.waist, radiusZ: 0.085 * m * s.waist, bone: 'Spine', blendBone: 'Hips', blendWeight: 0.25, squareness: 2.15 },
+    { pos: V(0, sp(0.021), 0.004), radiusX: 0.111 * m * s.waist, radiusZ: 0.084 * m * s.waist, bone: 'Spine', blendBone: 'Spine1', blendWeight: 0.4, squareness: 2.15 },
+    // Lower ribs flare back out.
+    { pos: V(0, sp1(-0.033), 0.006), radiusX: 0.128 * m, radiusZ: 0.095 * m, bone: 'Spine1', blendBone: 'Spine2', blendWeight: 0.3, squareness: 2.2 },
+    { pos: V(0, sp1(0.035), 0.008), radiusX: 0.146 * m * s.chest, radiusZ: 0.106 * m * s.chest, bone: 'Spine1', blendBone: 'Spine2', blendWeight: 0.5, squareness: 2.3 },
+    // Chest.
+    { pos: V(0, sp2(-0.023), 0.010), radiusX: 0.152 * m * s.chest, radiusZ: 0.104 * m * s.chest, bone: 'Spine2', squareness: 2.3 },
+    { pos: V(0, sp2(0.037), 0.002), radiusX: 0.152 * m * s.shoulders, radiusZ: 0.096 * m, bone: 'Spine2', squareness: 2.3 },
+    // Clavicle shelf, then a fast taper into the neck. That taper is the
+    // trapezius slope; without it the shoulders read as a coat hanger.
+    { pos: V(0, sp2(0.083), -0.006), radiusX: 0.140 * m * s.shoulders, radiusZ: 0.086 * m, bone: 'Spine2', squareness: 2.2 },
+    { pos: V(0, sp2(0.117), -0.008), radiusX: 0.086 * m, radiusZ: 0.070 * m, bone: 'Spine2', blendBone: 'Neck', blendWeight: 0.45, squareness: 2.1 },
   ];
 }
 

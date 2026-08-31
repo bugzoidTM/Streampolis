@@ -1,0 +1,76 @@
+/*
+ * Design tokens. Dark is the default and only theme for now: the UI lives on
+ * top of a 3D canvas, so a light surface would fight the render every frame.
+ */
+:root {
+  /* Surfaces, from the void up to a raised control. */
+  --sp-void: #05060b;
+  --sp-bg: #090b13;
+  --sp-surface: #11141f;
+  --sp-surface-2: #171b29;
+  --sp-surface-3: #202538;
+  --sp-glass: rgba(15, 18, 29, 0.78);
+  --sp-glass-strong: rgba(10, 12, 20, 0.92);
+
+  --sp-line: rgba(255, 255, 255, 0.07);
+  --sp-line-2: rgba(255, 255, 255, 0.13);
+  --sp-line-3: rgba(255, 255, 255, 0.22);
+
+  --sp-text: #f2f4fa;
+  --sp-text-2: #98a1b8;
+  --sp-text-3: #626b85;
+
+  /* Accents. `live` is reserved for on-air state and nothing else. */
+  --sp-live: #ff2d6f;
+  --sp-live-soft: rgba(255, 45, 111, 0.16);
+  --sp-violet: #7c5cff;
+  --sp-violet-soft: rgba(124, 92, 255, 0.18);
+  --sp-cyan: #4fd8ff;
+  --sp-gold: #ffc247;
+  --sp-green: #39d98a;
+  --sp-orange: #ff8a3d;
+  --sp-red: #ff5a5a;
+
+  /* Currencies are colour-coded everywhere; never mix them up. */
+  --sp-credits: var(--sp-cyan);
+  --sp-coins: var(--sp-gold);
+
+  /* Needs (PRD §9). */
+  --sp-energy: #ffd166;
+  --sp-social: #5ee7ff;
+  --sp-mood: #ff7ab8;
+  --sp-comfort: #8fe388;
+
+  --sp-r-xs: 6px;
+  --sp-r-sm: 10px;
+  --sp-r-md: 14px;
+  --sp-r-lg: 20px;
+  --sp-r-xl: 28px;
+  --sp-r-pill: 999px;
+
+  --sp-s1: 4px;
+  --sp-s2: 8px;
+  --sp-s3: 12px;
+  --sp-s4: 16px;
+  --sp-s5: 22px;
+  --sp-s6: 30px;
+  --sp-s7: 42px;
+
+  --sp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sp-shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+  --sp-shadow-3: 0 26px 60px -18px rgba(0, 0, 0, 0.85);
+
+  --sp-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Helvetica, Arial, sans-serif;
+  --sp-font-num: ui-monospace, 'SF Mono', 'DejaVu Sans Mono', monospace;
+
+  /* Minimum comfortable touch target (SPECs §58). */
+  --sp-touch: 44px;
+
+  --sp-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --sp-dur: 160ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --sp-dur: 1ms; }
+}
