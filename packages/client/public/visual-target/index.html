@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Streampolis — Visual Target v1</title>
+<style>
+  :root {
+    --void: #05060b; --bg: #090b13; --surface: #11141f; --surface-2: #171b29;
+    --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.16);
+    --text: #f2f4fa; --text-2: #98a1b8; --text-3: #626b85;
+    --live: #ff2d6f; --violet: #7c5cff; --cyan: #4fd8ff; --gold: #ffc247; --green: #39d98a;
+    --r: 16px;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font-family: var(--font);
+    line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 96px; }
+
+  header.hero {
+    padding: 72px 20px 40px; text-align: center;
+    background:
+      radial-gradient(90% 60% at 50% 0%, rgba(124,92,255,.22), transparent 70%),
+      radial-gradient(60% 40% at 15% 100%, rgba(255,45,111,.14), transparent 70%),
+      var(--void);
+    border-bottom: 1px solid var(--line);
+  }
+  .hero h1 {
+    margin: 0; font-size: clamp(28px, 5vw, 46px); letter-spacing: .14em; font-weight: 800;
+    background: linear-gradient(120deg, #fff, #ffb3d1 45%, #a98bff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { margin: 14px auto 0; max-width: 640px; color: var(--text-2); }
+  .hero .stamp {
+    display: inline-block; margin-top: 18px; padding: 5px 14px; border-radius: 999px;
+    border: 1px solid var(--line-2); font-size: 12px; color: var(--text-3); letter-spacing: .04em;
+  }
+
+  h2 { font-size: 22px; margin: 56px 0 6px; letter-spacing: -.01em; }
+  h2 .num { color: var(--violet); font-variant-numeric: tabular-nums; margin-right: 10px; }
+  .lead { color: var(--text-2); margin: 0 0 22px; max-width: 70ch; }
+
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  figure img { display: block; width: 100%; height: auto; background: #0d0f16; }
+  figcaption { padding: 10px 14px 14px; font-size: 12.5px; color: var(--text-2); }
+  figcaption b { color: var(--text); display: block; font-size: 13px; margin-bottom: 2px; }
+
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .tag--alvo { background: rgba(124,92,255,.18); border: 1px solid var(--violet); color: #d9ccff; }
+  .tag--hoje { background: rgba(255,255,255,.06); border: 1px solid var(--line-2); color: var(--text-2); }
+  .tag--ok { background: rgba(57,217,138,.14); border: 1px solid var(--green); color: var(--green); }
+
+  ul.gap { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  ul.gap li { padding-left: 26px; position: relative; color: var(--text-2); font-size: 14px; }
+  ul.gap li::before { content: "▸"; position: absolute; left: 6px; color: var(--live); }
+  ul.gap li b { color: var(--text); }
+
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 20px; }
+  .rule { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; }
+  .rule h3 { margin: 0 0 6px; font-size: 14px; }
+  .rule p { margin: 0; font-size: 13px; color: var(--text-2); }
+
+  .palette { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .sw { width: 92px; }
+  .sw span { display: block; height: 52px; border-radius: 10px; border: 1px solid var(--line-2); }
+  .sw small { display: block; margin-top: 6px; font-size: 11px; color: var(--text-3); }
+
+  ol.prio { counter-reset: p; list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 10px; }
+  ol.prio li {
+    counter-increment: p; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 14px 16px 14px 54px; position: relative; font-size: 14px; color: var(--text-2);
+  }
+  ol.prio li::before {
+    content: counter(p); position: absolute; left: 16px; top: 13px; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--violet); color: #fff; display: grid; place-items: center;
+    font-size: 12.5px; font-weight: 700;
+  }
+  ol.prio li b { color: var(--text); }
+
+  .note { margin-top: 46px; padding: 16px 18px; border-left: 3px solid var(--gold); background: var(--surface-2); border-radius: 0 var(--r) var(--r) 0; color: var(--text-2); font-size: 13.5px; }
+  footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--text-3); font-size: 12.5px; }
+  a { color: var(--cyan); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>VISUAL TARGET v1</h1>
+  <p>
+    O norte visual do Streampolis. À esquerda o alvo; à direita o que o jogo
+    desenha hoje. Serve para decidir o que construir — e para reconhecer quando
+    chegamos lá.
+  </p>
+  <span class="stamp">Agosto de 2026 · referência, não captura do jogo</span>
+</header>
+
+<div class="wrap">
+
+  <h2><span class="num">00</span>A frase que resume</h2>
+  <p class="lead">
+    <b>Legibilidade de personagem de simulador de vida + limpeza estilizada de
+    jogo competitivo moderno + linguagem de interface de live.</b>
+    Sem realismo. O que precisamos é <b>charme</b>: um avatar que a pessoa queira
+    vestir, uma casa que ela queira mobiliar, uma live que ela queira abrir.
+    Cada uma dessas vontades é uma linha de receita.
+  </p>
+
+  <h2><span class="num">01</span>Personagem</h2>
+  <p class="lead">
+    É aqui que está a maior distância — e é a que mais importa, porque o avatar
+    é o produto que o jogador compra roupa para vestir.
+  </p>
+  <div class="pair">
+    <figure>
+      <img src="avatar-feminina.jpg" alt="Conceito: avatar feminino estilizado">
+      <figcaption><b><span class="tag tag--alvo">Alvo</span></b>
+        Rosto legível a 60 px, mãos com dedos, cabelo esculpido em mechas,
+        silhueta fechada, roupa com corte e caimento.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-avatar-feminina.jpg" alt="Hoje: avatar do jogo">
+      <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
+        Proporção correta e roupa que troca de verdade — mas rosto sem feições,
+        mão em bloco único, cabelo como casca e três defeitos de geometria que
+        aparecem em qualquer combinação: <b>pés fundidos num bloco só</b>,
+        <b>pele aparecendo na cintura</b> entre a blusa e a calça e
+        <b>pernas sem vão</b> entre elas.</figcaption>
+    </figure>
+  </div>
+  <div class="pair" style="margin-top:16px">
+    <figure>
+      <img src="avatar-masculino.jpg" alt="Conceito: avatar masculino estilizado">
+      <figcaption><b><span class="tag tag--alvo">Alvo</span></b>
+        Mesma família visual, ombro e mandíbula distintos, streetwear real.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-avatar-masculino.jpg" alt="Hoje: avatar masculino do jogo">
+      <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
+        Os presets de corpo já diferenciam a silhueta; falta o resto.</figcaption>
+    </figure>
+  </div>
+
+  <h2><span class="num">02</span>Rosto: o buraco de verdade</h2>
+  <p class="lead">
+    Um avatar sem rosto não é um personagem, é um manequim. Nas duas imagens
+    abaixo, olhe só para a cabeça.
+  </p>
+  <div class="pair">
+    <figure>
+      <img src="rosto-feminino.jpg" alt="Conceito: close de rosto estilizado">
+      <figcaption><b><span class="tag tag--alvo">Alvo</span></b>
+        Olhos com íris e cílios, sobrancelha, boca com volume, bochecha com
+        forma. Expressão neutra que já diz alguma coisa.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-rosto.jpg" alt="Hoje: close do avatar do jogo">
+      <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
+        Olhos são duas esferas; não há sobrancelha, boca, nariz definido nem
+        orelha. O cabelo é uma cúpula que engole a face.</figcaption>
+    </figure>
+  </div>
+  <ul class="gap">
+    <li><b>Feições:</b> nariz, boca, sobrancelha e orelha como geometria, não como textura.</li>
+    <li><b>Olhos:</b> íris com anel escuro e brilho pequeno; cílio como forma sólida.</li>
+    <li><b>Cabelo:</b> mechas separadas com espessura, não uma casca sobre o crânio.</li>
+    <li><b>Mãos:</b> cinco dedos. Hoje o código chama a mão de <i>mitten</i> — e ela é mesmo.</li>
+    <li><b>Expressão:</b> ao menos quatro poses faciais (neutro, sorriso, surpresa, foco) para a live.</li>
+  </ul>
+  <ul class="gap" style="margin-top:10px">
+    <li><b>E três defeitos de geometria, antes de qualquer beleza:</b> os dois
+      calçados se fundem num bloco único; a barra da blusa não encontra o
+      cós da calça e a pele aparece em manchas na cintura; as pernas não têm
+      vão entre si, o que mata a silhueta a 60 px. Nenhum deles depende de
+      arte nova — são o loft do corpo e o corte das peças.</li>
+  </ul>
+
+  <h2><span class="num">03</span>Praça Central</h2>
+  <p class="lead">A cidade já tem composição e luz; falta densidade, cor e vida.</p>
+  <div class="pair">
+    <figure>
+      <img src="praca.jpg" alt="Conceito: praça central">
+      <figcaption><b><span class="tag tag--alvo">Alvo</span></b>
+        Fachadas coloridas, vegetação variada, gente circulando, telão como
+        marco da praça, hora dourada com sombra longa.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-praca.jpg" alt="Hoje: praça do jogo">
+      <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
+        Fonte, escadaria, bancos, postes, quiosques, árvores e telão já
+        existem — em paleta cinza e sem ninguém além de você.</figcaption>
+    </figure>
+  </div>
+  <ul class="gap">
+    <li><b>Cor:</b> a praça é cinza-pedra; o alvo tem laranja, terracota e verde saturado.</li>
+    <li><b>Vida:</b> NPCs decorativos caminhando (o QualityManager já reserva orçamento para eles).</li>
+    <li><b>Vegetação:</b> hoje três variantes de copa; o alvo pede palmeira, arbusto florido e canteiro.</li>
+  </ul>
+
+  <h2><span class="num">04</span>Apartamento</h2>
+  <div class="pair">
+    <figure>
+      <img src="apartamento.jpg" alt="Conceito: apartamento">
+      <figcaption><b><span class="tag tag--alvo">Alvo</span></b>
+        Aconchego: têxtil, madeira, plantas, luz da janela cruzando o chão e o
+        canto de streaming como personagem do cômodo.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-apartamento.jpg" alt="Hoje: apartamento do jogo">
+      <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
+        A planta está certa e a luz da janela já desenha no chão. Falta
+        variedade de móvel, tecido e bugigangas.</figcaption>
+    </figure>
+  </div>
+
+  <h2><span class="num">05</span>Live Room</h2>
+  <div class="pair">
+    <figure>
+      <img src="live-room.jpg" alt="Conceito: live room">
+      <figcaption><b><span class="tag tag--alvo">Alvo</span></b>
+        Painel de LED como fonte de luz, feixes visíveis, separação clara entre
+        quem transmite e o fundo.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-live-room.jpg" alt="Hoje: live room do jogo">
+      <figcaption><b><span class="tag tag--ok">Perto do alvo</span></b>
+        Painel, marca no chão, ring light, feixes e recorte já entregam a
+        cena. É a área mais próxima do destino.</figcaption>
+    </figure>
+  </div>
+
+  <h2><span class="num">06</span>Interface</h2>
+  <p class="lead">
+    A interface não tem coluna “alvo” porque ela já chegou: vidro, informação
+    nas bordas, o 3D respirando no meio.
+  </p>
+  <div class="pair">
+    <figure>
+      <img src="hoje-feed.jpg" alt="Hoje: feed">
+      <figcaption><b><span class="tag tag--ok">No alvo</span></b>
+        Feed com capa renderizada pelo próprio jogo — a capa é o avatar do host,
+        não um vídeo.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-loja.jpg" alt="Hoje: loja">
+      <figcaption><b><span class="tag tag--ok">No alvo</span></b>
+        Loja mostrando a peça vestida em quem está olhando. Quando o rosto
+        melhorar, esta tela melhora sozinha.</figcaption>
+    </figure>
+  </div>
+
+  <h2><span class="num">07</span>Regras da direção de arte</h2>
+  <div class="rules">
+    <div class="rule"><h3>Proporção</h3><p>Avatar de 1,67 m com cabeça ~7,5% maior que o real. Porta 2,1 m, assento 0,45 m, balcão 0,9 m. Escala errada quebra a leitura antes da textura.</p></div>
+    <div class="rule"><h3>Silhueta</h3><p>Reduza a 60 px de altura: personagens diferentes precisam continuar distinguíveis. Cabelo e ombro fazem esse trabalho.</p></div>
+    <div class="rule"><h3>Material</h3><p>Nada de cor chapada. Toda superfície tem rugosidade e relevo próprios: metal reflete, tecido absorve, pele espalha.</p></div>
+    <div class="rule"><h3>Luz</h3><p>Chave direcional + preenchimento + recorte. Sombra de contato sempre — objeto sem sombra flutua.</p></div>
+    <div class="rule"><h3>Cor</h3><p>Ambiente em paleta contida; a saturação alta é reservada para o que é interativo: LED, neon, presente, PK.</p></div>
+    <div class="rule"><h3>Exposição</h3><p>Histograma sem estourar no branco nem empastar no preto. Cena de live é escura por escolha, não por engano.</p></div>
+  </div>
+
+  <div class="palette">
+    <div class="sw"><span style="background:#ff2d6f"></span><small>Live #ff2d6f</small></div>
+    <div class="sw"><span style="background:#7c5cff"></span><small>Violeta #7c5cff</small></div>
+    <div class="sw"><span style="background:#4fd8ff"></span><small>Ciano #4fd8ff</small></div>
+    <div class="sw"><span style="background:#ffc247"></span><small>Coins #ffc247</small></div>
+    <div class="sw"><span style="background:#39d98a"></span><small>Confirmação</small></div>
+    <div class="sw"><span style="background:#c9c1b4"></span><small>Pedra da praça</small></div>
+    <div class="sw"><span style="background:#a9714b"></span><small>Madeira</small></div>
+    <div class="sw"><span style="background:#11141f"></span><small>Superfície UI</small></div>
+  </div>
+
+  <h2><span class="num">08</span>Ordem de ataque</h2>
+  <ol class="prio">
+    <li><b>Costura do corpo.</b> Pés que não se fundem, cintura que fecha,
+      vão entre as pernas. É correção de geometria, não de arte, e sem ela
+      qualquer roupa nova nasce quebrada.</li>
+    <li><b>Rosto e mãos.</b> Feições como geometria, cinco dedos, quatro expressões. Destrava avatar, loja, feed e perfil de uma vez.</li>
+    <li><b>Cabelo em mechas.</b> A peça mais comprada de qualquer jogo desse gênero — e hoje a mais fraca.</li>
+    <li><b>Roupa com corte.</b> Gola, punho, barra e caimento; o que faz uma jaqueta parecer jaqueta.</li>
+    <li><b>Cor e vida na praça.</b> Paleta quente, vegetação variada, NPCs decorativos.</li>
+    <li><b>Catálogo de móveis.</b> A loja cria a pressão; o apartamento é onde ela vira permanência.</li>
+  </ol>
+
+  <div class="note">
+    <b>Como ler as imagens do alvo.</b> Elas são referência de <i>intenção</i> —
+    proporção, paleta, material, clima. Não são especificação de geometria e não
+    valem como promessa: qualquer texto que apareça nelas é ruído do gerador, e
+    a praça do alvo é mais realista do que queremos. O que se copia é a
+    <b>leitura</b>, não o render.
+  </div>
+
+  <footer>
+    Streampolis · Visual Target v1 · gerado com a arte conceitual em
+    <code>packages/client/public/visual-target/</code> e as capturas reais do
+    build de agosto de 2026. As regras completas estão em
+    <code>docs/VISUAL_TARGET.md</code> e <code>docs/VISUAL_RUBRIC.md</code>.
+  </footer>
+</div>
+
+</body>
+</html>

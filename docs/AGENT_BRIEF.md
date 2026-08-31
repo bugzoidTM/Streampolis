@@ -24,6 +24,17 @@ packages/api/             API REST + economia + Postgres
 tools/                    shoot.mjs (screenshot), probe.mjs (dump de estado)
 ```
 
+## No ar
+
+<https://streampolis.nutef.com> — demonstração pública: entra-se por
+personagem, sem cadastro. O desenho da stack (um domínio, três caminhos), os
+segredos, o passo a passo de atualizar e o porquê da porta aberta estão em
+`deploy/README.md`. O norte visual, com alvo e realidade lado a lado, está em
+<https://streampolis.nutef.com/visual-target/> e em `docs/VISUAL_TARGET.md`.
+
+`node tools/prod-check.mjs` é a fumaça da produção: primeira visita, escolher
+personagem, entrar no mundo e conferir que a sala é de verdade.
+
 ## Como rodar o jogo inteiro
 
 Três processos, e só o primeiro é obrigatório para ver a cidade:

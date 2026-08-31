@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { AvatarLab } from './lab/AvatarLab.js';
 import { AppShell } from './ui/AppShell.js';
 import { intentFromQuery } from './network/session.js';
+import { savedToken } from './ui/EnterScreen.js';
 import './ui/styles/tokens.css';
 import './ui/styles/base.css';
 
@@ -16,7 +17,9 @@ if (view === 'lab') {
   // A URL diz a INTENÇÃO, não a sala: `?watch=<roomId>` assiste, `?golive=1`
   // transmite, `?apartment=me` abre a própria casa, `?scene=` escolhe a área
   // pública. Sem `?token=` nada disso vale e o mundo roda offline (SPECs §36).
-  const token = params.get('token') ?? undefined;
+  // A URL manda (link direto para uma live, ferramenta de captura); depois
+  // dela, a sessão da última visita.
+  const token = params.get('token') ?? savedToken();
   root.render(
     <AppShell
       intent={intentFromQuery(params, Boolean(token))}

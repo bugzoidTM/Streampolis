@@ -26,9 +26,11 @@ export interface ProfileViewProps {
   onVisitApartment: (apartmentId: string) => void;
   onWatchLive: (roomId: string) => void;
   onEditLook: () => void;
+  /** Sair da conta de demonstração e voltar para a escolha de personagem. */
+  onLeave?: () => void;
 }
 
-export function ProfileView({ userId, onVisitApartment, onWatchLive, onEditLook }: ProfileViewProps) {
+export function ProfileView({ userId, onVisitApartment, onWatchLive, onEditLook, onLeave }: ProfileViewProps) {
   const api = useAccountStore((s) => s.api);
   const mine = useAccountStore((s) => s.profile);
   const wallet = useAccountStore((s) => s.wallet);
@@ -103,6 +105,9 @@ export function ProfileView({ userId, onVisitApartment, onWatchLive, onEditLook 
               </Button>
             )}
             {profile.isSelf && <Button variant="secondary" onClick={onEditLook}>Editar look</Button>}
+            {profile.isSelf && onLeave && (
+              <Button variant="ghost" onClick={onLeave}>Trocar de personagem</Button>
+            )}
           </div>
 
           {profile.isSelf && (

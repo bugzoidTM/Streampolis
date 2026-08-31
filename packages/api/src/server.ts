@@ -89,6 +89,42 @@ app.post('/auth/login', rateLimit('auth'), async (req, res, next) => {
 });
 
 /**
+ * Contas de demonstração, com a aparência de cada uma, para a tela de entrada
+ * poder desenhar o retrato de verdade em vez de três bonecos genéricos.
+ *
+ * Some junto com o dev-login: se não dá para entrar sem senha, não faz sentido
+ * anunciar por quem entrar.
+ */
+app.get('/auth/demo-accounts', async (_req, res, next) => {
+  if (!config.devLogin) {
+    res.status(404).json({ error: 'not_found' });
+    return;
+  }
+  try {
+    const { rows } = await pool.query<{
+      username: string; display_name: string | null; config: unknown;
+    }>(
+      `SELECT u.username, p.display_name, av.config
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         LEFT JOIN avatars av ON av.user_id = u.id
+        WHERE u.status = 'active' AND u.role = 'player'
+        ORDER BY u.created_at
+        LIMIT 4`,
+    );
+    res.json({
+      accounts: rows.map((r) => ({
+        username: r.username,
+        displayName: r.display_name || r.username,
+        avatar: r.config ?? null,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * Login de desenvolvimento: entra por username, sem senha. Existe para o game
  * server e o cliente rodarem antes do cadastro existir, e some em produção
  * (config.devLogin é falso lá, sem exceção).

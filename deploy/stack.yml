@@ -1,0 +1,135 @@
+# Streampolis em produção (demonstração pública).
+#
+# Um único domínio, três caminhos:
+#   /        site estático (build do Vite)
+#   /api     API REST (Postgres, carteira, perfis, loja)
+#   /ws      game server Colyseus (WebSocket + matchmaking)
+#
+# Um domínio só é decisão, não preguiça: a API vira mesma-origem para o site,
+# o que elimina CORS do caminho crítico e dispensa um segundo certificado.
+#
+# Os nomes dos serviços são únicos DE PROPÓSITO (sp-*). A rede Nutef é
+# compartilhada por todas as stacks da máquina e o nome curto do serviço vira
+# DNS nela: um serviço chamado `api` ou `db` aqui roubaria (ou herdaria) o
+# endereço de outra stack. Isso já aconteceu nesta VPS.
+version: "3.7"
+
+services:
+
+  sp-site:
+    image: nginx:alpine
+    volumes:
+      - /root/streampolis/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /root/streampolis/packages/client/dist:/usr/share/nginx/html:ro
+    networks: [Nutef]
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=Nutef
+        - traefik.http.routers.streampolis-site.rule=Host(`streampolis.nutef.com`)
+        - traefik.http.routers.streampolis-site.entrypoints=websecure
+        - traefik.http.routers.streampolis-site.priority=10
+        - traefik.http.routers.streampolis-site.tls=true
+        - traefik.http.routers.streampolis-site.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.streampolis-site.service=streampolis-site
+        - traefik.http.services.streampolis-site.loadbalancer.server.port=8080
+        - traefik.http.services.streampolis-site.loadbalancer.passHostHeader=true
+
+  sp-api:
+    image: node:22-bookworm-slim
+    working_dir: /app/packages/api
+    command: node src/server.ts
+    volumes:
+      - /root/streampolis:/app:ro
+    environment:
+      NODE_ENV: development
+      API_HOST: 0.0.0.0
+      API_PORT: "8787"
+      DATABASE_URL: postgres://streampolis:${SP_DB_PASSWORD}@sp-db:5432/streampolis
+      JWT_SECRET: ${SP_JWT_SECRET}
+      API_SERVICE_TOKEN: ${SP_SERVICE_TOKEN}
+      PAYMENT_WEBHOOK_SECRET: ${SP_WEBHOOK_SECRET}
+      # Porta aberta da demonstração: entra-se por personagem, sem senha.
+      API_DEV_LOGIN: "1"
+      API_CORS_ORIGINS: https://streampolis.nutef.com
+      # Traefik é o único proxy à frente; sem isto o limitador conta todo mundo
+      # no mesmo balde (o do proxy).
+      API_TRUST_PROXY: "1"
+    networks: [Nutef]
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=Nutef
+        - traefik.http.routers.streampolis-api.rule=Host(`streampolis.nutef.com`) && PathPrefix(`/api`)
+        - traefik.http.routers.streampolis-api.entrypoints=websecure
+        # Prioridade acima da do site: a regra do site casa com tudo no domínio.
+        - traefik.http.routers.streampolis-api.priority=20
+        - traefik.http.routers.streampolis-api.tls=true
+        - traefik.http.routers.streampolis-api.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.streampolis-api.middlewares=streampolis-api-strip
+        - traefik.http.middlewares.streampolis-api-strip.stripprefix.prefixes=/api
+        - traefik.http.routers.streampolis-api.service=streampolis-api
+        - traefik.http.services.streampolis-api.loadbalancer.server.port=8787
+
+  sp-game:
+    image: node:22-bookworm-slim
+    working_dir: /app/packages/game-server
+    command: node dist/game-server/src/index.js
+    volumes:
+      - /root/streampolis:/app:ro
+    environment:
+      NODE_ENV: development
+      GAME_SERVER_HOST: 0.0.0.0
+      GAME_SERVER_PORT: "2567"
+      AUTH_JWT_SECRET: ${SP_JWT_SECRET}
+      API_BASE_URL: http://sp-api:8787
+      API_SERVICE_TOKEN: ${SP_SERVICE_TOKEN}
+    networks: [Nutef]
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=Nutef
+        - traefik.http.routers.streampolis-ws.rule=Host(`streampolis.nutef.com`) && PathPrefix(`/ws`)
+        - traefik.http.routers.streampolis-ws.entrypoints=websecure
+        - traefik.http.routers.streampolis-ws.priority=20
+        - traefik.http.routers.streampolis-ws.tls=true
+        - traefik.http.routers.streampolis-ws.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.streampolis-ws.middlewares=streampolis-ws-strip
+        - traefik.http.middlewares.streampolis-ws-strip.stripprefix.prefixes=/ws
+        - traefik.http.routers.streampolis-ws.service=streampolis-ws
+        - traefik.http.services.streampolis-ws.loadbalancer.server.port=2567
+
+  sp-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: streampolis
+      POSTGRES_PASSWORD: ${SP_DB_PASSWORD}
+      POSTGRES_DB: streampolis
+    volumes:
+      - sp_pgdata:/var/lib/postgresql/data
+    networks: [Nutef]
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+
+volumes:
+  sp_pgdata:
+
+networks:
+  Nutef:
+    external: true
+    name: Nutef

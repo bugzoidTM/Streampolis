@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import type { AvatarConfig } from '@streampolis/shared';
 import { useAccountStore } from '../state/useAccountStore.js';
 import { useSessionStore } from '../state/useSessionStore.js';
-import type { WorldIntent } from '../network/session.js';
+import { intentFromQuery, type WorldIntent } from '../network/session.js';
 import type { ApiLive } from '../network/api.js';
 import { WorldView } from './WorldView.js';
+import { EnterScreen, clearToken, saveToken, savedToken } from './EnterScreen.js';
 import { FeedView } from './FeedView.js';
 import { ProfileView } from './ProfileView.js';
 import { StoreView } from './StoreView.js';
@@ -36,6 +37,9 @@ export interface AppShellProps {
 }
 
 export function AppShell(props: AppShellProps) {
+  // O token pode vir da URL (link direto, ferramenta de captura) ou da última
+  // visita. Sem nenhum dos dois, a primeira tela é a porta de entrada.
+  const [token, setToken] = useState<string | undefined>(() => props.token ?? savedToken());
   const [tab, setTab] = useState<Tab>('world');
   const [intent, setIntent] = useState<WorldIntent>(props.intent);
   const [profileTarget, setProfileTarget] = useState<string | null>(null);
@@ -44,7 +48,7 @@ export function AppShell(props: AppShellProps) {
   const connect = useAccountStore((s) => s.connect);
   const sessionKind = useSessionStore((s) => s.kind);
 
-  useEffect(() => { connect(props.token); }, [connect, props.token]);
+  useEffect(() => { connect(token); }, [connect, token]);
 
   /** Trocar de sala: o World remonta porque a chave muda. */
   const navigate = (next: WorldIntent) => {
@@ -62,12 +66,28 @@ export function AppShell(props: AppShellProps) {
   const key = useMemo(() => intentKey(intent), [intent]);
   const hosting = sessionKind === 'golive';
 
+  if (!token) {
+    return (
+      <EnterScreen
+        onEnter={(fresh) => {
+          saveToken(fresh);
+          setToken(fresh);
+          // A intenção foi calculada quando ainda não havia token, e sem token
+          // ela só pode ser "offline". Agora que há, ela é recalculada com as
+          // mesmas regras da URL — senão quem acabou de escolher um personagem
+          // entra num mundo sem servidor, sozinho, sem nenhum aviso.
+          setIntent(intentFromQuery(new URLSearchParams(location.search), true));
+        }}
+      />
+    );
+  }
+
   return (
     <>
       <WorldView
         key={key}
         intent={intent}
-        token={props.token}
+        token={token}
         tier={props.tier}
         displayName={props.displayName}
         avatar={props.avatar}
@@ -91,6 +111,10 @@ export function AppShell(props: AppShellProps) {
           onVisitApartment={(apartmentId) => navigate({ kind: 'apartment', apartmentId })}
           onWatchLive={(roomId) => navigate({ kind: 'watch', roomId })}
           onEditLook={() => { location.search = '?view=lab'; }}
+          onLeave={() => {
+            clearToken();
+            setToken(undefined);
+          }}
         />
       )}
 

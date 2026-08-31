@@ -44,6 +44,12 @@ export interface PublicProfile {
 
 export interface Wallet { credits: number; coins: number }
 
+export interface DemoAccount {
+  username: string;
+  displayName: string;
+  avatar: AvatarConfig | null;
+}
+
 export interface MeResponse {
   identity: ApiIdentity;
   wallet: Wallet;
@@ -111,6 +117,28 @@ export class ApiClient {
 
   me(): Promise<MeResponse> {
     return this.call<MeResponse>('/me');
+  }
+
+  /** Contas jogáveis da demonstração. Vazio quando a API não as oferece. */
+  async demoAccounts(): Promise<DemoAccount[]> {
+    try {
+      const body = await this.call<{ accounts: DemoAccount[] }>('/auth/demo-accounts');
+      return body.accounts ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Entrada da demonstração: username sem senha. A API só responde isto fora
+   * de produção — é uma porta aberta de propósito, e por isso ela não existe
+   * onde houver dinheiro de verdade.
+   */
+  async enterAs(username: string): Promise<{ token: string; identity: ApiIdentity }> {
+    return this.call('/auth/dev-login', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
   }
 
   /**

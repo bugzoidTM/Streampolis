@@ -23,14 +23,38 @@ interface DevUser {
   coins: number;
   credits: number;
   role: 'player' | 'moderator' | 'admin';
+  /**
+   * Aparência de estreia. Existe por um motivo de produto: a tela de entrada
+   * mostra os personagens, e três avatares idênticos começam a demonstração
+   * dizendo que dá no mesmo quem você escolhe.
+   */
+  look?: Partial<typeof DEFAULT_AVATAR_DTO>;
 }
 
 const DEV_PASSWORD = 'streampolis-dev';
 
 const DEV_USERS: DevUser[] = [
-  { username: 'ana', email: 'ana@dev.streampolis', coins: 50_000, credits: 20_000, role: 'player' },
-  { username: 'beto', email: 'beto@dev.streampolis', coins: 50_000, credits: 20_000, role: 'player' },
-  { username: 'caio', email: 'caio@dev.streampolis', coins: 5_000, credits: 5_000, role: 'player' },
+  {
+    username: 'ana', email: 'ana@dev.streampolis', coins: 50_000, credits: 20_000, role: 'player',
+    look: {
+      bodyPreset: 2, skinTone: 3, facePreset: 1, hair: 'hair_long_01', hairColor: 4,
+      top: 'top_jacket_01', bottom: 'bottom_skirt_01', shoes: 'shoes_boot_01', height: 1.0,
+    },
+  },
+  {
+    username: 'beto', email: 'beto@dev.streampolis', coins: 50_000, credits: 20_000, role: 'player',
+    look: {
+      bodyPreset: 1, skinTone: 6, facePreset: 2, hair: 'hair_buzz_01', hairColor: 0,
+      top: 'top_hoodie_01', bottom: 'bottom_cargo_01', shoes: 'shoes_sneaker_01', height: 1.05,
+    },
+  },
+  {
+    username: 'caio', email: 'caio@dev.streampolis', coins: 5_000, credits: 5_000, role: 'player',
+    look: {
+      bodyPreset: 3, skinTone: 1, facePreset: 3, hair: 'hair_afro_01', hairColor: 2,
+      top: 'top_tee_01', bottom: 'bottom_track_01', shoes: 'shoes_glow_01', height: 0.96,
+    },
+  },
   { username: 'moderador', email: 'mod@dev.streampolis', coins: 0, credits: 0, role: 'moderator' },
 ];
 
@@ -50,9 +74,14 @@ async function seedUser(user: DevUser, passwordHash: string): Promise<string> {
       user.username[0].toUpperCase() + user.username.slice(1),
     ]);
     await client.query('INSERT INTO player_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING', [id]);
+    const look = { ...DEFAULT_AVATAR_DTO, ...(user.look ?? {}) };
+    // Atualiza o visual só se ele ainda for o padrão: quem já se vestiu no jogo
+    // não perde o próprio look porque alguém rodou o seed de novo.
     await client.query(
-      'INSERT INTO avatars (user_id, config) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING',
-      [id, JSON.stringify(DEFAULT_AVATAR_DTO)],
+      `INSERT INTO avatars (user_id, config) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET config = EXCLUDED.config, updated_at = now()
+        WHERE avatars.config = $3::jsonb`,
+      [id, JSON.stringify(look), JSON.stringify(DEFAULT_AVATAR_DTO)],
     );
 
     // Saldo de desenvolvimento entra direto na carteira, sem passar pelo ledger:
@@ -73,6 +102,19 @@ async function seedUser(user: DevUser, passwordHash: string): Promise<string> {
        ON CONFLICT (user_id, item_id) DO NOTHING`,
       [id],
     );
+
+    // Vestir exige possuir (AvatarService): o guarda-roupa de estreia entrega o
+    // que o look usa, senão a API recusa a própria aparência que o seed criou.
+    const wearing = [look.hair, look.top, look.bottom, look.shoes, look.accessory]
+      .filter((itemId): itemId is string => Boolean(itemId));
+    if (wearing.length > 0) {
+      await client.query(
+        `INSERT INTO inventory (user_id, item_id)
+         SELECT $1, id FROM items WHERE active AND id = ANY($2::text[])
+         ON CONFLICT (user_id, item_id) DO NOTHING`,
+        [id, wearing],
+      );
+    }
 
     await client.query(
       `INSERT INTO properties (owner_id, property_type, layout_id)

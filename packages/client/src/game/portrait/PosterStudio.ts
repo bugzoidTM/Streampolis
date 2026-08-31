@@ -31,6 +31,12 @@ export interface PosterOptions {
   height?: number;
   /** Luz de recorte por trás, na cor do card. */
   rim?: number;
+  /**
+   * Quanto girar o avatar, em radianos. O padrão é um três quartos — de frente
+   * ele vira foto 3x4 de documento. Girar meia volta mostra as costas (útil
+   * para conferir um cabelo ou uma jaqueta).
+   */
+  turn?: number;
 }
 
 interface Studio {
@@ -108,14 +114,15 @@ export function renderPoster(config: AvatarConfig, options: PosterOptions = {}):
     width: options.width ?? 300,
     height: options.height ?? (options.shot === 'bust' ? 300 : 420),
   };
-  const cacheKey = keyOf(config, o);
+  const turn = options.turn;
+  const cacheKey = `${keyOf(config, o)}|${turn ?? ''}`;
   const hit = cache.get(cacheKey);
   if (hit) return Promise.resolve(hit);
 
   const job = queue.then(() => {
     const again = cache.get(cacheKey);
     if (again) return again;
-    const url = shoot(config, o, options.rim);
+    const url = shoot(config, o, options.rim, turn);
     cache.set(cacheKey, url);
     return url;
   });
@@ -128,6 +135,7 @@ function shoot(
   config: AvatarConfig,
   o: { shot: PosterShot; pose: AnimState; at: number; width: number; height: number },
   rimColor?: number,
+  turn?: number,
 ): string {
   if (!studio) studio = makeStudio(o.width, o.height);
   const s = studio;
@@ -142,7 +150,7 @@ function shoot(
   const step = 1 / 30;
   for (let t = 0; t < o.at; t += step) avatar.animate(step, 0);
   // Três quartos: de frente o avatar vira foto 3x4 de documento.
-  avatar.root.rotation.y = o.shot === 'bust' ? 0.42 : 0.34;
+  avatar.root.rotation.y = turn ?? (o.shot === 'bust' ? 0.42 : 0.34);
   avatar.root.updateMatrixWorld(true);
 
   s.scene.add(avatar.root);

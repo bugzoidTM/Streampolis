@@ -1,0 +1,94 @@
+/*
+ * Tela de entrada. É a primeira impressão do produto inteiro, então ela tem
+ * uma regra: nada de formulário. Escolher um personagem é o gesto.
+ */
+
+.enter {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-s5);
+  padding: var(--sp-s6) var(--sp-s4);
+  background:
+    radial-gradient(90% 55% at 50% 0%, rgba(124, 92, 255, 0.22), transparent 70%),
+    radial-gradient(70% 45% at 20% 100%, rgba(255, 45, 111, 0.16), transparent 70%),
+    var(--sp-void);
+  text-align: center;
+}
+
+.enter__glow {
+  position: absolute;
+  inset: -20% -10% auto -10%;
+  height: 60%;
+  background: radial-gradient(50% 60% at 50% 40%, rgba(79, 216, 255, 0.12), transparent 70%);
+  pointer-events: none;
+}
+
+.enter__head { position: relative; max-width: 620px; }
+
+.enter__title {
+  margin: 0;
+  font-size: clamp(34px, 7vw, 62px);
+  letter-spacing: 0.16em;
+  font-weight: 800;
+  background: linear-gradient(120deg, #fff, #ffb3d1 45%, #a98bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.enter__tag { margin: var(--sp-s2) 0 0; color: var(--sp-text-2); font-size: 15px; line-height: 1.5; }
+.enter__hint { color: var(--sp-text-3); font-size: 13.5px; }
+.enter__error { color: var(--sp-red); font-size: 13.5px; }
+
+.enter__cast {
+  position: relative;
+  display: flex;
+  gap: var(--sp-s3);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.cast {
+  width: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 var(--sp-s3);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-lg);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  overflow: hidden;
+  transition: transform 140ms ease, border-color 140ms ease;
+}
+
+.cast:hover:not(:disabled) { transform: translateY(-4px); border-color: var(--sp-violet); }
+.cast:disabled { opacity: 0.6; }
+
+.cast__art {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(70% 55% at 50% 25%, #38315c, #0d0f18);
+}
+
+.cast__art img { width: 100%; height: 100%; object-fit: contain; object-position: 50% 88%; }
+.cast__skeleton { width: 60%; height: 70%; border-radius: var(--sp-r-md); background: var(--sp-surface-2); }
+.cast__name { font-weight: 700; font-size: 15px; margin-top: var(--sp-s2); }
+.cast__cta { font-size: 11.5px; color: var(--sp-text-3); letter-spacing: 0.04em; text-transform: uppercase; }
+
+.enter__foot {
+  position: relative;
+  max-width: 480px;
+  font-size: 11.5px;
+  color: var(--sp-text-3);
+  line-height: 1.5;
+}
