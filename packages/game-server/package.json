@@ -3,20 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/src/index.js",
+  "main": "./dist/game-server/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "npm run build && node dist/src/index.js",
-    "start": "node dist/src/index.js",
+    "dev": "npm run build && node dist/game-server/src/index.js",
+    "start": "node dist/game-server/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/test/",
+    "test": "npm run build && node --test \"dist/game-server/test/*.test.js\"",
     "e2e": "node scripts/e2e-two-clients.mjs"
   },
   "dependencies": {
-    "@colyseus/core": "^0.16.5",
-    "@colyseus/schema": "^3.0.0",
-    "@colyseus/ws-transport": "^0.16.5",
-    "colyseus": "^0.16.5"
+    "@colyseus/core": "0.16.24",
+    "@colyseus/schema": "^3.0.76",
+    "@colyseus/ws-transport": "^0.16.5"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

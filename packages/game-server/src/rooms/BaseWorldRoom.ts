@@ -1,0 +1,295 @@
+import { Room, ServerError, type Client } from '@colyseus/core';
+import {
+  DEFAULT_AVATAR,
+  MSG,
+  PLAY_AREA,
+  TICK_MS,
+  type AnimState,
+  type AvatarConfig,
+  type ChatMessage,
+  type MoveCorrection,
+  type SceneId,
+  type SystemNotice,
+} from '../shared.js';
+import { AuthError, defaultAuthProvider, type AuthIdentity, type AuthProvider } from '../auth/AuthProvider.js';
+import { ChatGuard } from '../social/ChatGuard.js';
+import { MovementController } from '../sim/Movement.js';
+import { spawnFor } from '../world/Spawns.js';
+import { PlayerState, WorldState, type RoomRole } from './schema.js';
+
+/** Emotes a client may trigger. Locomotion and battle states are server-owned. */
+const EMOTABLE: ReadonlySet<AnimState> = new Set<AnimState>([
+  'idle', 'sit', 'wave', 'clap', 'dance', 'celebrate',
+]);
+
+const EMOTE_COOLDOWN_MS = 900;
+
+/** Options a room is created with. Subclasses widen this, never narrow it. */
+export interface RoomCreateOptions {
+  sceneId?: SceneId;
+  capacity?: number;
+  [key: string]: unknown;
+}
+
+export interface WorldJoinOptions {
+  token?: string;
+  avatar?: Partial<AvatarConfig>;
+  sceneId?: SceneId;
+}
+
+interface Session {
+  identity: AuthIdentity;
+  movement: MovementController;
+  lastEmoteAt: number;
+}
+
+/**
+ * Everything a walkable room does: authenticate, spawn, move, chat, emote.
+ *
+ * The tick loop here is the only writer of position in the whole server. A
+ * client message never mutates PlayerState directly — it enqueues an intent,
+ * and MovementController decides what, if anything, becomes true (SPECs §21).
+ */
+export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends Room<S> {
+  /** Not readonly: rooms that host several scenes set it from onCreate options. */
+  abstract sceneId: SceneId;
+
+  protected readonly auth: AuthProvider = defaultAuthProvider();
+  protected readonly chat = new ChatGuard();
+  protected readonly sessions = new Map<string, Session>();
+  /** Monotonic, so two players joining on the same ms get different spawns. */
+  private joinCounter = 0;
+
+  /** Concrete rooms build their own state subclass here. */
+  protected abstract createState(): S;
+
+  override onCreate(options: RoomCreateOptions = {}): void {
+    const state = this.createState();
+    state.sceneId = this.sceneId;
+    state.shard = this.roomId;
+    this.setState(state);
+
+    if (typeof options.capacity === 'number' && options.capacity > 0) {
+      this.maxClients = options.capacity;
+    }
+
+    // 24 Hz simulation, 20 Hz patches (SPECs §18): rendering is decoupled, so
+    // patching faster than the tick only burns bandwidth.
+    this.setSimulationInterval(() => this.tick(), TICK_MS);
+    this.patchRate = 50;
+
+    this.registerWorldMessages();
+    this.onRoomCreated(options);
+  }
+
+  /** Hook for subclasses; runs after state, tick loop and handlers are up. */
+  protected onRoomCreated(_options: RoomCreateOptions): void {}
+
+  override async onAuth(_client: Client, options: WorldJoinOptions): Promise<AuthIdentity> {
+    try {
+      return await this.auth.authenticate(options?.token ?? '');
+    } catch (err) {
+      const code = err instanceof AuthError ? err.code : 'auth_failed';
+      // 401 travels to the browser as a Colyseus error code; the client turns
+      // it into "sua sessão expirou" instead of a generic disconnect.
+      throw new ServerError(401, code);
+    }
+  }
+
+  override onJoin(client: Client, options: WorldJoinOptions = {}, auth?: AuthIdentity): void {
+    const identity = auth ?? (client.auth as AuthIdentity);
+    if (!identity) throw new ServerError(401, 'no_identity');
+
+    // One session per user: a second tab must not produce a ghost twin that
+    // still walks around after the first is closed.
+    const duplicate = [...this.sessions.entries()].find(([, s]) => s.identity.userId === identity.userId);
+    if (duplicate) {
+      const [oldSessionId] = duplicate;
+      this.clients.find((c) => c.sessionId === oldSessionId)?.leave(4001);
+      this.removeSession(oldSessionId);
+    }
+
+    const spawn = spawnFor(this.sceneId, this.joinCounter++);
+    this.sessions.set(client.sessionId, {
+      identity,
+      movement: new MovementController(spawn, PLAY_AREA[this.sceneId]),
+      lastEmoteAt: 0,
+    });
+
+    // Spectators get a session (chat, rate limits, blocks) but no body: a live
+    // with 100 viewers must not synchronise 100 avatars (SPECs §10).
+    if (!this.spawnsAvatar(identity)) {
+      this.onPlayerJoined(client, identity, null);
+      return;
+    }
+
+    const player = new PlayerState();
+    player.id = identity.userId;
+    player.name = identity.displayName;
+    player.x = spawn.x;
+    player.y = spawn.y;
+    player.z = spawn.z;
+    player.yaw = spawn.yaw;
+    player.gifterLevel = identity.gifterLevel;
+    player.agency = identity.agency;
+    player.role = this.roleFor(identity);
+    player.avatar.apply({ ...DEFAULT_AVATAR, ...(options.avatar ?? {}) });
+
+    this.state.players.set(client.sessionId, player);
+    this.onPlayerJoined(client, identity, player);
+  }
+
+  /** False for clients that watch instead of inhabiting the room. */
+  protected spawnsAvatar(_identity: AuthIdentity): boolean {
+    return true;
+  }
+
+  override onLeave(client: Client, _consented?: boolean): void {
+    const session = this.sessions.get(client.sessionId);
+    this.removeSession(client.sessionId);
+    if (session) this.onPlayerLeft(client, session.identity);
+  }
+
+  protected onPlayerJoined(_client: Client, _identity: AuthIdentity, _player: PlayerState | null): void {}
+  protected onPlayerLeft(_client: Client, _identity: AuthIdentity): void {}
+
+  /** Default role in a public room; apartments and lives override it. */
+  protected roleFor(_identity: AuthIdentity): RoomRole {
+    return 'visitor';
+  }
+
+  protected identityOf(client: Client): AuthIdentity | undefined {
+    return this.sessions.get(client.sessionId)?.identity;
+  }
+
+  protected notify(client: Client, code: string, text: string): void {
+    const notice: SystemNotice = { code, text };
+    client.send(MSG.notice, notice);
+  }
+
+  private removeSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) this.chat.forget(session.identity.userId);
+    this.sessions.delete(sessionId);
+    this.state.players.delete(sessionId);
+  }
+
+  private registerWorldMessages(): void {
+    this.onMessage(MSG.move, (client, message) => {
+      const session = this.sessions.get(client.sessionId);
+      if (!session) return;
+      const reason = session.movement.enqueue(message);
+      // Silence is deliberate for stale_seq: duplicates are normal on a lossy
+      // link, and answering every one of them doubles the uplink of a flooder.
+      if (reason === 'flood') this.notify(client, 'move_flood', 'Movimento ignorado: excesso de comandos.');
+    });
+
+    this.onMessage(MSG.chat, (client, message: { text?: unknown }) => {
+      const session = this.sessions.get(client.sessionId);
+      if (!session) return;
+      const verdict = this.chat.check(session.identity.userId, message?.text);
+      if (!verdict.ok) {
+        this.notify(client, `chat_${verdict.reason}`, verdict.message);
+        return;
+      }
+      this.publishChat({
+        id: `${this.roomId}:${Date.now()}:${client.sessionId}`,
+        senderId: session.identity.userId,
+        senderName: session.identity.displayName,
+        text: verdict.text,
+        gifterLevel: session.identity.gifterLevel,
+        timestamp: Date.now(),
+      });
+    });
+
+    this.onMessage(MSG.emote, (client, message: { anim?: unknown }) => {
+      const session = this.sessions.get(client.sessionId);
+      const player = this.state.players.get(client.sessionId);
+      if (!session || !player) return;
+      const anim = message?.anim;
+      if (typeof anim !== 'string' || !EMOTABLE.has(anim as AnimState)) return;
+
+      const now = Date.now();
+      if (now - session.lastEmoteAt < EMOTE_COOLDOWN_MS) return;
+      session.lastEmoteAt = now;
+      // Walking cancels an emote on the next tick anyway; refusing it while
+      // moving avoids a frame of a dancing avatar sliding across the plaza.
+      if (player.moving) return;
+      player.anim = anim as AnimState;
+    });
+
+    this.onMessage(MSG.mute, (client, message: { userId?: unknown; ms?: unknown }) => {
+      const session = this.sessions.get(client.sessionId);
+      if (!session || !session.identity.permissions.includes('moderate')) return;
+      if (typeof message?.userId !== 'string') return;
+      const ms = typeof message.ms === 'number' && message.ms > 0 ? Math.min(message.ms, 86_400_000) : 600_000;
+      this.chat.mute(message.userId, ms);
+    });
+
+    this.onMessage(MSG.block, (client, message: { userId?: unknown; on?: unknown }) => {
+      const session = this.sessions.get(client.sessionId);
+      if (!session || typeof message?.userId !== 'string') return;
+      if (message.on === false) this.chat.unblock(session.identity.userId, message.userId);
+      else this.chat.block(session.identity.userId, message.userId);
+    });
+  }
+
+  /** Per-recipient delivery, so a block list actually blocks (SPECs §31). */
+  protected publishChat(msg: ChatMessage): void {
+    for (const client of this.clients) {
+      const viewer = this.sessions.get(client.sessionId);
+      if (viewer && this.chat.blocksSender(viewer.identity.userId, msg.senderId)) continue;
+      client.send(MSG.chatMessage, msg);
+    }
+  }
+
+  protected systemChat(text: string): void {
+    this.publishChat({
+      id: `${this.roomId}:sys:${Date.now()}`,
+      senderId: '',
+      senderName: 'Streampolis',
+      text,
+      gifterLevel: 0,
+      timestamp: Date.now(),
+      system: true,
+    });
+  }
+
+  private tick(): void {
+    this.state.tick = (this.state.tick + 1) >>> 0;
+
+    for (const client of this.clients) {
+      const session = this.sessions.get(client.sessionId);
+      const player = this.state.players.get(client.sessionId);
+      if (!session || !player) continue;
+
+      const outcome = session.movement.step();
+      player.x = outcome.pose.x;
+      player.y = outcome.pose.y;
+      player.z = outcome.pose.z;
+      player.yaw = outcome.pose.yaw;
+      player.moving = outcome.pose.moving;
+      if (outcome.pose.moving) player.anim = 'walk';
+      else if (player.anim === 'walk' || player.anim === 'run') player.anim = 'idle';
+
+      // Only send a correction when the server actually overrode the client.
+      // A per-tick echo would be a second full position stream on the downlink.
+      if (outcome.corrected) {
+        const correction: MoveCorrection = {
+          seq: outcome.lastSeq,
+          x: outcome.pose.x,
+          y: outcome.pose.y,
+          z: outcome.pose.z,
+          yaw: outcome.pose.yaw,
+          corrected: true,
+        };
+        client.send(MSG.correction, correction);
+      }
+    }
+
+    this.onTick();
+  }
+
+  /** Subclass simulation, run after movement has been resolved. */
+  protected onTick(): void {}
+}
