@@ -4,6 +4,8 @@ import { DEFAULT_AVATAR, type AvatarConfig } from '@streampolis/shared';
 import { Renderer, LOOK_DAY } from '../game/Renderer.js';
 import { Environment, GOLDEN_HOUR } from '../game/Environment.js';
 import { Avatar } from '../game/avatar/Avatar.js';
+import { auditAvatar, AUDIT_LIMITS } from '../game/avatar/Audit.js';
+import { buildMatrix } from './matrix.js';
 import { concrete, applySurface } from '../game/materials/Textures.js';
 
 /**
@@ -65,8 +67,11 @@ export function AvatarLab() {
 
     const group = new THREE.Group();
     const avatars: Avatar[] = [];
+    // Matrix mode starts empty: the harness drives one combination at a time
+    // through __lab.tile(), so every tile gets the same framing and light.
+    const matrix = params.get('matrix') === '1';
     const picked = variants.slice(variantStart).concat(variants.slice(0, variantStart));
-    const n = Math.min(count, picked.length);
+    const n = matrix ? 0 : Math.min(count, picked.length);
     const spacing = 0.95;
     for (let i = 0; i < n; i++) {
       const cfg = { ...picked[i] };
@@ -84,7 +89,7 @@ export function AvatarLab() {
     rim.target.position.copy(focus);
     env.frameShadows(focus, 5);
 
-    renderer.attach(scene, camera, { ...LOOK_DAY, exposure: Number(params.get('exp') ?? 0.55) });
+    renderer.attach(scene, camera, { ...LOOK_DAY, exposure: Number(params.get('exp') ?? (params.get('matrix') === '1' ? 0.4 : 0.55)) });
 
     const resize = () => {
       const w = canvas.clientWidth || window.innerWidth;
@@ -102,11 +107,11 @@ export function AvatarLab() {
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.05, clock.getDelta());
       const t = clock.getElapsedTime();
-      group.rotation.y = spin ? t * 0.28 : yaw;
+      group.rotation.y = matrix ? yaw : (spin ? t * 0.28 : yaw);
 
-      const dist = Number(params.get('dist') ?? (2.0 + n * 0.62));
-      const cy = Number(params.get('cy') ?? 1.35);
-      const ly = Number(params.get('ly') ?? 0.95);
+      const dist = Number(params.get('dist') ?? (matrix ? 3.15 : 2.0 + n * 0.62));
+      const cy = Number(params.get('cy') ?? (matrix ? 0.88 : 1.35));
+      const ly = Number(params.get('ly') ?? (matrix ? 0.86 : 0.95));
       camera.position.set(0, cy, dist);
       camera.lookAt(0, ly, 0);
 
@@ -140,6 +145,48 @@ export function AvatarLab() {
           })),
         setYaw: (y: number) => { group.rotation.y = y; },
         avatars,
+
+        matrix: () => buildMatrix().map(({ index, label, group: g }) => ({ index, label, group: g })),
+        limits: () => AUDIT_LIMITS,
+
+        /**
+         * Builds one combination of the regression matrix, measures it and
+         * hands back both the numbers and a picture. One avatar at a time so
+         * every tile is framed and lit identically and memory stays flat.
+         */
+        tile: (index: number, withImage = true) => {
+          const entries = buildMatrix();
+          const item = entries[index];
+          if (!item) return null;
+          const avatar = new Avatar(item.config);
+          group.add(avatar.root);
+          try {
+            const audit = auditAvatar(avatar);
+            let png: string | null = null;
+            if (withImage) {
+              // Render and read back inside one task: the context is created
+              // without preserveDrawingBuffer, so the buffer is gone by the
+              // next frame.
+              renderer.render(0.016);
+              png = canvas.toDataURL('image/png');
+            }
+            // Bounds per slot: when a gate fails, the first question is always
+            // WHICH mesh reached where it should not.
+            const bounds: Record<string, number[]> = {};
+            avatar.root.traverse((o) => {
+              const m = o as THREE.Mesh;
+              if (!m.geometry || !m.name) return;
+              m.geometry.computeBoundingBox();
+              const bb = m.geometry.boundingBox!;
+              bounds[m.name] = [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z]
+                .map((v) => +v.toFixed(3));
+            });
+            return { index, label: item.label, group: item.group, audit, bounds, png };
+          } finally {
+            group.remove(avatar.root);
+            avatar.dispose();
+          }
+        },
       },
     });
 

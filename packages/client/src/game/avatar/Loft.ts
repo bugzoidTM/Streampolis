@@ -68,7 +68,7 @@ function profilePoint(angle: number, rx: number, rz: number, n: number): [number
 }
 
 /** Catmull-Rom interpolation of a station attribute across the path. */
-function lerpStation(a: Station, b: Station, t: number): Station {
+export function lerpStation(a: Station, b: Station, t: number): Station {
   return {
     pos: new THREE.Vector3().lerpVectors(a.pos, b.pos, t),
     radiusX: THREE.MathUtils.lerp(a.radiusX, b.radiusX, t),
@@ -80,6 +80,47 @@ function lerpStation(a: Station, b: Station, t: number): Station {
     roll: THREE.MathUtils.lerp(a.roll ?? 0, b.roll ?? 0, t),
     scale: THREE.MathUtils.lerp(a.scale ?? 1, b.scale ?? 1, t),
   };
+}
+
+/**
+ * Cuts a vertically-monotonic station path to the slab [fromY, toY], inserting
+ * an interpolated ring exactly on each cut plane. Garments hem where the
+ * designer asked rather than at whichever body station happened to fall
+ * nearby — which is what used to leave a band of skin above the waistband.
+ */
+export function sliceStationsByY(stations: Station[], fromY: number, toY: number): Station[] {
+  const lo = Math.min(fromY, toY);
+  const hi = Math.max(fromY, toY);
+  const out: Station[] = [];
+
+  const crossing = (a: Station, b: Station, y: number) => {
+    const dy = b.pos.y - a.pos.y;
+    if (Math.abs(dy) < 1e-6) return null;
+    const t = (y - a.pos.y) / dy;
+    return t > 1e-4 && t < 1 - 1e-4 ? lerpStation(a, b, t) : null;
+  };
+
+  for (let i = 0; i < stations.length; i++) {
+    const st = stations[i];
+    if (st.pos.y >= lo - 1e-6 && st.pos.y <= hi + 1e-6) out.push(st);
+    const next = stations[i + 1];
+    if (!next) continue;
+    // A segment can cross both planes; emit them in path order.
+    const cuts = [crossing(st, next, lo), crossing(st, next, hi)]
+      .filter((c): c is Station => c !== null)
+      .sort((a, b) => a.pos.distanceToSquared(st.pos) - b.pos.distanceToSquared(st.pos));
+    for (const c of cuts) out.push(c);
+  }
+
+  // A slab thinner than the station spacing yields nothing; fall back to the
+  // single nearest ring so a garment never silently disappears.
+  if (out.length < 2) {
+    const mid = (lo + hi) / 2;
+    const nearest = stations.reduce((best, st) =>
+      Math.abs(st.pos.y - mid) < Math.abs(best.pos.y - mid) ? st : best);
+    return [nearest];
+  }
+  return out;
 }
 
 /**

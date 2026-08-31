@@ -41,12 +41,16 @@ export const REST: Record<BoneName, BoneDef> = {
   RightForeArm:  D('RightArm',  0,   -0.272, 0),
   RightHand:     D('RightForeArm', 0, -0.248, 0),
 
-  LeftUpLeg:    D('Hips',      0.092, -0.058, 0),
+  // Stance width. 0.092 put the femur heads so close together that a heavy
+  // preset's thighs overlapped all the way past the knee — no amount of
+  // radius tuning opens a gap the skeleton does not allow. 0.101 is still
+  // inside the anatomical range and buys ~2 cm of daylight per side.
+  LeftUpLeg:    D('Hips',      0.101, -0.058, 0),
   LeftLeg:      D('LeftUpLeg', 0,    -0.398, 0),
   LeftFoot:     D('LeftLeg',   0,    -0.392, -0.012),
   LeftToeBase:  D('LeftFoot',  0,    -0.075,  0.128),
 
-  RightUpLeg:   D('Hips',     -0.092, -0.058, 0),
+  RightUpLeg:   D('Hips',     -0.101, -0.058, 0),
   RightLeg:     D('RightUpLeg', 0,   -0.398, 0),
   RightFoot:    D('RightLeg',  0,    -0.392, -0.012),
   RightToeBase: D('RightFoot', 0,    -0.075,  0.128),
@@ -72,8 +76,10 @@ export const REST_ROTATION: Partial<Record<BoneName, [number, number, number]>> 
   LeftForeArm:   [THREE.MathUtils.degToRad(-7), 0, THREE.MathUtils.degToRad(2)],
   RightForeArm:  [THREE.MathUtils.degToRad(-7), 0, THREE.MathUtils.degToRad(-2)],
   // Legs converge very slightly toward the ankle, as a relaxed stance does.
-  LeftUpLeg:     [0, 0, THREE.MathUtils.degToRad(-1.6)],
-  RightUpLeg:    [0, 0, THREE.MathUtils.degToRad(1.6)],
+  // Kept small: every degree of convergence is a centimetre the two shoes
+  // move toward each other at the ankle, and they were already touching.
+  LeftUpLeg:     [0, 0, THREE.MathUtils.degToRad(-0.9)],
+  RightUpLeg:    [0, 0, THREE.MathUtils.degToRad(0.9)],
 };
 
 export interface RigProportions {

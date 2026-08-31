@@ -12,7 +12,8 @@
     "dev:api": "npm run dev --workspace @streampolis/api",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "shot": "node tools/shoot.mjs"
+    "shot": "node tools/shoot.mjs",
+    "gate:avatar": "node tools/avatar-matrix.mjs"
   },
   "engines": {
     "node": ">=22"

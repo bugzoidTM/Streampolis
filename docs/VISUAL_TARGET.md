@@ -45,16 +45,50 @@ mais longe. O alvo pede:
 - **Quatro expressões** no mínimo (neutro, sorriso, surpresa, foco). Uma live é
   um rosto reagindo; sem isso o host é um manequim que dança.
 
-**Antes da beleza, três defeitos de geometria** que aparecem em QUALQUER
-combinação de corpo e roupa (verificado renderizando a matriz de presets):
+**Os três defeitos de geometria estão corrigidos** (Sprint Avatar A) e agora
+são medidos, não julgados:
 
-1. os dois calçados se fundem num bloco único;
-2. a barra da blusa não encontra o cós da calça e a pele aparece em manchas
-   na cintura;
-3. as pernas não têm vão entre si, o que mata a silhueta a 60 px.
+1. ~~os dois calçados se fundem num bloco único~~ — a folga mínima medida na
+   matriz é de 62 mm;
+2. ~~a pele aparece em manchas na cintura~~ — nenhum raio encontra pele fora
+   da roupa em 120 combinações;
+3. ~~as pernas não têm vão entre si~~ — o vão mínimo abaixo do joelho é de
+   36 mm.
 
-Nenhum depende de arte nova — são o loft do corpo e o corte das peças. Enquanto
-não forem corrigidos, cada roupa nova nasce quebrada.
+O que os resolveu, e vale para toda peça futura:
+
+- **roupa é o corpo inflado.** Toda banda de tecido é amostrada do próprio
+  perfil do corpo (`torso()`, `arm()`, `leg()`) e não de uma segunda tabela de
+  raios. Dois perfis independentes era o que punha a bunda para fora da
+  camisa: o corpo recua em Z no glúteo e a roupa não recuava junto.
+- **contrato de cintura.** Toda blusa desce até `HEM_MAX` e todo cós sobe até
+  `WAIST_MIN` (`Wardrobe.ts`), com ~10 cm de sobreposição. Nenhuma combinação
+  pode abrir uma faixa de pele; um cropped deliberado terá de mudar a
+  constante e o portão junto, de propósito.
+- **folga imposta por construção.** `legInnerLimit()` define quanto uma perna
+  pode chegar do plano médio — zero na virilha, `LEG_GAP/2` do joelho para
+  baixo — e corpo E roupa se cortam contra ela. Uma calça larga não fecha o
+  vão que o corpo acabou de abrir.
+- **massa não compõe com membro.** `limbs * mass` dava ao preset pesado um
+  joelho mais largo que a própria cabeça; agora a massa entra pela metade.
+
+### O portão
+
+`npm run gate:avatar` renderiza e **mede** 120 combinações (4 corpos × 3
+blusas × 3 calças × 3 sapatos, mais uma varredura das peças restantes),
+escreve `shots/matrix/report.json` e uma folha de contato, e sai com código
+não-zero se qualquer combinação quebrar. Ele mede por raio contra a superfície
+real, não por opinião:
+
+| Medida | Mínimo | Pior valor hoje |
+|---|---|---|
+| Folga entre calçados | 22 mm | 62 mm |
+| Vão entre as pernas abaixo do joelho | 18 mm | 36 mm |
+| Pele fora da roupa | 0 raios | 0 raios |
+
+**Nenhuma roupa nova entra no guarda-roupa com esse portão vermelho.** Uma
+peça herda o corpo de onde é lofted; cem peças sobre um corpo quebrado são cem
+peças quebradas.
 
 O que já está certo e não deve ser mexido: proporção (1,67 m), presets de corpo
 que mudam silhueta de verdade, e o pipeline de vestir — que valida posse antes
