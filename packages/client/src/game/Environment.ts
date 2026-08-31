@@ -45,6 +45,17 @@ export const DUSK: SkyParams = {
 };
 
 /**
+ * What a scene needs from whatever is lighting it. The plaza gets a sky and a
+ * sun; a room gets neither, and the scene base must not care which it holds.
+ */
+export interface LightRig {
+  update(camera: THREE.Camera): void;
+  /** CSM patches materials at creation; new materials have to opt in. */
+  registerMaterial(mat: THREE.Material): void;
+  dispose(): void;
+}
+
+/**
  * Builds the outdoor lighting rig: a Preetham sky used both as a backdrop and
  * as the IBL source, a sun with cascaded shadow maps, and a hemisphere fill.
  *
@@ -52,7 +63,7 @@ export const DUSK: SkyParams = {
  * ambient light and specular reflections agree with what the player sees on
  * the horizon rather than being an unrelated constant (SPECs §8).
  */
-export class Environment {
+export class Environment implements LightRig {
   readonly sky: Sky;
   readonly sun: THREE.DirectionalLight;
   readonly hemi: THREE.HemisphereLight;
@@ -200,5 +211,147 @@ export class Environment {
     this.scene.remove(this.sky, this.sun, this.sun.target, this.hemi);
     this.sky.geometry.dispose();
     (this.sky.material as THREE.Material).dispose();
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Interiors
+// ---------------------------------------------------------------------------
+
+export interface InteriorParams {
+  /** Hemisphere fill: what the ceiling and the floor bounce back. */
+  ceilingColor: number;
+  floorColor: number;
+  ambientIntensity: number;
+  /** Direction the key light travels, from the window into the room. */
+  keyDirection: [number, number, number];
+  keyColor: number;
+  keyIntensity: number;
+  /** Half-size of the shadow frustum; roughly the room's largest dimension. */
+  keyRadius: number;
+  /** Colours of the six faces of the box the IBL is baked from. */
+  envTop: number;
+  envSide: number;
+  envFloor: number;
+  /** One bright face standing in for the window wall. */
+  envWindow: number;
+  envIntensity: number;
+  fogColor: number;
+  fogNear: number;
+  fogFar: number;
+}
+
+export const ROOM_DAY: InteriorParams = {
+  ceilingColor: 0xdfe7f2, floorColor: 0x6b6259, ambientIntensity: 0.5,
+  keyDirection: [-0.35, -0.72, 0.6], keyColor: 0xfff0d8, keyIntensity: 2.6, keyRadius: 7,
+  envTop: 0x9fb4cc, envSide: 0x6d6a66, envFloor: 0x3b3733, envWindow: 0xcfe2ff,
+  envIntensity: 0.95, fogColor: 0x2a2e36, fogNear: 24, fogFar: 90,
+};
+
+export const ROOM_NIGHT: InteriorParams = {
+  ceilingColor: 0x2c3550, floorColor: 0x14161c, ambientIntensity: 0.34,
+  keyDirection: [-0.2, -0.85, 0.45], keyColor: 0x9fb6ff, keyIntensity: 0.7, keyRadius: 9,
+  envTop: 0x1a2030, envSide: 0x20222c, envFloor: 0x0d0e12, envWindow: 0x3b4a6b,
+  envIntensity: 0.7, fogColor: 0x0b0d12, fogNear: 18, fogFar: 70,
+};
+
+/**
+ * Lighting for a room.
+ *
+ * No sky, no PMREM of a sky: an interior lit by the outdoor rig looks like a
+ * film set with the roof torn off. The IBL here is baked from a tinted box —
+ * bright ceiling, darker walls, one luminous face where the window is — which
+ * is the cheapest thing that still gives materials somewhere plausible to
+ * reflect. Practical lamps are added by the scene as point lights on top.
+ */
+export class InteriorRig implements LightRig {
+  readonly key: THREE.DirectionalLight;
+  readonly hemi: THREE.HemisphereLight;
+
+  private pmrem: THREE.PMREMGenerator;
+  private envRT: THREE.WebGLRenderTarget | null = null;
+  private params: InteriorParams;
+  private boxGeo: THREE.BoxGeometry | null = null;
+
+  constructor(
+    private scene: THREE.Scene,
+    renderer: THREE.WebGLRenderer,
+    params: InteriorParams = ROOM_DAY,
+  ) {
+    this.params = { ...params };
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+
+    this.hemi = new THREE.HemisphereLight(
+      this.params.ceilingColor, this.params.floorColor, this.params.ambientIntensity,
+    );
+    scene.add(this.hemi);
+
+    this.key = new THREE.DirectionalLight(this.params.keyColor, this.params.keyIntensity);
+    this.key.castShadow = true;
+    this.key.shadow.bias = -0.0007;
+    this.key.shadow.normalBias = 0.03;
+    this.key.shadow.mapSize.set(2048, 2048);
+    scene.add(this.key, this.key.target);
+
+    this.apply(this.params);
+  }
+
+  apply(params: Partial<InteriorParams>) {
+    Object.assign(this.params, params);
+    const p = this.params;
+
+    this.hemi.color.setHex(p.ceilingColor);
+    this.hemi.groundColor.setHex(p.floorColor);
+    this.hemi.intensity = p.ambientIntensity;
+
+    this.key.color.setHex(p.keyColor);
+    this.key.intensity = p.keyIntensity;
+    const dir = new THREE.Vector3(...p.keyDirection).normalize();
+    this.key.position.copy(dir).multiplyScalar(-p.keyRadius * 2.2);
+    this.key.target.position.set(0, 0, 0);
+    this.key.target.updateMatrixWorld();
+    const cam = this.key.shadow.camera;
+    cam.left = -p.keyRadius; cam.right = p.keyRadius;
+    cam.top = p.keyRadius; cam.bottom = -p.keyRadius;
+    cam.near = 0.5;
+    cam.far = p.keyRadius * 5;
+    cam.updateProjectionMatrix();
+
+    this.scene.fog = new THREE.Fog(p.fogColor, p.fogNear, p.fogFar);
+    this.scene.background = new THREE.Color(p.fogColor);
+    this.scene.environmentIntensity = p.envIntensity;
+    this.bakeEnvironment();
+  }
+
+  /** Bakes the IBL from a tinted box. Cheap enough to redo on a look change. */
+  private bakeEnvironment() {
+    this.envRT?.dispose();
+    const p = this.params;
+    const capture = new THREE.Scene();
+    this.boxGeo?.dispose();
+    this.boxGeo = new THREE.BoxGeometry(12, 6, 12);
+    const faces = [p.envSide, p.envWindow, p.envTop, p.envFloor, p.envSide, p.envSide];
+    const mats = faces.map((hex) =>
+      new THREE.MeshBasicMaterial({ color: hex, side: THREE.BackSide }));
+    const boxMesh = new THREE.Mesh(this.boxGeo, mats);
+    capture.add(boxMesh);
+    this.envRT = this.pmrem.fromScene(capture, 0.06);
+    this.scene.environment = this.envRT.texture;
+    for (const m of mats) m.dispose();
+  }
+
+  /** Nothing to track per frame: a room's light does not follow the camera. */
+  update(_camera: THREE.Camera) {}
+
+  registerMaterial(_mat: THREE.Material) {}
+
+  dispose() {
+    this.envRT?.dispose();
+    this.pmrem.dispose();
+    this.boxGeo?.dispose();
+    this.scene.remove(this.key, this.key.target, this.hemi);
+    this.scene.environment = null;
+    this.scene.background = null;
   }
 }

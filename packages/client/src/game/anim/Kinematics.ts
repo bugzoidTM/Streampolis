@@ -83,6 +83,8 @@ export interface ContactSample {
   planted: 0 | 1;
   /** Forward (+Z) coordinate of the planted foot in character space. */
   plantedZ: number;
+  /** Forward coordinate of BOTH heels, left then right. */
+  feetZ: [number, number];
 }
 
 export function sampleContacts(
@@ -95,23 +97,59 @@ export function sampleContacts(
     let best = Infinity;
     let planted: 0 | 1 = 0;
     let plantedZ = 0;
+    const feetZ: [number, number] = [0, 0];
     for (let f = 0; f < FEET.length; f++) {
       fk.position(FEET[f].foot, v);
       const heel = v.y - sole.ankle;
       const heelZ = v.z;
+      feetZ[f] = heelZ;
       fk.position(FEET[f].toe, v);
       const toe = v.y - sole.toe;
       const low = Math.min(heel, toe);
       if (low < best) {
         best = low;
         planted = f as 0 | 1;
-        // The heel carries the weight through most of stance; measure slide there.
-        plantedZ = heel <= toe ? heelZ : v.z;
+        // ALWAYS the heel, even when the toe is the lower of the two: mixing
+        // the two reference points makes the tracked position jump by the
+        // length of a foot the moment the ankle rolls, and every measurement
+        // downstream reads that jump as a 12 cm slide.
+        plantedZ = heelZ;
       }
     }
-    out.push({ clearance: best, planted, plantedZ });
+    out.push({ clearance: best, planted, plantedZ, feetZ });
   }
   return out;
+}
+
+/** A foot counts as carrying weight below this clearance, in metres. */
+export const CONTACT_EPS = 0.035;
+
+/**
+ * Sample ranges over which the SAME foot is on the floor. A run whose foot is
+ * airborne is not a stance and must not be measured — during a run's flight
+ * phase the "planted" foot is simply the lower of two feet in mid-air, and
+ * treating that as contact reports a metre of sliding that nobody can see.
+ */
+export function stanceRuns(contacts: ContactSample[]): Array<[number, number]> {
+  const n = contacts.length - 1; // last sample duplicates the first for looping
+  const out: Array<[number, number]> = [];
+  let start = -1;
+  for (let i = 0; i <= n; i++) {
+    const c = contacts[i];
+    const grounded = i < n && c.clearance < CONTACT_EPS;
+    const same = grounded && start >= 0 && c.planted === contacts[start].planted;
+    if (grounded && start < 0) { start = i; continue; }
+    if (same) continue;
+    if (start >= 0 && i - start > 1) out.push([start, i]);
+    start = grounded ? i : -1;
+  }
+  if (start >= 0 && n - start > 1) out.push([start, n]);
+  return out;
+}
+
+/** Drops the double-support sample at each end of a stance, when it can. */
+export function trimStance(from: number, to: number): [number, number] {
+  return to - from >= 4 ? [from + 1, to - 1] : [from, to];
 }
 
 export interface LocomotionMeasurement {
@@ -128,36 +166,39 @@ export interface LocomotionMeasurement {
 
 /**
  * Derives how far the character travels per cycle from the geometry of the
- * clip itself, by integrating how far the planted foot slides backwards
- * underneath the hips. Hard-coding a stride length is what produces foot
- * sliding: the number has to come from the pose, not from a guess.
+ * clip itself. Hard-coding a stride length is what produces foot sliding: the
+ * number has to come from the pose, not from a guess.
  */
 export function measureLocomotion(
   contacts: ContactSample[], times: number[], duration: number,
 ): LocomotionMeasurement {
-  let distance = 0;
   const n = contacts.length - 1; // last sample duplicates the first for looping
+
+  // The step length is the gap between the heels at their widest: exactly how
+  // far the body advances between one contact and the next. A cycle is two
+  // steps. Integrating the planted heel instead loses the double-support
+  // windows at both ends of every stance — it under-reads a walk by a third,
+  // and the missing third comes back as skating.
+  let step = 0;
   for (let i = 0; i < n; i++) {
-    const a = contacts[i];
-    const b = contacts[(i + 1) % n];
-    if (a.planted === b.planted) distance += a.plantedZ - b.plantedZ;
+    step = Math.max(step, Math.abs(contacts[i].feetZ[0] - contacts[i].feetZ[1]));
   }
+  const distance = step * 2;
   const baseSpeed = duration > 0 ? distance / duration : 0;
 
   let maxSlide = 0;
-  let runStart = 0;
-  for (let i = 1; i <= n; i++) {
-    const same = i < n && contacts[i].planted === contacts[runStart].planted;
-    if (!same) {
-      let lo = Infinity, hi = -Infinity;
-      for (let j = runStart; j < i; j++) {
-        // World position of the planted foot if the body advances at baseSpeed.
-        const w = contacts[j].plantedZ + baseSpeed * times[j];
-        lo = Math.min(lo, w); hi = Math.max(hi, w);
-      }
-      if (hi - lo > maxSlide) maxSlide = hi - lo;
-      runStart = i;
+  for (const [from, to] of stanceRuns(contacts)) {
+    // The first and last sample of a stance are double support: the weight is
+    // moving from one foot to the other and neither is fully planted, so they
+    // are not slide and must not be measured as slide.
+    const [a, b] = trimStance(from, to);
+    let lo = Infinity, hi = -Infinity;
+    for (let j = a; j < b; j++) {
+      // World position of the planted foot if the body advances at baseSpeed.
+      const w = contacts[j].plantedZ + baseSpeed * times[j];
+      lo = Math.min(lo, w); hi = Math.max(hi, w);
     }
+    if (hi - lo > maxSlide) maxSlide = hi - lo;
   }
 
   let minClearance = Infinity, maxClearance = -Infinity;

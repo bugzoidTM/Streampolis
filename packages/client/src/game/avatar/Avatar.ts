@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { AvatarConfig } from '@streampolis/shared';
+import type { AnimState, AvatarConfig } from '@streampolis/shared';
+import { Animator } from '../anim/Animator.js';
 import { buildRig, PROPORTION_PRESETS, type BuiltRig, BONE_INDEX } from './Skeleton.js';
 import { buildBody, buildHead, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
 import { buildHair, TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS } from './Wardrobe.js';
@@ -13,7 +14,8 @@ import { makeSkinMaterial, makeIrisMaterial, makeScleraMaterial } from './Materi
 export class Avatar {
   readonly root = new THREE.Group();
   readonly rig: BuiltRig;
-  readonly mixer: THREE.AnimationMixer;
+  /** State machine + mixer. Every avatar animates through this and only this. */
+  readonly animator: Animator;
 
   private config: AvatarConfig;
   private bodyMesh!: THREE.SkinnedMesh;
@@ -31,7 +33,7 @@ export class Avatar {
     this.rig = buildRig(proportions);
 
     this.root.add(this.rig.root);
-    this.mixer = new THREE.AnimationMixer(this.root);
+    this.animator = new Animator(this.root, this.rig);
 
     this.buildBodyMesh();
     this.buildHeadMesh();
@@ -157,6 +159,15 @@ export class Avatar {
     }
   }
 
+  /** What the world says this avatar is doing right now. */
+  setAnim(state: AnimState) { this.animator.request(state); }
+
+  /**
+   * Advances the animation. `speed` is the ground speed the renderer is about
+   * to draw, in m/s, which is what the locomotion clips are timed against.
+   */
+  animate(dt: number, speed: number) { this.animator.update(dt, speed); }
+
   /** Applies a config change, rebuilding only what actually differs. */
   update(next: Partial<AvatarConfig>) {
     const prev = this.config;
@@ -192,7 +203,7 @@ export class Avatar {
   }
 
   dispose() {
-    this.mixer.stopAllAction();
+    this.animator.dispose();
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.geometry) m.geometry.dispose();

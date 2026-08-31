@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { PLAZA, SCENE_AREA, SCENE_COLLIDERS, type Placement, type SceneId } from '@streampolis/shared';
+import {
+  PLAZA, SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS, type Placement, type SceneId,
+} from '@streampolis/shared';
 import { LOOK_DAY, type GradeLook } from '../Renderer.js';
 import { GOLDEN_HOUR } from '../Environment.js';
 import {
@@ -58,11 +60,11 @@ export class PlazaScene extends SceneBase {
     this.buildPerimeter();
     this.buildScreen();
 
-    // Spawn ring mirrors the server's spawnFor(): a client that predicts from
-    // a different spawn than the server assigned starts life with a snap.
-    for (let i = 0; i < 12; i++) {
-      const a = i * 2.399963229728653;
-      this.spawnPoints.push(new THREE.Vector3(Math.cos(a) * 6, 0, Math.sin(a) * 6));
+    // The spawn markers ARE the server's: shared table, one ring, no drift. A
+    // client that predicts from a different spawn than the server assigned
+    // starts life with a snap.
+    for (const s of SCENE_SPAWNS.central_plaza) {
+      this.spawnPoints.push(new THREE.Vector3(s.x, 0, s.z));
     }
 
     this.registerMaterials();

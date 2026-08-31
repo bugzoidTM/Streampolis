@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { resolveCollision, type Area, type Collider, type SceneId } from '@streampolis/shared';
+import type { Framing } from '../CameraManager.js';
 import type { GradeLook } from '../Renderer.js';
-import { Environment, type SkyParams } from '../Environment.js';
+import {
+  Environment, InteriorRig, ROOM_DAY,
+  type InteriorParams, type LightRig, type SkyParams,
+} from '../Environment.js';
 import { MatLib } from '../props/Materials.js';
 
 /**
@@ -14,6 +18,10 @@ export interface GameScene {
   readonly scene: THREE.Scene;
   readonly spawnPoints: THREE.Vector3[];
   readonly look: GradeLook;
+  /** How the camera should frame this space. A studio is not a square. */
+  readonly framing: Framing;
+  /** Longest the camera boom may get here; a small flat cannot afford 9 m. */
+  readonly maxBoom: number;
   build(renderer: THREE.WebGLRenderer): Promise<void>;
   update(dt: number, camera: THREE.Camera): void;
   /** Simple collision: returns the corrected position. */
@@ -40,8 +48,10 @@ export abstract class SceneBase implements GameScene {
   readonly scene = new THREE.Scene();
   readonly spawnPoints: THREE.Vector3[] = [];
   readonly mats = new MatLib();
+  readonly framing: Framing = 'room';
+  readonly maxBoom: number = 9.0;
 
-  protected env: Environment | null = null;
+  protected env: LightRig | null = null;
   protected colliders: Collider[] = [];
   protected bounds: Bounds | null = null;
   protected elapsed = 0;
@@ -63,9 +73,19 @@ export abstract class SceneBase implements GameScene {
 
   protected own(d: { dispose(): void }) { this.extraDisposables.push(d); }
 
-  protected makeEnvironment(renderer: THREE.WebGLRenderer, sky: SkyParams) {
-    this.env = new Environment(this.scene, renderer, sky);
-    return this.env;
+  protected makeEnvironment(renderer: THREE.WebGLRenderer, sky: SkyParams): Environment {
+    const env = new Environment(this.scene, renderer, sky);
+    this.env = env;
+    return env;
+  }
+
+  /** Indoor rig: no sky, no sun, an IBL baked from the room itself. */
+  protected makeInterior(
+    renderer: THREE.WebGLRenderer, params: InteriorParams = ROOM_DAY,
+  ): InteriorRig {
+    const rig = new InteriorRig(this.scene, renderer, params);
+    this.env = rig;
+    return rig;
   }
 
   /** Opts every scene material into the cascaded-shadow shader patch. */

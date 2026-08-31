@@ -37,7 +37,17 @@ export function WorldView(props: WorldViewProps) {
 
     const onResize = () => world.resize();
     window.addEventListener('resize', onResize);
-    Object.assign(window as object, { __lab: { stats: () => world.stats() }, __world: world });
+    // Debug surface for tools/shoot.mjs and tools/probe.mjs. Read-only apart
+    // from `anim`, which the visual review uses to photograph a pose.
+    Object.assign(window as object, {
+      __lab: {
+        stats: () => world.stats(),
+        anim: (state: string | null) => world.forceAnim(state as never),
+        animReport: () => world.animReport(),
+        capture: () => world.capture(),
+      },
+      __world: world,
+    });
 
     return () => {
       cancelled = true;

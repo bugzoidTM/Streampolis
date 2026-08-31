@@ -142,6 +142,13 @@ export interface ClipSpec {
   loop?: boolean;
   hips?: HipsKey[];
   ground?: GroundMode;
+  /**
+   * The clip carries the body forward, so its stride is worth measuring and
+   * its planted foot is worth locking. False for anything performed on the
+   * spot: a dance's feet move without the body going anywhere, and measuring
+   * a stride there produces a speed that does not exist.
+   */
+  locomotion?: boolean;
   /** Samples generated per eased segment. More = smoother arc, bigger clip. */
   steps?: number;
 }
@@ -181,7 +188,11 @@ export function samplePoses(spec: ClipSpec, hipHeight: number): SampledPose {
   for (let i = 0; i < keys.length - 1; i++) {
     const a = keys[i], b = keys[i + 1];
     const ease = EASES[a.ease ?? 'sine'];
-    const n = (a.ease ?? 'sine') === 'linear' ? 1 : steps;
+    // Linear segments are sampled densely too. Rotation would not need it —
+    // three.js slerps between two keys anyway — but the ground lock and the
+    // foot lock read this sample list, and they cannot correct a foot they
+    // only see twice per cycle.
+    const n = steps;
     for (let j = 0; j < n; j++) {
       const raw = j / n;
       times.push(a.time + (b.time - a.time) * raw);

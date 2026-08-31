@@ -1,22 +1,13 @@
-import { PLAY_AREA, type SceneId } from '../shared.js';
+import { SCENE_SPAWNS, PLAY_AREA, type SceneId } from '../shared.js';
 
 /**
- * Spawn ring per scene. Players arriving at the same instant must not stack on
- * the same coordinate — a ring keeps them apart without a collision solver on
- * the server (the client scene owns the real colliders).
+ * Where a joining player lands.
  *
- * TODO(scenes agent): replace the radii with the real spawn markers exported
- * from packages/client/src/game/scenes once those land.
+ * The markers themselves live in @streampolis/shared, next to the layout that
+ * places the furniture, because the client predicts movement from the spawn
+ * the server assigned: a ring invented here and a floor plan authored there
+ * differ by exactly one sofa, and the player arrives inside it.
  */
-const SPAWN_RADIUS: Record<SceneId, number> = {
-  central_plaza: 6,
-  residential_lobby: 3.5,
-  apartment: 2.2,
-  stream_store: 3,
-  agency_tower: 4,
-  pk_arena: 6,
-  live_room: 2.5,
-};
 
 export interface SpawnPose {
   x: number;
@@ -28,18 +19,14 @@ export interface SpawnPose {
 
 /** Deterministic: the same index always yields the same pose. */
 export function spawnFor(sceneId: SceneId, index: number): SpawnPose {
-  const r = SPAWN_RADIUS[sceneId] ?? 3;
-  const golden = 2.399963229728653; // ~137.5°, spreads sequential joins evenly
-  const angle = index * golden;
-  const x = Math.cos(angle) * r;
-  const z = Math.sin(angle) * r;
+  const markers = SCENE_SPAWNS[sceneId] ?? SCENE_SPAWNS.central_plaza;
+  const marker = markers[((index % markers.length) + markers.length) % markers.length];
   const area = PLAY_AREA[sceneId];
   return {
-    x: Math.min(Math.max(x, area.minX + 1), area.maxX - 1),
+    x: Math.min(Math.max(marker.x, area.minX + 1), area.maxX - 1),
     y: 0,
-    z: Math.min(Math.max(z, area.minZ + 1), area.maxZ - 1),
-    // Face the centre of the scene, which is where the interesting things are.
-    yaw: Math.atan2(-x, -z),
+    z: Math.min(Math.max(marker.z, area.minZ + 1), area.maxZ - 1),
+    yaw: marker.yaw,
     moving: false,
   };
 }

@@ -1,4 +1,5 @@
 import { PLAZA } from './layout.js';
+import { INTERIORS, type Fixture, type SceneLayout } from './interiors.js';
 import type { SceneId } from './types.js';
 
 /**
@@ -116,21 +117,151 @@ function plazaColliders(): Collider[] {
   return out;
 }
 
+/**
+ * Blockers a room's own walls contribute. Doorways are not carved out: an
+ * opening you can walk through needs a gap in the collider run, and the four
+ * segments below are what produce it — the shell builder in the client reads
+ * the same openings, so the hole in the geometry and the hole in the collision
+ * are the same hole.
+ */
+function shellColliders(layout: SceneLayout): Collider[] {
+  const { width, depth, wall, openings } = layout.shell;
+  const hw = width / 2;
+  const hd = depth / 2;
+  const out: Collider[] = [];
+
+  const runs = (
+    side: 'north' | 'south' | 'east' | 'west', span: number,
+  ): Array<[number, number]> => {
+    // Walk the wall from one end to the other, skipping any opening a player
+    // could fit through. A window sill above the floor still blocks.
+    const gaps = openings
+      .filter((o) => o.side === side && o.y < 0.6)
+      .map((o) => [o.x - o.w / 2, o.x + o.w / 2] as [number, number])
+      .sort((a, b) => a[0] - b[0]);
+    const segments: Array<[number, number]> = [];
+    let cursor = -span / 2;
+    for (const [a, b] of gaps) {
+      if (a > cursor) segments.push([cursor, a]);
+      cursor = Math.max(cursor, b);
+    }
+    if (cursor < span / 2) segments.push([cursor, span / 2]);
+    return segments;
+  };
+
+  for (const [a, b] of runs('north', width)) {
+    out.push({ kind: 'rect', x: (a + b) / 2, z: -hd - wall / 2, hw: (b - a) / 2, hd: wall / 2, ry: 0 });
+  }
+  for (const [a, b] of runs('south', width)) {
+    out.push({ kind: 'rect', x: (a + b) / 2, z: hd + wall / 2, hw: (b - a) / 2, hd: wall / 2, ry: 0 });
+  }
+  for (const [a, b] of runs('west', depth)) {
+    out.push({ kind: 'rect', x: -hw - wall / 2, z: (a + b) / 2, hw: wall / 2, hd: (b - a) / 2, ry: 0 });
+  }
+  for (const [a, b] of runs('east', depth)) {
+    out.push({ kind: 'rect', x: hw + wall / 2, z: (a + b) / 2, hw: wall / 2, hd: (b - a) / 2, ry: 0 });
+  }
+  return out;
+}
+
+/** A fixture blocks only if it declares how much of the floor it takes. */
+function fixtureCollider(f: Fixture): Collider | null {
+  if (f.r !== undefined) return { kind: 'circle', x: f.x, z: f.z, r: f.r };
+  if (f.hw !== undefined && f.hd !== undefined) {
+    return { kind: 'rect', x: f.x, z: f.z, hw: f.hw, hd: f.hd, ry: f.ry ?? 0 };
+  }
+  return null;
+}
+
+function interiorColliders(layout: SceneLayout): Collider[] {
+  const out = shellColliders(layout);
+  for (const f of layout.fixtures) {
+    const c = fixtureCollider(f);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+function interior(id: SceneId): Collider[] {
+  const layout = INTERIORS[id];
+  return layout ? interiorColliders(layout) : [];
+}
+
 /** Blockers per scene. Empty means "only the area limit applies". */
 export const SCENE_COLLIDERS: Record<SceneId, readonly Collider[]> = {
   central_plaza: plazaColliders(),
-  residential_lobby: [],
-  apartment: [],
-  stream_store: [],
-  agency_tower: [],
-  pk_arena: [],
-  live_room: [],
+  residential_lobby: interior('residential_lobby'),
+  apartment: interior('apartment'),
+  stream_store: interior('stream_store'),
+  agency_tower: interior('agency_tower'),
+  pk_arena: interior('pk_arena'),
+  live_room: interior('live_room'),
 };
 
 /**
- * Walkable limit per scene. The plaza is a disc; the rest keep the rectangle
- * their PLAY_AREA already describes, so `null` means "use PLAY_AREA".
+ * Walkable limit per scene. The plaza is a disc; every room is the rectangle
+ * its own shell describes, which is tighter than the PLAY_AREA envelope the
+ * protocol declares — the envelope is a sanity ceiling, this is the floor plan.
  */
+function interiorArea(id: SceneId): Area | undefined {
+  const layout = INTERIORS[id];
+  if (!layout) return undefined;
+  return {
+    kind: 'rect',
+    x: 0,
+    z: 0,
+    hw: layout.shell.width / 2,
+    hd: layout.shell.depth / 2,
+  };
+}
+
 export const SCENE_AREA: Partial<Record<SceneId, Area>> = {
   central_plaza: { kind: 'circle', x: 0, z: 0, r: PLAZA.radius },
+  apartment: interiorArea('apartment'),
+  live_room: interiorArea('live_room'),
+  pk_arena: interiorArea('pk_arena'),
+  residential_lobby: interiorArea('residential_lobby'),
+  stream_store: interiorArea('stream_store'),
+  agency_tower: interiorArea('agency_tower'),
+};
+
+/**
+ * Spawn markers per scene, in one place because two authorities need them: the
+ * server assigns a spawn on join and the client predicts from the same point.
+ * The plaza's golden-angle ring is generated; rooms get hand-placed markers,
+ * because "somewhere on a circle" puts a player inside the kitchen counter.
+ */
+export interface SpawnPoint { x: number; z: number; yaw: number }
+
+function plazaSpawns(): SpawnPoint[] {
+  const out: SpawnPoint[] = [];
+  for (let i = 0; i < 12; i++) {
+    const a = i * 2.399963229728653; // ~137.5°, spreads sequential joins evenly
+    const x = Math.cos(a) * 6;
+    const z = Math.sin(a) * 6;
+    out.push({ x, z, yaw: Math.atan2(-x, -z) });
+  }
+  return out;
+}
+
+function interiorSpawns(id: SceneId): SpawnPoint[] {
+  const layout = INTERIORS[id];
+  if (!layout) return [{ x: 0, z: 0, yaw: 0 }];
+  return layout.spawns.map((s) => ({
+    x: s.x,
+    z: s.z,
+    // Facing the middle of the room by default: arriving with your back to
+    // everything is the fastest way to make a room feel empty.
+    yaw: s.yaw ?? Math.atan2(-s.x, -s.z),
+  }));
+}
+
+export const SCENE_SPAWNS: Record<SceneId, readonly SpawnPoint[]> = {
+  central_plaza: plazaSpawns(),
+  residential_lobby: interiorSpawns('residential_lobby'),
+  apartment: interiorSpawns('apartment'),
+  stream_store: interiorSpawns('stream_store'),
+  agency_tower: interiorSpawns('agency_tower'),
+  pk_arena: interiorSpawns('pk_arena'),
+  live_room: interiorSpawns('live_room'),
 };

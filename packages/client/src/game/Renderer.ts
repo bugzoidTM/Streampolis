@@ -45,6 +45,9 @@ export const LOOK_INTERIOR: GradeLook = {
   grain: 0.018, exposure: 0.98, bloomStrength: 0.2, bloomThreshold: 0.9, bloomRadius: 0.45,
 };
 
+/** Frames ignored before the quality governor starts believing the clock. */
+const WARMUP_FRAMES = 45;
+
 /**
  * Owns the WebGL context and the post-processing chain. Kept deliberately
  * free of game rules: it is handed a scene and a camera and produces pixels
@@ -68,6 +71,7 @@ export class Renderer {
   private look: GradeLook = LOOK_DAY;
   private size = new THREE.Vector2(1, 1);
   private elapsed = 0;
+  private frames = 0;
 
   constructor(canvas: HTMLCanvasElement, forcedTier?: 'low' | 'medium' | 'high') {
     this.canvas = canvas;
@@ -77,8 +81,12 @@ export class Renderer {
       powerPreference: 'high-performance',
       stencil: false,
       alpha: false,
-      // Screenshots and share cards need the buffer to survive the frame.
-      preserveDrawingBuffer: true,
+      // NOT preserveDrawingBuffer. Keeping the back buffer alive across the
+      // frame costs a full-screen copy every single frame on most drivers, and
+      // it buys nothing at gameplay: `capture()` below renders on demand and
+      // reads the canvas back inside the same task, which is the one moment
+      // the buffer is guaranteed to still be there.
+      preserveDrawingBuffer: false,
     });
 
     this.webgl.outputColorSpace = THREE.SRGBColorSpace;
@@ -207,9 +215,32 @@ export class Renderer {
   render(dt: number) {
     if (!this.scene || !this.camera) return;
     this.elapsed += dt;
+    this.frames++;
+
+    // Feed the governor. The first frames are skipped on purpose: shader
+    // compilation and the first upload of every texture land there, and a
+    // governor that believes those numbers drops a fast machine to low tier
+    // before the scene has drawn once.
+    if (this.frames > WARMUP_FRAMES) {
+      this.quality.sample(dt, performance.now());
+    }
+
     if (this.grade) this.grade.uniforms.uTime.value = this.elapsed;
     this.webgl.info.reset();
     this.composer.render(dt);
+  }
+
+  /**
+   * A PNG of the current frame.
+   *
+   * Renders one frame and reads the canvas back in the SAME task, which is why
+   * the context does not need `preserveDrawingBuffer`: the drawing buffer is
+   * only cleared when the browser composites, and that cannot happen before
+   * this function returns.
+   */
+  capture(mime = 'image/png', quality?: number): string {
+    this.render(0);
+    return this.canvas.toDataURL(mime, quality);
   }
 
   /** renderer.info snapshot for the perf HUD (SPECs §7). */

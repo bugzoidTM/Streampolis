@@ -94,6 +94,48 @@ solver, o jogador atravessa a fonte de um lado e bate nela do outro. As
 posições dos props vêm de `packages/shared/src/layout.ts` pelo mesmo motivo: a
 cena desenha a partir da tabela de onde os colliders são gerados.
 
+## Cenas: qual arquivo desenha qual mundo
+
+`packages/client/src/game/scenes/index.ts` é o registro. `createScene(sceneId)`
+devolve a cena daquele id e a tabela é exaustiva por tipo — um `SceneId` novo
+sem cena quebra o build em vez de cair na praça calada.
+
+- A praça (`PlazaScene`) é autoral: geometria escrita à mão a partir de `PLAZA`.
+- Todo interior é `InteriorScene`, dirigida por dados: casco + fixtures +
+  iluminação vêm de `packages/shared/src/interiors.ts`, e cada sala
+  (`ApartmentScene`, `LiveRoomScene`, `PkArenaScene`, `PublicScenes`) só escolhe
+  seu grade, sua luz, suas superfícies e o `dress()` que lhe é próprio.
+
+O layout dos interiores mora no pacote shared pelo mesmo motivo que `PLAZA`:
+`collision.ts` gera dali os colliders, a área caminhável e os **spawns** — que o
+servidor lê em `world/Spawns.ts`. Mover um sofá move o collider do sofá.
+
+O mundo só constrói a cena DEPOIS de entrar na sala: quem manda no cômodo é o
+servidor, não a query string.
+
+## Animação: do estado na rede ao corpo na tela
+
+`state.anim` viajar não é o avatar se mexer. O caminho completo:
+
+```
+Clips.ts     poses autorais (graus, DELTAS do rest, corpo olhando +Z)
+Compile.ts   ClipSpec -> AnimationClip: ground lock, foot lock, medição
+Library.ts   compila uma vez por balde de rig e compartilha
+Animator.ts  máquina de estados por avatar: crossfade, one-shots, rate
+World.ts     mede a velocidade DESENHADA e chama setAnim/animate por ator
+```
+
+Duas armadilhas já pagas, não as reintroduza:
+
+- clipe de locomoção usa `ease: 'linear'` e `locomotion: true`. Com easing o pé
+  plantado desliza; o compilador mede isso (`maxSlide`) e corrige pelo quadril.
+- `--anim=` no shoot fixa o estado (`Animator.pin`), porque pedir `walk` a um
+  corpo parado devolve `idle` — correto no jogo, inútil para fotografar.
+
+`node tools/shoot.mjs ... --anim=dance` grava no `.json` irmão o relatório de
+todos os clipes: velocidade autoral, deslizamento do pé e folga do solo. Walk
+abaixo de 2 cm de deslizamento é o alvo.
+
 ## Como rodar e como VER o resultado
 
 O servidor de dev já está no ar em `http://127.0.0.1:5273` (Vite, com HMR —
@@ -105,6 +147,12 @@ Captura headless (SwiftShader; use resoluções modestas, cada frame é lento):
 ```
 spshot --url='http://127.0.0.1:5273/?...' --out=shots/nome.png --w=700 --h=900 --settle=1200
 ```
+
+Bandeiras úteis: `--scene=` na URL (`?view=world&scene=live_room`), `--anim=`
+para fixar uma pose e `--mode=canvas` para capturar pelo próprio renderer
+(`Renderer.capture()`: um render e um `toDataURL` na mesma tarefa). O contexto
+NÃO usa `preserveDrawingBuffer` — ele custa uma cópia de tela por frame no
+gameplay inteiro para servir a um screenshot ocasional.
 
 Isso grava `shots/nome.png` e um `.json` irmão com `renderer.info` e os erros de
 console. **Sempre leia o PNG com a ferramenta Read depois de capturar.** Um
