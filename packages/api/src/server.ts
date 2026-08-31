@@ -11,6 +11,7 @@ import { recordPKResult, listPKHistory } from './pk/PkRecords.ts';
 import { canEnter, getHome, getOrCreateHomeOf, setVisibility } from './world/Homes.ts';
 import { closeLive, listLives, openLive } from './world/Lives.ts';
 import { requireService, requireUser, type AuthedRequest } from './http/middleware/auth.ts';
+import { rateLimit } from './http/middleware/rateLimit.ts';
 
 /**
  * API REST (SPECs §51, §52).
@@ -23,6 +24,19 @@ import { requireService, requireUser, type AuthedRequest } from './http/middlewa
 export const app = express();
 app.use(express.json({ limit: '64kb' }));
 app.disable('x-powered-by');
+// Atrás de um proxy o IP do cliente vem no X-Forwarded-For; sem isto o
+// limitador conta todo mundo no mesmo balde (o do proxy). Configurável porque
+// confiar no header quando NÃO há proxy é o contrário: qualquer um forja o IP.
+app.set('trust proxy', config.trustProxy);
+
+// Teto global do público. `/internal/*` fica de fora porque tem o seu próprio
+// teto (bem mais alto) e um chamador só: somar os dois derrubaria o game server
+// no meio de uma live movimentada, que é exatamente quando ele mais chama.
+const generalLimit = rateLimit('general');
+app.use((req, res, next) => {
+  if (req.path.startsWith('/internal/') || req.path === '/health') { next(); return; }
+  generalLimit(req, res, next);
+});
 
 // ---------------------------------------------------------------- saúde ---
 
@@ -42,7 +56,7 @@ const loginSchema = z.object({
   password: z.string().min(8).max(200),
 });
 
-app.post('/auth/login', async (req, res, next) => {
+app.post('/auth/login', rateLimit('auth'), async (req, res, next) => {
   try {
     const body = loginSchema.parse(req.body);
     const { rows } = await pool.query<{ id: string; password_hash: string | null }>(
@@ -74,7 +88,7 @@ app.post('/auth/login', async (req, res, next) => {
  * server e o cliente rodarem antes do cadastro existir, e some em produção
  * (config.devLogin é falso lá, sem exceção).
  */
-app.post('/auth/dev-login', async (req, res, next) => {
+app.post('/auth/dev-login', rateLimit('auth'), async (req, res, next) => {
   if (!config.devLogin) {
     res.status(404).json({ error: 'not_found' });
     return;
@@ -167,7 +181,7 @@ app.put('/me/home/visibility', requireUser, async (req: AuthedRequest, res, next
   }
 });
 
-app.get('/me/wallet', requireUser, async (req: AuthedRequest, res, next) => {
+app.get('/me/wallet', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
   try {
     res.json(await getBalances(req.userId as string));
   } catch (err) {
@@ -175,7 +189,7 @@ app.get('/me/wallet', requireUser, async (req: AuthedRequest, res, next) => {
   }
 });
 
-app.get('/me/ledger', requireUser, async (req: AuthedRequest, res, next) => {
+app.get('/me/ledger', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
   try {
     const limit = Number(req.query.limit ?? 50);
     const before = typeof req.query.before === 'string' ? req.query.before : undefined;
@@ -226,7 +240,7 @@ const giftSchema = z.object({
  * do game server: `ok:false` (ou qualquer não-2xx) significa que NENHUM evento
  * pode ser transmitido — a animação só existe se a moeda saiu.
  */
-app.post('/internal/economy/gift', requireService, async (req, res, next) => {
+app.post('/internal/economy/gift', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     const body = giftSchema.parse(req.body);
     const result = await sendGift({
@@ -270,7 +284,7 @@ const pkResultSchema = z.object({
 });
 
 /** O game server apurou; a API grava. Não recalcula vencedor (ver PkRecords). */
-app.post('/internal/pk/result', requireService, async (req, res, next) => {
+app.post('/internal/pk/result', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     const body = pkResultSchema.parse(req.body);
     const record = await recordPKResult({
@@ -291,7 +305,7 @@ app.post('/internal/pk/result', requireService, async (req, res, next) => {
   }
 });
 
-app.get('/internal/homes/:apartmentId', requireService, async (req, res, next) => {
+app.get('/internal/homes/:apartmentId', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     const home = await getHome(param(req.params.apartmentId));
     if (!home) {
@@ -304,7 +318,7 @@ app.get('/internal/homes/:apartmentId', requireService, async (req, res, next) =
   }
 });
 
-app.get('/internal/homes/:apartmentId/can-enter/:userId', requireService, async (req, res, next) => {
+app.get('/internal/homes/:apartmentId/can-enter/:userId', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     const home = await getHome(param(req.params.apartmentId));
     if (!home) {
@@ -317,7 +331,7 @@ app.get('/internal/homes/:apartmentId/can-enter/:userId', requireService, async 
   }
 });
 
-app.get('/internal/identity/:userId', requireService, async (req, res, next) => {
+app.get('/internal/identity/:userId', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     const identity = await loadIdentity(param(req.params.userId));
     if (!identity) {
@@ -338,7 +352,7 @@ const openLiveSchema = z.object({
   roomId: z.string().max(64),
 });
 
-app.post('/internal/lives', requireService, async (req, res, next) => {
+app.post('/internal/lives', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     res.json(await openLive(openLiveSchema.parse(req.body)));
   } catch (err) {
@@ -354,7 +368,7 @@ const closeLiveSchema = z.object({
   likes: z.number().int().min(0).default(0),
 });
 
-app.post('/internal/lives/close', requireService, async (req, res, next) => {
+app.post('/internal/lives/close', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     res.json({ closed: await closeLive(closeLiveSchema.parse(req.body)) });
   } catch (err) {

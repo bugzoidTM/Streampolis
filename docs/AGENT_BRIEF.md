@@ -94,6 +94,69 @@ solver, o jogador atravessa a fonte de um lado e bate nela do outro. As
 posições dos props vêm de `packages/shared/src/layout.ts` pelo mesmo motivo: a
 cena desenha a partir da tabela de onde os colliders são gerados.
 
+## Quem entra na sala (e por quê o World não decide isso)
+
+```
+URL / UI  →  WorldIntent  →  NetworkClient  →  WorldConnection
+                                                    ↓
+                                       World(connection) desenha
+                                       a cena que o ESTADO diz
+```
+
+`network/session.ts` traduz a intenção em sala: `joinCity`, `joinApartment`,
+`goLive` ou `watchLive`. O `World` recebe a conexão pronta e pergunta a ela em
+que cena está — ele não abre sala nenhuma. Antes ele chamava sempre
+`joinCity(sceneId)`, e como a CityRoom só aceita cenários públicos, um
+`scene=live_room` virava praça: a cena de live existia, a LiveRoom existia, e o
+jogador acabava no lugar errado sem nenhum erro na tela.
+
+Pela URL: `?watch=<roomId>` assiste, `?golive=1&title=` transmite,
+`?apartment=me` abre a própria casa (a API responde qual é), `?scene=` escolhe
+área pública. Sem `?token=` tudo isso é ignorado e o mundo roda offline.
+
+Uma armadilha já paga: `join()` devolve a sala ANTES do primeiro patch, e nesse
+instante `room.state` ainda tem os DEFAULTS do schema — perguntar a cena ali
+responde "central_plaza" dentro de uma live. Por isso o `NetworkClient` espera
+`connection.ready` antes de entregar a conexão.
+
+## Presentes que aparecem
+
+`game/fx/GiftEffects.ts` transforma o `GiftEvent` em imagem. O efeito nasce
+DEPOIS da cobrança — o evento só chega quando a API debitou (§68 regra 4) — e o
+replay nunca chega, porque o servidor o descarta. Três níveis pelo preço:
+pétalas (até 20 coins), explosão com flash (99 a 2.000) e o foguete (9.999), que
+atravessa o quadro, explode e sacode a câmera.
+
+A integração das partículas é feita no vertex shader a partir da velocidade
+inicial: 500 partículas não custam 500 objetos atualizados por frame. Dois
+detalhes que já custaram uma rodada: o tamanho do sprite é em METROS e depende
+de `altura_do_canvas / (2·tan(fov/2))` — uma constante mágica ali vira um disco
+de 900 px —, e o foguete entra a poucos graus do eixo da câmera, porque perto e
+bem para o lado significa fora do campo de visão.
+
+`node tools/giftshot.mjs --gift=g_rocket --q=10 --delay=2500` fotografa um
+efeito sem economia nenhuma (`window.__lab.gift`).
+
+## A tela da live
+
+`ui/LiveView.tsx` é a experiência: selo AO VIVO, host, espectadores, curtidas,
+chat rolando, bandeja de presentes e a barra de PK. Ela lê o estado da sala
+(`useLiveStore.room`, alimentado por `network/bridge.ts`) e escreve por
+intenção: `connection.gift(...)`, `connection.like()`, `connection.chat(...)`.
+Nada de saldo, placar ou contagem calculada no cliente.
+
+`node tools/live-check.mjs` prova o caminho inteiro num navegador de verdade:
+Ana abre a live, Beto entra headless, fala e presenteia, e o script confere que
+a cena é a Live Room, que o presente virou partículas e que a UI está montada.
+
+## Feed de lives: quem responde o quê
+
+`GET /lives` (API) é a LISTA — quem está no ar é estado persistente e social, e
+sobrevive a um game server reiniciando. A contagem de espectadores AGORA é
+tempo real e vem do `/live` do game server; o cliente junta os dois por
+`roomId`. Se o game server não responder, a lista continua certa e o contador
+aparece zerado: melhor um número faltando que uma live faltando.
+
 ## Cenas: qual arquivo desenha qual mundo
 
 `packages/client/src/game/scenes/index.ts` é o registro. `createScene(sceneId)`
@@ -168,6 +231,22 @@ segundo jogador não renderiza.
 — use para inspecionar posições de bone, bounding boxes etc. em vez de adivinhar.
 
 Antes de terminar: `npx tsc --noEmit -p packages/client/tsconfig.json` limpo.
+
+## Limites e token (o que já está ligado)
+
+A API tem limitador de taxa por IP em quatro classes: `auth` (baixo — é onde se
+testa senha em massa), `economy` (carteira e extrato do jogador), `service`
+(`/internal/*`, teto alto porque é um chamador só e cada presente passa por
+ali) e `general` para o resto. Rodar um script contra `/auth` várias vezes por
+minuto tranca o próprio IP por uma janela; em desenvolvimento o teto é mais
+folgado exatamente por isso.
+
+Atrás de proxy, ligue `API_TRUST_PROXY=1` — sem isso todo mundo compartilha o
+IP do proxy e o teto vira global.
+
+O game server exige do token, além da assinatura HS256: `iss` igual ao emissor
+configurado e `exp` PRESENTE. Um token sem validade é uma credencial eterna, e
+o mesmo segredo pode assinar outras coisas que não são sessão.
 
 ## Regras de arquitetura (SPECs §68 — não negociáveis)
 

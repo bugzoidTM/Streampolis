@@ -88,6 +88,11 @@ export async function closeLive(input: CloseLiveInput): Promise<boolean> {
 export interface LiveListing {
   liveId: string;
   externalId: string | null;
+  /**
+   * Sala do game server. É a CHAVE DE ENTRADA do espectador — sem ela o feed
+   * lista lives que ninguém consegue assistir.
+   */
+  roomId: string | null;
   hostId: string;
   hostName: string;
   title: string;
@@ -99,11 +104,11 @@ export interface LiveListing {
 /** Feed (PRD §11). Sem contagem inflada: `stream_viewers` é quem entrou mesmo. */
 export async function listLives(limit = 50): Promise<LiveListing[]> {
   const { rows } = await pool.query<{
-    id: string; external_id: string | null; host_id: string; title: string;
-    category: string; likes: number; started_at: Date;
+    id: string; external_id: string | null; room_id: string | null; host_id: string;
+    title: string; category: string; likes: number; started_at: Date;
     display_name: string | null; username: string;
   }>(
-    `SELECT s.id, s.external_id, s.host_id, s.title, s.category, s.likes, s.started_at,
+    `SELECT s.id, s.external_id, s.room_id, s.host_id, s.title, s.category, s.likes, s.started_at,
             p.display_name, u.username
        FROM stream_sessions s
        JOIN users u ON u.id = s.host_id
@@ -116,6 +121,7 @@ export async function listLives(limit = 50): Promise<LiveListing[]> {
   return rows.map((r) => ({
     liveId: r.id,
     externalId: r.external_id,
+    roomId: r.room_id,
     hostId: r.host_id,
     hostName: r.display_name || r.username,
     title: r.title,

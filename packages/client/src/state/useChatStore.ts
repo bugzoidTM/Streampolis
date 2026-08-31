@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { activeConnection } from './useSessionStore.js';
 import { CHAT, PEOPLE } from './mocks.js';
 import type { ChatMessage, ChatRateLimit } from './types.js';
 
@@ -8,9 +9,10 @@ interface ChatState {
   draft: string;
   setDraft: (v: string) => void;
   /**
-   * Optimistic local echo. The real send goes over the socket and the server
-   * decides (SPECs §31); this only exists so the lab is interactive.
-   * TODO(network): replace with `room.send('chat', ...)` + server ack.
+   * Manda a mensagem. Conectado, ela vai pelo socket e VOLTA pelo servidor —
+   * sem eco local, porque o servidor é quem decide se a mensagem existe, se foi
+   * filtrada e em que ordem ela entra (SPECs §31, §39). Sem conexão, o eco
+   * local mantém o laboratório interativo.
    */
   send: () => void;
   /** TODO(network): push from the room's `chat` message handler. */
@@ -27,7 +29,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   send: () => {
     const { draft, limit, messages } = get();
     const text = draft.trim();
-    if (!text || limit.remaining <= 0) return;
+    if (!text) return;
+
+    const connection = activeConnection();
+    if (connection) {
+      connection.chat(text);
+      set({ draft: '' });
+      return;
+    }
+
+    if (limit.remaining <= 0) return;
     const msg: ChatMessage = {
       id: `local_${Date.now()}`, kind: 'user', sender: PEOPLE.me, text, ts: Date.now(),
     };

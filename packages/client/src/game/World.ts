@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import {
   DEFAULT_AVATAR,
+  GIFT_BY_ID,
   PLAY_AREA,
   applyMoveIntent,
   type AnimState,
   type AvatarConfig,
+  type GiftEvent,
   type SceneId,
 } from '@streampolis/shared';
 import { Renderer } from './Renderer.js';
@@ -15,26 +17,33 @@ import { NameTag, disposeNameTags } from './NameTag.js';
 import { createScene } from './scenes/index.js';
 import type { GameScene } from './scenes/GameScene.js';
 import { clipReport, type ClipReport } from './anim/Library.js';
-import { NetworkClient } from '../network/NetworkClient.js';
-import type { WorldConnection } from '../network/WorldConnection.js';
+import { GiftEffectManager } from './fx/GiftEffects.js';
+import type { AnyWorldConnection } from '../network/WorldConnection.js';
 import type { RenderPose } from '../network/types.js';
 import { attachStores } from '../network/bridge.js';
 
 export interface WorldOptions {
   canvas: HTMLCanvasElement;
+  /**
+   * Sala JÁ CONECTADA. Quem escolhe em qual entrar é a camada de sessão
+   * (network/session.ts), não o mundo: o mundo desenha a sala em que está.
+   * Ausente = modo offline.
+   */
+  connection?: AnyWorldConnection | null;
+  /** Só no offline: qual cena desenhar sem servidor nenhum. */
   sceneId?: SceneId;
   tier?: 'low' | 'medium' | 'high';
   /** Look used only in offline mode; online it comes signed in the token. */
   avatar?: AvatarConfig;
   displayName?: string;
-  /** Auth token. Absent means offline: the plaza runs with no server at all. */
-  token?: string;
-  endpoint?: string;
 }
 
 interface Actor {
+  /** Id do jogador (o da API), não o da sessão: é por ele que o presente chega. */
+  userId: string;
   avatar: Avatar;
-  tag: NameTag;
+  /** Nulo no avatar local: ninguém precisa de uma placa com o próprio nome. */
+  tag: NameTag | null;
   /** Smoothed yaw, so a remote turning in place does not snap. */
   yaw: number;
   /** Where this actor was drawn last frame, to measure its real speed. */
@@ -62,12 +71,14 @@ export class World {
   readonly input: InputManager;
 
   private scene: GameScene | null = null;
+  private gifts: GiftEffectManager | null = null;
+  private offGift: (() => void) | null = null;
   private sceneId: SceneId = 'central_plaza';
   /** The boom starts behind the avatar, once, on the first pose it sees. */
   private cameraAligned = false;
   /** Debug override from the screenshot tool; never set during play. */
   private forcedAnim: AnimState | null = null;
-  private connection: WorldConnection | null = null;
+  private connection: AnyWorldConnection | null = null;
   private detachStores: (() => void) | null = null;
   private actors = new Map<string, Actor>();
   private clock = new THREE.Clock();
@@ -90,40 +101,38 @@ export class World {
   }
 
   async start(): Promise<void> {
-    this.sceneId = this.opts.sceneId ?? 'central_plaza';
+    // A sala chega pronta. O mundo não escolhe onde entrar — ele pergunta ao
+    // estado da sala onde ELE está. Era esse o elo que faltava: com o World
+    // abrindo a conexão sozinho, toda sala virava uma CityRoom e uma live
+    // acontecia dentro da praça.
+    this.connection = this.opts.connection ?? null;
+    this.sceneId = this.connection?.state?.sceneId ?? this.opts.sceneId ?? 'central_plaza';
 
-    // Connect BEFORE building the scene: which room the player is in is the
-    // server's answer, not the query string's. Building first and asking later
-    // is how a live ends up being played inside the plaza.
-    if (this.opts.token) {
-      try {
-        // Only the token travels: identity and appearance are read from it on
-        // the server, never sent by the browser (SPECs §36, §68 regra 6).
-        const client = new NetworkClient({ token: this.opts.token }, this.opts.endpoint);
-        this.connection = await client.joinCity(this.sceneId);
-        this.detachStores = attachStores(this.connection);
-        this.sceneId = this.connection.state?.sceneId ?? this.sceneId;
-      } catch (err) {
-        // A dead game server must not blank the screen: fall back to the
-        // offline scene and let the UI say so.
-        console.warn('[world] sem servidor, seguindo offline:', err);
-        this.connection = null;
-      }
+    if (this.connection) {
+      this.detachStores = attachStores(this.connection);
     }
 
     const scene = createScene(this.sceneId);
     await scene.build(this.renderer.webgl);
     this.scene = scene;
     this.renderer.attach(scene.scene, this.camera.camera, scene.look);
-    // The scene decides how it is framed: a 7-metre studio photographed with
-    // the plaza's boom puts the camera in the neighbours' flat.
-    this.camera.setFraming(scene.framing, true);
-    this.camera.setLimits({ maxDistance: scene.maxBoom });
     // Snapshot of the static world, taken before any avatar exists. Handing
     // the camera the live scene instead would raycast sprites and skinned
     // meshes every frame — Sprite.raycast needs a camera the boom does not
     // have, and it throws once per frame.
     this.camera.obstacles = [...scene.scene.children];
+    this.camera.setFraming(scene.framing, true);
+    this.camera.setLimits({ maxDistance: scene.maxBoom });
+
+    this.gifts = new GiftEffectManager(scene.scene, {
+      budget: this.renderer.quality.settings.particleBudget,
+      shake: (amount) => this.camera.shake(amount),
+      camera: () => this.camera.camera,
+      viewHeight: () => this.opts.canvas.clientHeight || window.innerHeight,
+    });
+    // O presente só vira efeito depois de cobrado: este evento chega do
+    // servidor DEPOIS do débito, e um replay nunca chega (SPECs §68 regra 4).
+    this.offGift = this.connection?.on('gift', (event) => this.showGift(event)) ?? null;
 
     if (!this.connection) {
       const spawn = scene.spawnPoints[0] ?? new THREE.Vector3(0, 0, 6);
@@ -132,6 +141,32 @@ export class World {
 
     this.resize();
     this.loop();
+  }
+
+  /** Onde o efeito do presente cai: em cima de quem recebeu. */
+  private showGift(event: GiftEvent): void {
+    if (!this.gifts) return;
+    const target = this.actorOfUser(event.receiverId);
+    const at = target
+      ? target.avatar.root.position.clone()
+      // Sem corpo em cena (espectador presenteando o host de outra sala, ou um
+      // host ainda não desenhado) o efeito acontece à frente da câmera, para
+      // que um presente pago nunca seja invisível.
+      : this.inFrontOfCamera();
+    this.gifts.play(event, at);
+  }
+
+  private actorOfUser(userId: string): Actor | undefined {
+    for (const [, actor] of this.actors) {
+      if (actor.userId === userId) return actor;
+    }
+    return undefined;
+  }
+
+  private inFrontOfCamera(): THREE.Vector3 {
+    const dir = new THREE.Vector3();
+    this.camera.camera.getWorldDirection(dir);
+    return this.camera.camera.position.clone().addScaledVector(dir, 4.5).setY(0);
   }
 
   resize(): void {
@@ -180,6 +215,7 @@ export class World {
 
     this.camera.update(dt);
     this.scene?.update(dt, this.camera.camera);
+    this.gifts?.update(dt);
     this.renderer.render(dt);
 
     this.frames++;
@@ -246,10 +282,16 @@ export class World {
       let actor = this.actors.get(pose.sessionId);
       if (!actor) {
         const avatar = new Avatar(pose.avatar ?? DEFAULT_AVATAR);
-        const tag = new NameTag(pose.name, pose.gifterLevel, avatar.eyeHeight);
-        avatar.root.add(tag.sprite);
+        // O próprio jogador não ganha placa: em terceira pessoa ela fica entre
+        // a câmera e a cabeça dele, e numa live tapa exatamente o que está
+        // sendo transmitido.
+        const tag = pose.isLocal
+          ? null
+          : new NameTag(pose.name, pose.gifterLevel, avatar.eyeHeight);
+        if (tag) avatar.root.add(tag.sprite);
         this.scene?.scene.add(avatar.root);
         actor = {
+          userId: pose.id,
           avatar, tag, yaw: pose.yaw,
           last: new THREE.Vector3(pose.x, pose.y, pose.z),
           speed: 0,
@@ -269,9 +311,15 @@ export class World {
       actor.last.set(pose.x, pose.y, pose.z);
 
       if (pose.isLocal && !this.cameraAligned) {
-        // Behind the player, looking where they look. Leaving the boom at yaw 0
-        // put the camera between the host and the LED wall in every live room.
-        this.camera.yaw = pose.yaw + Math.PI;
+        // Atrás do jogador, olhando para onde ele olha. Deixar o braço em yaw 0
+        // punha a câmera entre o host e o painel de LED em toda live room.
+        //
+        // Exceto no palco: quem transmite se vê como a plateia vê, de frente —
+        // é o enquadramento de uma live, e é o único jeito de a pessoa saber o
+        // que está indo ao ar.
+        const role = this.connection?.localPlayer?.role;
+        const onStage = role === 'host' || role === 'cohost';
+        this.camera.yaw = onStage ? pose.yaw : pose.yaw + Math.PI;
         this.cameraAligned = true;
       }
 
@@ -289,7 +337,7 @@ export class World {
 
     for (const [key, actor] of this.actors) {
       if (seen.has(key)) continue;
-      actor.tag.dispose();
+      actor.tag?.dispose();
       this.scene?.scene.remove(actor.avatar.root);
       actor.avatar.dispose();
       this.actors.delete(key);
@@ -317,6 +365,33 @@ export class World {
     return this.renderer.capture(mime);
   }
 
+  /**
+   * Dispara o efeito de um presente sem passar pela economia. Existe para a
+   * revisão visual — e SÓ para ela: nada aqui cobra, credita ou pontua PK, e é
+   * por isso que o caminho de verdade continua sendo o evento do servidor.
+   */
+  previewGift(giftId: string, quantity = 1): boolean {
+    const gift = GIFT_BY_ID.get(giftId);
+    if (!gift || !this.gifts) return false;
+    const me = this.actors.get(this.localKey());
+    this.gifts.play(
+      {
+        eventId: `preview_${Date.now()}`,
+        senderId: 'preview',
+        senderName: 'Preview',
+        gifterLevel: 0,
+        giftId: gift.id,
+        quantity,
+        animationId: gift.animationId,
+        receiverId: me?.userId ?? '',
+        pkPoints: 0,
+        timestamp: Date.now(),
+      },
+      me ? me.avatar.root.position.clone() : new THREE.Vector3(),
+    );
+    return true;
+  }
+
   /** Debug surface for tools/probe.mjs. */
   stats(): Record<string, unknown> {
     return {
@@ -328,6 +403,7 @@ export class World {
         speed: Math.round(a.speed * 100) / 100,
       })),
       renderer: this.renderer.stats(),
+      particles: this.gifts?.activeParticles ?? 0,
       local: this.connection ? this.connection.predictor.stats : { solo: this.solo },
     };
   }
@@ -335,10 +411,12 @@ export class World {
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
+    this.offGift?.();
+    this.gifts?.dispose();
     this.detachStores?.();
     void this.connection?.leave();
     for (const [, actor] of this.actors) {
-      actor.tag.dispose();
+      actor.tag?.dispose();
       actor.avatar.dispose();
     }
     this.actors.clear();

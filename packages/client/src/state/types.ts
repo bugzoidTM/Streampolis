@@ -73,6 +73,26 @@ export interface LiveCard {
   hue: number;
 }
 
+/**
+ * A live em que o cliente está, espelhando o estado da LiveRoom. Diferente de
+ * `LiveCard`, que é o que o feed mostra ANTES de entrar: aqui os números são os
+ * do servidor, incluindo a contagem de espectadores reais (PRD §11).
+ */
+export interface LiveRoomInfo {
+  liveId: string;
+  hostId: string;
+  hostName: string;
+  title: string;
+  category: string;
+  viewers: number;
+  likes: number;
+  isPK: boolean;
+  ended: boolean;
+  startedAt: number;
+  /** Papel deste cliente na sala. */
+  role: 'host' | 'cohost' | 'spectator';
+}
+
 /** Camera presets the spectator can pick (PRD §12). */
 export type CameraFraming = 'default' | 'close' | 'full' | 'room';
 

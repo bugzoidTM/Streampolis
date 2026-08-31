@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PK_ARENA } from '@streampolis/shared';
 import { LOOK_LIVE } from '../Renderer.js';
 import { ROOM_NIGHT } from '../Environment.js';
+import { makeCameraTransparent } from '../CameraManager.js';
 import { InteriorScene, type InteriorStyle } from './InteriorScene.js';
 
 /**
@@ -64,7 +65,7 @@ export class PkArenaScene extends InteriorScene {
       half.rotation.x = -Math.PI / 2;
       half.position.set(0, 0.01, z);
       this.own(half.material as THREE.Material);
-      this.add(half);
+      this.add(makeCameraTransparent(half));
     }
 
     const line = new THREE.Mesh(
@@ -74,6 +75,6 @@ export class PkArenaScene extends InteriorScene {
     line.rotation.x = -Math.PI / 2;
     line.position.set(0, 0.02, 0);
     this.own(line.material as THREE.Material);
-    this.add(line);
+    this.add(makeCameraTransparent(line));
   }
 }

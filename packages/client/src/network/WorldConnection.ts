@@ -17,7 +17,7 @@ import {
 } from '@streampolis/shared';
 import { RemoteBuffer } from './Interpolation.js';
 import { Predictor } from './Predictor.js';
-import type { PlayerView, RenderPose, WorldStateView } from './types.js';
+import type { LiveStateView, PlayerView, RenderPose, WorldStateView } from './types.js';
 
 export interface WorldEvents {
   chat: (message: ChatMessage) => void;
@@ -33,6 +33,19 @@ export interface WorldEvents {
   left: (code: number) => void;
   error: (code: number, message?: string) => void;
 }
+
+/**
+ * Qualquer sala conectada, de cidade ou de live.
+ *
+ * O genérico do estado é invariante em TypeScript, então uma
+ * `WorldConnection<LiveStateView>` não é atribuível a uma
+ * `WorldConnection<WorldStateView>` mesmo tendo todos os campos. Quem só quer
+ * "a sala em que estou" — o World, a ponte com as stores, a UI — usa este
+ * união, que expõe exatamente os métodos comuns.
+ */
+export type AnyWorldConnection =
+  | WorldConnection<WorldStateView>
+  | WorldConnection<LiveStateView>;
 
 export interface MoveInput {
   /** Planar direction in world space, magnitude 0..1. */
@@ -58,6 +71,15 @@ type Listener<K extends keyof WorldEvents> = WorldEvents[K];
  */
 export class WorldConnection<S extends WorldStateView = WorldStateView> {
   readonly predictor: Predictor;
+  /**
+   * Resolve no primeiro patch de estado.
+   *
+   * `join` volta assim que o assento é aceito, e nesse instante `room.state`
+   * ainda é o schema com os DEFAULTS: perguntar a ele em que cena estamos
+   * responde "central_plaza" mesmo dentro de uma live. Quem depende do estado
+   * — construir a cena certa, por exemplo — espera aqui.
+   */
+  readonly ready: Promise<void>;
 
   private buffers = new Map<string, RemoteBuffer>();
   private listeners: { [K in keyof WorldEvents]: Set<Listener<K>> } = {
@@ -70,7 +92,10 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   private wasMoving = false;
   private disposed = false;
 
+  private markReady: () => void = () => {};
+
   constructor(readonly room: Room<S>) {
+    this.ready = new Promise<void>((resolve) => { this.markReady = resolve; });
     const sceneId = room.state?.sceneId ?? 'central_plaza';
     this.predictor = new Predictor(
       { x: 0, z: 0, yaw: 0, moving: false },
@@ -117,6 +142,7 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
 
     let placed = false;
     this.room.onStateChange((state) => {
+      this.markReady();
       const now = performance.now();
       state.players?.forEach((player, sessionId) => {
         if (sessionId === this.room.sessionId) {

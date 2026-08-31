@@ -1,0 +1,313 @@
+/*
+ * Camada da live sobre o canvas 3D.
+ *
+ * Regra que vale para tudo aqui: nada opaco no meio da tela. O produto é o que
+ * está sendo transmitido; a UI mora nas bordas, em vidro, e sai da frente do
+ * rosto de quem transmite. `pointer-events` é liberado por elemento, nunca no
+ * contêiner — senão a camada come o arrasto da câmera.
+ */
+
+.live {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  display: block;
+  font-size: 14px;
+}
+
+.live > * { pointer-events: auto; }
+
+/* ------------------------------------------------------------------ topo */
+
+.live__top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-s3);
+  padding: var(--sp-s3) var(--sp-s4);
+  background: linear-gradient(to bottom, rgba(4, 5, 10, 0.72), rgba(4, 5, 10, 0));
+}
+
+.live__host {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s3);
+  padding: var(--sp-s2) var(--sp-s3) var(--sp-s2) var(--sp-s2);
+  background: var(--sp-glass);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-pill);
+  backdrop-filter: blur(12px);
+  max-width: min(56vw, 420px);
+}
+
+.live__hostText { min-width: 0; }
+
+.live__hostName {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s2);
+  font-size: 14px;
+}
+
+.live__title {
+  color: var(--sp-text-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live__counts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s2);
+}
+
+.live__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--sp-glass);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-pill);
+  backdrop-filter: blur(12px);
+  color: var(--sp-text);
+}
+
+/* -------------------------------------------------------------------- PK */
+
+.live__pk {
+  position: absolute;
+  top: 68px; left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s3);
+  width: min(560px, 82vw);
+  padding: var(--sp-s2) var(--sp-s3);
+  background: var(--sp-glass-strong);
+  border: 1px solid var(--sp-line-2);
+  border-radius: var(--sp-r-pill);
+  backdrop-filter: blur(14px);
+}
+
+.live__pkSide { display: flex; align-items: center; gap: var(--sp-s2); flex: 0 0 auto; }
+.live__pkSide--a { color: var(--sp-live); }
+.live__pkSide--b { color: var(--sp-cyan); }
+.live__pkName { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.live__pkBar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 10px;
+  border-radius: var(--sp-r-pill);
+  /* O fundo É o lado B: a barra preenchida do A come o espaço dele. */
+  background: var(--sp-cyan);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.live__pkFill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--sp-live);
+  transition: width 240ms ease-out;
+}
+
+.live__pkBar svg { position: relative; color: #fff; opacity: 0.9; }
+
+/* ------------------------------------------------------------------ chat */
+
+.live__chat {
+  position: absolute;
+  left: var(--sp-s4);
+  bottom: var(--sp-s4);
+  width: min(360px, 64vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s2);
+}
+
+.live__chatBar { display: flex; justify-content: flex-start; }
+
+.live__messages {
+  max-height: min(38vh, 320px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-s2);
+  /* Sem caixa: o chat de uma live flutua sobre a imagem. O degradê de baixo
+     dá contraste onde o texto vive sem tapar o cenário. */
+  background: linear-gradient(to top, rgba(4, 5, 10, 0.55), rgba(4, 5, 10, 0));
+  border-radius: var(--sp-r-md);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%);
+}
+
+.live__msg {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  line-height: 1.35;
+}
+
+.live__msgName { font-weight: 600; }
+.live__msgText { color: var(--sp-text); word-break: break-word; }
+.live__msg--system .live__msgText { color: var(--sp-text-2); font-style: italic; }
+.live__msg--gift .live__msgText { color: var(--sp-gold); }
+.live__msg--follow .live__msgText { color: var(--sp-green); }
+
+.live__composer { display: flex; gap: var(--sp-s2); }
+
+.live__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px var(--sp-s3);
+  background: var(--sp-glass);
+  border: 1px solid var(--sp-line-2);
+  border-radius: var(--sp-r-pill);
+  backdrop-filter: blur(12px);
+  outline: none;
+}
+
+.live__input::placeholder { color: var(--sp-text-3); }
+.live__input:focus { border-color: var(--sp-line-3); }
+
+/* --------------------------------------------------------------- ações */
+
+.live__actions {
+  position: absolute;
+  right: var(--sp-s4);
+  bottom: var(--sp-s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s3);
+  align-items: center;
+}
+
+.live__heart {
+  position: absolute;
+  right: 12px;
+  bottom: 60px;
+  color: var(--sp-live);
+  animation: live-heart 1.4s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes live-heart {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  15% { opacity: 1; transform: translate(0, -10px) scale(1.1); }
+  /* Sobe torto: uma coluna reta de corações lê como barra de progresso. */
+  100% { opacity: 0; transform: translate(-26px, -150px) scale(0.9) rotate(-18deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live__heart { animation-duration: 1ms; }
+}
+
+/* ----------------------------------------------------------- presentes */
+
+.live__tray {
+  position: absolute;
+  right: var(--sp-s4);
+  bottom: 96px;
+  width: min(420px, 88vw);
+  padding: var(--sp-s3);
+  background: var(--sp-glass-strong);
+  border: 1px solid var(--sp-line-2);
+  border-radius: var(--sp-r-lg);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--sp-shadow-2);
+}
+
+.live__trayHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-s2);
+  margin-bottom: var(--sp-s3);
+}
+
+.live__qty { display: flex; gap: 4px; }
+
+.live__qtyBtn {
+  padding: 4px 10px;
+  border-radius: var(--sp-r-pill);
+  border: 1px solid var(--sp-line-2);
+  background: transparent;
+  color: var(--sp-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.live__qtyBtn.is-on {
+  background: var(--sp-violet-soft);
+  border-color: var(--sp-violet);
+  color: var(--sp-text);
+}
+
+.live__gifts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: var(--sp-s2);
+}
+
+.live__gift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-s2);
+  border-radius: var(--sp-r-md);
+  border: 1px solid var(--sp-line);
+  background: var(--sp-surface-2);
+  color: var(--sp-text);
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+
+.live__gift:hover {
+  transform: translateY(-2px);
+  border-color: var(--gift, var(--sp-line-3));
+}
+
+.live__giftGlyph { font-size: 24px; line-height: 1.2; }
+.live__giftName { font-size: 12px; color: var(--sp-text-2); }
+
+.live__giftCost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--sp-coins);
+}
+
+.live__trayNote {
+  margin: var(--sp-s3) 0 0;
+  font-size: 11.5px;
+  color: var(--sp-text-3);
+  line-height: 1.35;
+}
+
+/* ------------------------------------------------------------------ fim */
+
+.live__ended {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 5, 10, 0.72);
+  backdrop-filter: blur(6px);
+  font-size: 18px;
+}
+
+@media (max-width: 640px) {
+  .live__chat { width: calc(100vw - var(--sp-s4) * 2); }
+  .live__messages { max-height: 30vh; }
+  .live__title { display: none; }
+}

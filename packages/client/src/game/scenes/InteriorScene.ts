@@ -3,7 +3,7 @@ import {
   SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS,
   type Fixture, type SceneId, type SceneLayout,
 } from '@streampolis/shared';
-import type { Framing } from '../CameraManager.js';
+import { makeCameraTransparent, type Framing } from '../CameraManager.js';
 import type { GradeLook } from '../Renderer.js';
 import type { InteriorParams } from '../Environment.js';
 import { bakeProps, disposeProp, singleProp, xform, type Prop } from '../props/Geometry.js';
@@ -235,7 +235,7 @@ export class InteriorScene extends SceneBase {
         if (this.style.beams) {
           const mat = beamMaterial(f.color ?? 0xfff0dc, 0.26);
           this.own(mat);
-          this.add(beamMesh(mat, from, target, 0.3));
+          this.add(makeCameraTransparent(beamMesh(mat, from, target, 0.3)));
         }
         break;
       }

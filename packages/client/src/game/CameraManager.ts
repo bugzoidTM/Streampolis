@@ -37,6 +37,21 @@ const WORLD_LIMITS: CameraLimits = {
   minPitch: -0.52, maxPitch: 1.05,
 };
 
+/** Marca um objeto (e seus filhos) como atravessável pela câmera. */
+export function makeCameraTransparent<T extends THREE.Object3D>(obj: T): T {
+  obj.traverse((o) => { o.userData.noCameraCollision = true; });
+  return obj;
+}
+
+function passesThrough(obj: THREE.Object3D): boolean {
+  let node: THREE.Object3D | null = obj;
+  while (node) {
+    if (node.userData?.noCameraCollision) return true;
+    node = node.parent;
+  }
+  return false;
+}
+
 /**
  * Third-person orbit camera with collision, framing presets and critically
  * damped smoothing. The damping is framerate-independent — a plain
@@ -164,9 +179,14 @@ export class CameraManager {
     this.ray.set(this.smoothTarget, dir);
     this.ray.far = desired;
     const hits = this.ray.intersectObjects(this.obstacles, true);
-    if (hits.length === 0) return desired;
+    // Nem toda geometria é parede. Feixes de luz, marcas no chão e brilhos
+    // aditivos são decoração que a câmera atravessa — tratá-los como obstáculo
+    // encurtava o braço para 1,5 m toda vez que um refletor cruzava o caminho,
+    // e o enquadramento da live virava um close no umbigo do host.
+    const blocker = hits.find((hit) => !passesThrough(hit.object));
+    if (!blocker) return desired;
     // Keep the near plane clear of the surface we hit.
-    return Math.max(this.limits.minDistance, hits[0].distance - 0.28);
+    return Math.max(this.limits.minDistance, blocker.distance - 0.28);
   }
 
   resize(width: number, height: number) {

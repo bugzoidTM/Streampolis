@@ -52,10 +52,25 @@ export const config = {
    * fora de produção e nunca por acidente: exige a env explícita.
    */
   devLogin: !isProd && env('API_DEV_LOGIN', '1') === '1',
+  /**
+   * Quantos saltos de proxy confiar no X-Forwarded-For. 0 = nenhum (default
+   * seguro para rodar exposto direto); 1 quando há um nginx/Cloudflare na
+   * frente. Confiar sem proxy deixa qualquer um forjar o próprio IP e escapar
+   * do limitador.
+   */
+  trustProxy: intEnv('API_TRUST_PROXY', 0),
   rateLimit: {
     windowMs: intEnv('RATE_WINDOW_MS', 60_000),
     generalMax: intEnv('RATE_GENERAL_MAX', 300),
-    authMax: intEnv('RATE_AUTH_MAX', 10),
+    /**
+     * Teto de /auth por minuto. Baixo em produção porque é ali que se testa
+     * senha em massa; mais folgado em desenvolvimento porque um e2e que loga
+     * três vezes, rodado quatro vezes seguidas, se trancaria para fora — e o
+     * limitador existe para proteger a produção, não para atrapalhar o teste.
+     */
+    authMax: intEnv('RATE_AUTH_MAX', isProd ? 10 : 40),
     economyMax: intEnv('RATE_ECONOMY_MAX', 60),
+    /** /internal/*: um chamador só (o game server), muitas chamadas legítimas. */
+    serviceMax: intEnv('RATE_SERVICE_MAX', 3_000),
   },
 } as const;

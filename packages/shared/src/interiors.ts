@@ -156,7 +156,9 @@ export const LIVE_ROOM: SceneLayout = {
     { kind: 'spot', x: 2.2, z: 2.4, y: 3.9, color: 0xffe9d4, aim: [1.4, 1.2, 2.2] },
 
     { kind: 'ring_light', x: -1.7, z: -1.5, ry: 0.42, r: 0.2 },
-    { kind: 'camera_rig', x: 0.4, z: 1.1, ry: PI, r: 0.34 },
+    // Fora do eixo do palco: no meio, ele fica exatamente onde o braço de
+    // câmera do jogador quer passar e encurta o enquadramento inteiro.
+    { kind: 'camera_rig', x: 2.1, z: 1.5, ry: PI - 0.5, r: 0.34 },
     { kind: 'speaker_stack', x: -4.2, z: -4.2, ry: 0.5, hw: 0.34, hd: 0.34 },
     { kind: 'speaker_stack', x: 4.2, z: -4.2, ry: -0.5, hw: 0.34, hd: 0.34 },
 
@@ -171,12 +173,14 @@ export const LIVE_ROOM: SceneLayout = {
     { kind: 'wall_neon', x: -4.55, z: 1.2, ry: PI / 2, y: 2.1, color: 0xffcc33 },
   ],
   spawns: [
-    // First in is a guest, standing in the room looking at the set — not on
-    // the host's mark with their back to the camera.
-    { x: 0.5, z: 3.1, yaw: PI },
+    // Numa Live Room só o palco tem corpo (SPECs §10): o espectador não ganha
+    // avatar. Então a ordem aqui é a ordem do palco — host primeiro, co-host
+    // depois —, e não uma fila de convidados.
     { x: 0, z: -2.6, yaw: 0 },
-    { x: -1.6, z: 0.6, yaw: PI }, { x: 1.8, z: 0.9, yaw: PI },
-    { x: -3.0, z: 2.6, yaw: PI }, { x: 2.9, z: 2.6, yaw: PI },
+    { x: 1.7, z: -2.3, yaw: 0.16 },
+    { x: -1.7, z: -2.3, yaw: -0.16 },
+    { x: 0.6, z: -1.2, yaw: 0 }, { x: -0.6, z: -1.2, yaw: 0 },
+    { x: 0, z: 0.4, yaw: 0 },
   ],
 };
 
@@ -239,10 +243,10 @@ export const PK_ARENA: SceneLayout = {
     ...barrierRun(13.4, -8.5, 8.5, 5, PI),
   ],
   spawns: [
-    // The floor between the two stages, facing the middle: an arena is read
-    // from the crowd, not from inside the LED wall.
-    { x: -7.0, z: 7.5 }, { x: 7.0, z: 7.5 },
+    // Os dois palcos primeiro: num PK quem tem corpo são os dois hosts, e o
+    // lado em que cada um está é o lado da cor dele.
     { x: 0, z: -10.5, yaw: 0 }, { x: 0, z: 10.5, yaw: PI },
+    { x: -7.0, z: 7.5 }, { x: 7.0, z: 7.5 },
     { x: -4.5, z: -4.0 }, { x: 4.5, z: -4.0 },
     { x: -4.5, z: 4.0 }, { x: 4.5, z: 4.0 },
   ],

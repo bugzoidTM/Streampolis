@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { APARTMENT } from '@streampolis/shared';
 import { LOOK_INTERIOR } from '../Renderer.js';
 import { ROOM_DAY } from '../Environment.js';
+import { makeCameraTransparent } from '../CameraManager.js';
 import { InteriorScene, type InteriorStyle } from './InteriorScene.js';
 
 /**
@@ -55,6 +56,6 @@ export class ApartmentScene extends InteriorScene {
     patch.rotation.z = 0.24;
     patch.position.set(0.2, 0.02, -1.6);
     this.own(patch.material as THREE.Material);
-    this.add(patch);
+    this.add(makeCameraTransparent(patch));
   }
 }

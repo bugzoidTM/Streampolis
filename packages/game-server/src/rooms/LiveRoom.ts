@@ -72,6 +72,17 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
    * o jogador vê "presente recusado" sem entender por quê.
    */
   private apiLiveId: string | null = null;
+  /**
+   * Registro da sessão, em andamento ou concluído.
+   *
+   * A live ABRE na hora e registra em paralelo — o espectador não espera o
+   * banco. Mas o presente espera: cobrar sem a linha de stream_sessions produz
+   * uma receita que não pertence a live nenhuma, e reconciliar isso depois
+   * significa adivinhar de qual transmissão veio o dinheiro. Quem chega antes
+   * do registro aguarda alguns milissegundos; quem chega com a API fora recebe
+   * uma recusa clara em vez de uma cobrança órfã.
+   */
+  private session: Promise<string | null> | null = null;
   private pkStartedAt = 0;
   private peakViewers = 0;
   private readonly uniqueViewers = new Set<string>();
@@ -116,17 +127,36 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
     this.registerLiveMessages();
     this.publishListing();
 
-    // The API owns the record of the session; a failure to register does not
-    // stop the broadcast, it just means the feed row is missing until close.
-    void this.api
-      .openLive({
-        externalId: this.state.liveId,
-        hostId: this.hostId,
-        title: this.state.title,
-        category: this.state.category,
-        roomId: this.roomId,
-      })
-      .then((session) => { this.apiLiveId = session?.liveId ?? null; });
+    // Começa já, sem bloquear a abertura da transmissão.
+    void this.ensureSession();
+  }
+
+  /** Registro da sessão, uma vez só; a promessa é o ponto de espera do gift. */
+  private ensureSession(): Promise<string | null> {
+    if (!this.session) this.session = this.openSession();
+    return this.session;
+  }
+
+  private async openSession(): Promise<string | null> {
+    // Duas tentativas: um timeout de rede não deve custar a receita da live
+    // inteira, e a chamada é idempotente por externalId — repetir é seguro.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const row = await this.api
+        .openLive({
+          externalId: this.state.liveId,
+          hostId: this.hostId,
+          title: this.state.title,
+          category: this.state.category,
+          roomId: this.roomId,
+        })
+        .catch(() => null);
+      if (row?.liveId) {
+        this.apiLiveId = row.liveId;
+        return row.liveId;
+      }
+    }
+    console.warn(`[live] ${this.state.liveId} sem registro na API; presentes ficam bloqueados.`);
+    return null;
   }
 
   /** Only the stage walks. Everyone else is an audience member (SPECs §10). */
@@ -343,6 +373,17 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
       return;
     }
 
+    // A sessão precisa existir ANTES de a moeda sair da carteira.
+    const liveId = await this.ensureSession();
+    if (!liveId) {
+      // Zera para que o próximo envio tente registrar de novo em vez de ficar
+      // preso ao primeiro fracasso pelo resto da transmissão.
+      this.session = null;
+      this.notify(client, 'gift_unregistered', 'A live ainda não foi registrada. Tente de novo em instantes.');
+      return;
+    }
+    if (this.state.ended) return;
+
     const requested = typeof msg.receiverId === 'string' ? msg.receiverId : this.hostId;
     const receiverId = requested === this.cohostId && this.cohostId ? this.cohostId : this.hostId;
     if (receiverId === identity.userId) {
@@ -356,7 +397,7 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
       receiverId,
       giftId,
       quantity,
-      liveId: this.apiLiveId,
+      liveId,
       roomId: this.roomId,
     });
 

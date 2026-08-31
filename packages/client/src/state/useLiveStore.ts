@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { FEED, PK, SUMMARY } from './mocks.js';
-import type { CameraFraming, LiveCard, LiveSummary, PKState } from './types.js';
+import type { CameraFraming, LiveCard, LiveRoomInfo, LiveSummary, PKState } from './types.js';
 
 export type FeedFilter = 'all' | 'pk' | 'rising' | 'following';
 
@@ -16,6 +16,12 @@ interface LiveState {
   likeBurst: number;
   pk: PKState | null;
   summary: LiveSummary | null;
+  /**
+   * A live em que este cliente REALMENTE está, vinda do estado da sala.
+   * `active` continua sendo o cartão do feed (o que se clicou); este é o que o
+   * servidor confirma — e é ele que a LiveView desenha.
+   */
+  room: LiveRoomInfo | null;
 
   setFilter: (f: FeedFilter) => void;
   /** TODO(network): joins the LiveRoom; the card is only the optimistic head. */
@@ -26,6 +32,7 @@ interface LiveState {
   like: () => void;
   /** TODO(network): replace with the PK room's state patch. */
   applyPK: (pk: PKState | null) => void;
+  setRoom: (room: LiveRoomInfo | null) => void;
 }
 
 export const useLiveStore = create<LiveState>((set, get) => ({
@@ -38,6 +45,7 @@ export const useLiveStore = create<LiveState>((set, get) => ({
   likeBurst: 0,
   pk: PK,
   summary: SUMMARY,
+  room: null,
 
   setFilter: (filter) => set({ filter }),
   enter: (liveId) => set({ active: get().feed.find((l) => l.liveId === liveId) ?? null, framing: 'default' }),
@@ -50,6 +58,7 @@ export const useLiveStore = create<LiveState>((set, get) => ({
   },
   like: () => set({ likes: get().likes + 1, likeBurst: get().likeBurst + 1 }),
   applyPK: (pk) => set({ pk }),
+  setRoom: (room) => set({ room }),
 }));
 
 export function visibleFeed(feed: LiveCard[], filter: FeedFilter, following: Set<string>): LiveCard[] {

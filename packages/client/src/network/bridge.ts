@@ -11,7 +11,7 @@ import { useChatStore } from '../state/useChatStore.js';
 import { useLiveStore } from '../state/useLiveStore.js';
 import type { ChatMessage, PersonRef, PKSide, PKState } from '../state/types.js';
 import type { LiveStateView, PKView, WorldStateView } from './types.js';
-import type { WorldConnection } from './WorldConnection.js';
+import type { AnyWorldConnection } from './WorldConnection.js';
 
 /**
  * Adapter between the wire and the UI's view models.
@@ -120,8 +120,9 @@ function isLiveState(state: WorldStateView): state is LiveStateView {
  * the mock chat on attach: two sources of truth in the same list is worse than
  * an empty one.
  */
-export function attachStores(connection: WorldConnection): () => void {
+export function attachStores(connection: AnyWorldConnection): () => void {
   useChatStore.setState({ messages: [] });
+  useLiveStore.setState({ room: null });
 
   const offs = [
     connection.on('chat', (wire) => pushChat(toChat(connection.state, wire))),
@@ -154,7 +155,26 @@ export function attachStores(connection: WorldConnection): () => void {
 
     connection.on('state', (state) => {
       if (!isLiveState(state)) return;
-      useLiveStore.setState({ likes: state.likes, pk: toPKState(state, state.pk) });
+      const me = state.players?.get(connection.sessionId);
+      useLiveStore.setState({
+        likes: state.likes,
+        pk: toPKState(state, state.pk),
+        // O que a LiveView desenha vem daqui: título, host, espectadores e fim
+        // da transmissão são estado do servidor, nunca palpite do cliente.
+        room: {
+          liveId: state.liveId,
+          hostId: state.hostId,
+          hostName: state.hostName,
+          title: state.title,
+          category: state.category,
+          viewers: state.viewers,
+          likes: state.likes,
+          isPK: state.isPK,
+          ended: state.ended,
+          startedAt: state.startedAt,
+          role: me?.role === 'host' || me?.role === 'cohost' ? me.role : 'spectator',
+        },
+      });
     }),
   ];
 

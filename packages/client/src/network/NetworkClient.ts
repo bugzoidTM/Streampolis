@@ -10,9 +10,46 @@ import type { LiveStateView, WorldStateView } from './types.js';
  * API issues it and the game server verifies it (SPECs §36).
  */
 
+/** O que GET /lives devolve. Espelha packages/api/src/world/Lives.ts. */
+interface ApiLiveListing {
+  liveId: string;
+  externalId: string | null;
+  roomId: string | null;
+  hostId: string;
+  hostName: string;
+  title: string;
+  category: string;
+  likes: number;
+  startedAt: string;
+}
+
+/**
+ * Espera o primeiro patch antes de devolver a conexão.
+ *
+ * Sem isso quem recebe a sala lê o estado no seu valor DEFAULT — e quem
+ * pergunta "em que cena estou?" nesse instante ouve "praça central" dentro de
+ * uma live. O timeout existe para uma sala que, por algum motivo, não emita
+ * patch nenhum: melhor entrar com o default do que não entrar.
+ */
+async function synced<S extends WorldStateView>(
+  connection: WorldConnection<S>, timeoutMs = 4_000,
+): Promise<WorldConnection<S>> {
+  await Promise.race([
+    connection.ready,
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+  return connection;
+}
+
 export const ROOM_CITY = 'city';
 export const ROOM_APARTMENT = 'apartment';
 export const ROOM_LIVE = 'live';
+
+function defaultApiBase(): string {
+  const configured = import.meta.env.VITE_API_URL as string | undefined;
+  if (configured) return configured.replace(/\/$/, '');
+  return `${location.protocol}//${location.hostname}:8787`;
+}
 
 function defaultEndpoint(): string {
   const configured = import.meta.env.VITE_GAME_SERVER_URL as string | undefined;
@@ -41,13 +78,20 @@ export interface GoLiveOptions {
 
 export class NetworkClient {
   private readonly client: Client;
+  /** HTTP do game server: só tempo real (contagem de espectadores agora). */
+  private readonly httpBase: string;
+  /** HTTP da API: a camada persistente — quem está no ar, de quem é a casa. */
+  private readonly apiBase: string;
 
-  constructor(private session: SessionOptions, endpoint = defaultEndpoint()) {
+  constructor(
+    private session: SessionOptions,
+    endpoint = defaultEndpoint(),
+    apiBase = defaultApiBase(),
+  ) {
     this.client = new Client(endpoint);
     this.httpBase = endpoint.replace(/^ws/, 'http');
+    this.apiBase = apiBase.replace(/\/$/, '');
   }
-
-  private readonly httpBase: string;
 
   setToken(token: string): void {
     this.session = { ...this.session, token };
@@ -59,7 +103,7 @@ export class NetworkClient {
       ...this.joinOptions(),
       sceneId,
     });
-    return new WorldConnection(room);
+    return synced(new WorldConnection(room));
   }
 
   /**
@@ -71,7 +115,7 @@ export class NetworkClient {
       ...this.joinOptions(),
       apartmentId,
     });
-    return new WorldConnection(room);
+    return synced(new WorldConnection(room));
   }
 
   /**
@@ -83,7 +127,7 @@ export class NetworkClient {
       ...this.joinOptions(),
       ...options,
     });
-    return new WorldConnection(room);
+    return synced(new WorldConnection(room));
   }
 
   /**
@@ -96,18 +140,77 @@ export class NetworkClient {
    */
   async watchLive(roomId: string): Promise<WorldConnection<LiveStateView>> {
     const room = await this.client.joinById<LiveStateView>(roomId, this.joinOptions());
-    return new WorldConnection(room);
+    return synced(new WorldConnection(room));
   }
 
   /**
-   * Live feed source. Reads the game server's listing while the API's /lives
-   * does not exist yet; swapping it later is a one-line change here.
-   * TODO(api agent): point this at GET /lives once it ships.
+   * Feed de lives.
+   *
+   * A LISTA vem da API: quem está no ar é estado persistente e social, e é a
+   * API que sabe responder isso mesmo com o game server reiniciando. O que a
+   * API não tem é a contagem de espectadores AGORA — isso é tempo real e mora
+   * no game server —, então o número é enxertado a partir do listing dele
+   * quando ele responde. Se não responder, a lista continua correta e o
+   * contador aparece zerado: melhor um número faltando que uma live faltando.
    */
   async listLives(): Promise<LiveSummary[]> {
-    const res = await fetch(`${this.httpBase}/live`);
+    const lives = await this.listFromApi();
+    const live = new Map(
+      (await this.listRealtime()).map((room) => [room.roomId, room] as const),
+    );
+    return lives
+      .map((summary) => {
+        const now = live.get(summary.roomId);
+        return now ? { ...summary, realViewers: now.realViewers, isPK: now.isPK } : summary;
+      })
+      .sort((a, b) => b.realViewers - a.realViewers || b.startedAt - a.startedAt);
+  }
+
+  private async listFromApi(): Promise<LiveSummary[]> {
+    const res = await fetch(`${this.apiBase}/lives`);
     if (!res.ok) throw new Error(`listagem de lives falhou (${res.status})`);
-    return (await res.json()) as LiveSummary[];
+    const body = (await res.json()) as { lives?: ApiLiveListing[] };
+    return (body.lives ?? [])
+      // Sem roomId ninguém consegue entrar: uma linha assim é sessão órfã de
+      // um game server que caiu, não uma live assistível.
+      .filter((row) => typeof row.roomId === 'string' && row.roomId.length > 0)
+      .map((row) => ({
+        roomId: row.roomId as string,
+        liveId: row.externalId ?? row.liveId,
+        hostId: row.hostId,
+        hostName: row.hostName,
+        title: row.title,
+        category: row.category,
+        realViewers: 0,
+        isPK: false,
+        agency: '',
+        startedAt: new Date(row.startedAt).getTime(),
+      }));
+  }
+
+  /** Contagens do game server. Best-effort: um erro aqui não some com o feed. */
+  private async listRealtime(): Promise<LiveSummary[]> {
+    try {
+      const res = await fetch(`${this.httpBase}/live`);
+      if (!res.ok) return [];
+      return (await res.json()) as LiveSummary[];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Qual apartamento é o do jogador (a API é dona dessa resposta). */
+  async myHome(): Promise<string | null> {
+    try {
+      const res = await fetch(`${this.apiBase}/me/home`, {
+        headers: { authorization: `Bearer ${this.session.token}` },
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { home?: { apartmentId?: string } };
+      return body.home?.apartmentId ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**

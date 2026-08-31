@@ -44,6 +44,7 @@ export interface AuthProvider {
 }
 
 interface JwtPayload {
+  iss?: unknown;
   sub?: unknown;
   name?: unknown;
   perms?: unknown;
@@ -87,11 +88,15 @@ function b64urlToBuf(input: string): Buffer {
 
 /**
  * HS256 verifier written on node:crypto so the game server carries no JWT
- * dependency of its own. It validates signature, alg, exp and nbf — nothing
- * else, because everything else in the payload is the API's business.
+ * dependency of its own. It validates signature, alg, issuer, exp and nbf —
+ * nothing else, because everything else in the payload is the API's business.
  */
 export class JwtAuthProvider implements AuthProvider {
-  constructor(private readonly secret: string, private readonly leewaySec = config.authLeewaySec) {
+  constructor(
+    private readonly secret: string,
+    private readonly leewaySec = config.authLeewaySec,
+    private readonly issuer = config.authIssuer,
+  ) {
     if (!secret) throw new Error('JwtAuthProvider requires a non-empty secret');
   }
 
@@ -123,8 +128,19 @@ export class JwtAuthProvider implements AuthProvider {
       throw new AuthError('bad_signature', 'Assinatura inválida');
     }
 
+    // O emissor é obrigatório: o mesmo segredo pode assinar outras coisas
+    // (webhook, integração, ferramenta interna) e nenhuma delas é uma sessão.
+    if (this.issuer && payload.iss !== this.issuer) {
+      throw new AuthError('bad_issuer', 'Emissor não reconhecido');
+    }
+
     const now = Math.floor(Date.now() / 1000);
-    if (typeof payload.exp === 'number' && now > payload.exp + this.leewaySec) {
+    // Validade é obrigatória, não "validada se existir": um token sem `exp` é
+    // uma credencial eterna, e o §36 pede janela curta com refresh rotativo.
+    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+      throw new AuthError('no_expiry', 'Token sem validade');
+    }
+    if (now > payload.exp + this.leewaySec) {
       throw new AuthError('expired', 'Token expirado');
     }
     if (typeof payload.nbf === 'number' && now + this.leewaySec < payload.nbf) {

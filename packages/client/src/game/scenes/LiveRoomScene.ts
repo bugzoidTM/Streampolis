@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { LIVE_ROOM } from '@streampolis/shared';
 import { LOOK_LIVE } from '../Renderer.js';
 import { ROOM_NIGHT } from '../Environment.js';
+import { makeCameraTransparent } from '../CameraManager.js';
 import { InteriorScene, type InteriorStyle } from './InteriorScene.js';
 
 /**
@@ -34,6 +35,10 @@ const STYLE: InteriorStyle = {
     fogColor: 0x0a0810, fogNear: 14, fogFar: 46,
   },
   screen: [0xff3d7f, 0x2f7bff],
+  // Corpo inteiro: numa live o que importa é o que está indo ao ar, e um plano
+  // curto demais corta justamente o que o público veria.
+  framing: 'full_body',
+  maxBoom: 6.2,
   beams: true,
   practicals: 1.3,
   shell: (lib) => ({
@@ -66,6 +71,6 @@ export class LiveRoomScene extends InteriorScene {
     );
     glow.position.set(0, 2.1, -4.7);
     this.own(glow.material as THREE.Material);
-    this.add(glow);
+    this.add(makeCameraTransparent(glow));
   }
 }

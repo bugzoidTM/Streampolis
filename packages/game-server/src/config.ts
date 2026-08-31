@@ -26,6 +26,12 @@ export const config = {
   authDevBypass: str('AUTH_DEV_BYPASS', '') === '1',
   /** Clock skew tolerated when checking exp/nbf, in seconds. */
   authLeewaySec: num('AUTH_LEEWAY_SEC', 30),
+  /**
+   * Who is allowed to have minted the token. Checking the issuer is what stops
+   * a token signed with the same secret for a DIFFERENT purpose (a webhook, a
+   * partner integration, an internal tool) from being accepted as a session.
+   */
+  authIssuer: str('AUTH_JWT_ISSUER', 'streampolis-api'),
 
   /** Base URL of packages/api. Empty = use the in-memory economy stub. */
   apiBaseUrl: str('API_BASE_URL', ''),
