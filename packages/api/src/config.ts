@@ -59,6 +59,15 @@ export const config = {
    * do limitador.
    */
   trustProxy: intEnv('API_TRUST_PROXY', 0),
+  /**
+   * Origens autorizadas a chamar a API do navegador, separadas por vírgula.
+   * Vazio: em desenvolvimento libera quem chamar; em produção não libera
+   * ninguém, e a lista passa a ser obrigatória.
+   */
+  corsOrigins: env('API_CORS_ORIGINS', '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
   rateLimit: {
     windowMs: intEnv('RATE_WINDOW_MS', 60_000),
     generalMax: intEnv('RATE_GENERAL_MAX', 300),

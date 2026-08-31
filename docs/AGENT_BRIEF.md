@@ -149,6 +149,51 @@ Nada de saldo, placar ou contagem calculada no cliente.
 Ana abre a live, Beto entra headless, fala e presenteia, e o script confere que
 a cena é a Live Room, que o presente virou partículas e que a UI está montada.
 
+## As telas de produto
+
+`ui/AppShell.tsx` é a casca: mundo 3D embaixo, telas por cima, navegação no
+rodapé (Mundo · Lives · **Go Live** · Loja · Perfil). A decisão que organiza
+tudo é esta: **o mundo nunca desmonta ao trocar de aba** — ele PAUSA
+(`World.setPaused`). O que remonta o mundo é mudar de intenção, e por isso a
+navegação tem duas naturezas:
+
+- `setTab` é interface (abrir a loja, ver o perfil);
+- `navigate(intent)` é viagem (entrar numa live, visitar um apartamento), e a
+  chave de remontagem do `WorldView` muda junto.
+
+As três telas leem do servidor e escrevem por intenção:
+
+| Tela | Lê | Escreve |
+|---|---|---|
+| `FeedView` | `GET /lives` + contagem ao vivo do game server | nada |
+| `ProfileView` | `GET /users/:id` (ou `/me`) | `PUT /users/:id/follow` |
+| `StoreView` | catálogo do shared + `/me` (carteira, inventário) | `POST /me/purchases`, `PUT /me/avatar` |
+
+Nenhuma delas subtrai carteira, soma seguidor ou decide preço. O preço mora no
+banco (`packages/api/src/shop/Purchases.ts`) e a entrega do item acontece na
+MESMA transação do débito — moeda saindo sem item entrando é o defeito que vira
+suporte.
+
+`node tools/screens-check.mjs` prova as três num navegador de verdade: Beto
+abre uma live headless, Ana navega Feed → Perfil → Loja, compra uma peça e a
+carteira do servidor muda. Precisa dos três processos no ar (API, game server
+apontado para ela, Vite).
+
+## Retratos 3D na UI
+
+`game/portrait/PosterStudio.ts` mantém um segundo contexto WebGL, minúsculo, e
+devolve um PNG de um avatar. É o que faz o card do feed mostrar o host de
+verdade e a loja mostrar a peça VESTIDA em quem está olhando — o argumento de
+venda inteiro em uma imagem, e a vantagem sobre um feed de vídeo.
+
+Três coisas o mantêm barato: cache por (aparência + enquadramento + pose), fila
+serial (montar dois avatares ao mesmo tempo trava a thread) e descarte do avatar
+logo após o clique do obturador.
+
+O enquadramento é trigonometria, não tentativa: com fov de 30° a altura visível
+é `2·d·tan(15°) ≈ 0,54·d`. Corpo inteiro pede ~2 m de altura visível, busto pede
+~0,8 m. Chutar a distância foi o que decapitou o primeiro lote de retratos.
+
 ## Feed de lives: quem responde o quê
 
 `GET /lives` (API) é a LISTA — quem está no ar é estado persistente e social, e
@@ -243,6 +288,12 @@ folgado exatamente por isso.
 
 Atrás de proxy, ligue `API_TRUST_PROXY=1` — sem isso todo mundo compartilha o
 IP do proxy e o teto vira global.
+
+A API também responde CORS (`src/http/middleware/cors.ts`). Em produção
+`API_CORS_ORIGINS` é obrigatória: curinga numa API que move dinheiro é convite.
+Fora de produção ela libera a origem que chamar — sem isso o cliente do Vite
+recebe tela vazia com 200 no log do servidor, que é o sintoma mais enganoso que
+existe.
 
 O game server exige do token, além da assinatura HS256: `iss` igual ao emissor
 configurado e `exp` PRESENTE. Um token sem validade é uma credencial eterna, e

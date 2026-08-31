@@ -95,6 +95,12 @@ export interface LiveListing {
   roomId: string | null;
   hostId: string;
   hostName: string;
+  /**
+   * Aparência do host. O feed desenha o avatar de verdade na capa do card —
+   * sem isso a única alternativa é uma imagem genérica, e o feed de um jogo
+   * sobre criadores não pode mostrar todo mundo igual.
+   */
+  hostAvatar: unknown;
   title: string;
   category: string;
   likes: number;
@@ -106,13 +112,14 @@ export async function listLives(limit = 50): Promise<LiveListing[]> {
   const { rows } = await pool.query<{
     id: string; external_id: string | null; room_id: string | null; host_id: string;
     title: string; category: string; likes: number; started_at: Date;
-    display_name: string | null; username: string;
+    display_name: string | null; username: string; config: unknown;
   }>(
     `SELECT s.id, s.external_id, s.room_id, s.host_id, s.title, s.category, s.likes, s.started_at,
-            p.display_name, u.username
+            p.display_name, u.username, av.config
        FROM stream_sessions s
        JOIN users u ON u.id = s.host_id
        LEFT JOIN profiles p ON p.user_id = s.host_id
+       LEFT JOIN avatars av ON av.user_id = s.host_id
       WHERE s.status = 'live'
       ORDER BY s.started_at DESC
       LIMIT $1`,
@@ -124,6 +131,7 @@ export async function listLives(limit = 50): Promise<LiveListing[]> {
     roomId: r.room_id,
     hostId: r.host_id,
     hostName: r.display_name || r.username,
+    hostAvatar: r.config ?? null,
     title: r.title,
     category: r.category,
     likes: r.likes,

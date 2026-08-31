@@ -85,6 +85,7 @@ export class World {
   private raf = 0;
   private frames = 0;
   private disposed = false;
+  private paused = false;
 
   /** Offline pose, integrated locally with the server's own function. */
   private solo = { x: 0, z: 6, yaw: Math.PI, moving: false };
@@ -177,10 +178,20 @@ export class World {
     this.camera.resize(w, h);
   }
 
+  /**
+   * Congela o laço sem desmontar nada. Enquanto pausado o relógio continua
+   * sendo consumido: sem isso, ao voltar, o primeiro quadro receberia o tempo
+   * inteiro que a tela ficou aberta e teleportaria todo mundo.
+   */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+  }
+
   private loop = (): void => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(0.05, this.clock.getDelta());
+    if (this.paused) return;
     const input = this.input.poll();
 
     this.camera.applyInput(input.lookYaw, input.lookPitch, input.zoom * 0.01);

@@ -294,6 +294,13 @@ export interface SpendInput {
   referenceId: string;
   idempotencyKey: string;
   reason?: string;
+  /**
+   * Efeito que precisa acontecer NA MESMA transação do débito — entregar o
+   * item comprado, por exemplo. Fora da transação, uma queda entre debitar e
+   * entregar deixa o jogador sem a moeda e sem a peça, e isso vira suporte.
+   * Não roda no replay: a chave repetida já entregou na primeira vez.
+   */
+  onSpent?: (client: PoolClient) => Promise<void>;
 }
 
 export async function spendCoins(input: SpendInput): Promise<EconomyResult> {
@@ -323,6 +330,7 @@ async function spend(input: SpendInput, currency: Currency): Promise<EconomyResu
         reason: input.reason ?? null,
         locked: wallet,
       });
+      await input.onSpent?.(client);
       return { transaction: tx, balances: await readBalances(client, input.userId), replayed: false };
     },
     replayPlain,

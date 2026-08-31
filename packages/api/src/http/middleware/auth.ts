@@ -43,6 +43,34 @@ export function requireUser(req: AuthedRequest, res: Response, next: NextFunctio
   }
 }
 
+/**
+ * Auth opcional: preenche `req.userId` quando há token válido e segue adiante
+ * quando não há. Serve as telas públicas que mudam de forma quando você está
+ * logado — o perfil de outra pessoa mostrando "seguindo", por exemplo — sem
+ * transformar a rota inteira em rota autenticada.
+ */
+export function optionalUser(req: AuthedRequest, _res: Response, next: NextFunction): void {
+  const header = req.header('authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token) { next(); return; }
+  try {
+    const payload = jwt.verify(token, config.jwt.secret, {
+      algorithms: ['HS256'],
+      issuer: config.jwt.issuer,
+    }) as jwt.JwtPayload;
+    if (typeof payload.sub === 'string') {
+      req.userId = payload.sub;
+      req.permissions = Array.isArray(payload.perms)
+        ? payload.perms.filter((p): p is string => typeof p === 'string')
+        : [];
+    }
+  } catch {
+    // Token ruim numa rota pública é o mesmo que token nenhum: a tela abre
+    // deslogada em vez de dar 401 em quem só queria ver um perfil.
+  }
+  next();
+}
+
 export function requirePermission(permission: string) {
   return (req: AuthedRequest, res: Response, next: NextFunction): void => {
     if (!req.permissions?.includes(permission)) {

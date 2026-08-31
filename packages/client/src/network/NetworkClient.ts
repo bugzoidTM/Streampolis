@@ -1,5 +1,5 @@
 import { Client } from 'colyseus.js';
-import type { LiveSummary, SceneId } from '@streampolis/shared';
+import type { SceneId } from '@streampolis/shared';
 import { WorldConnection } from './WorldConnection.js';
 import type { LiveStateView, WorldStateView } from './types.js';
 
@@ -9,19 +9,6 @@ import type { LiveStateView, WorldStateView } from './types.js';
  * The auth token is passed in, never stored here and never minted here: the
  * API issues it and the game server verifies it (SPECs §36).
  */
-
-/** O que GET /lives devolve. Espelha packages/api/src/world/Lives.ts. */
-interface ApiLiveListing {
-  liveId: string;
-  externalId: string | null;
-  roomId: string | null;
-  hostId: string;
-  hostName: string;
-  title: string;
-  category: string;
-  likes: number;
-  startedAt: string;
-}
 
 /**
  * Espera o primeiro patch antes de devolver a conexão.
@@ -141,62 +128,6 @@ export class NetworkClient {
   async watchLive(roomId: string): Promise<WorldConnection<LiveStateView>> {
     const room = await this.client.joinById<LiveStateView>(roomId, this.joinOptions());
     return synced(new WorldConnection(room));
-  }
-
-  /**
-   * Feed de lives.
-   *
-   * A LISTA vem da API: quem está no ar é estado persistente e social, e é a
-   * API que sabe responder isso mesmo com o game server reiniciando. O que a
-   * API não tem é a contagem de espectadores AGORA — isso é tempo real e mora
-   * no game server —, então o número é enxertado a partir do listing dele
-   * quando ele responde. Se não responder, a lista continua correta e o
-   * contador aparece zerado: melhor um número faltando que uma live faltando.
-   */
-  async listLives(): Promise<LiveSummary[]> {
-    const lives = await this.listFromApi();
-    const live = new Map(
-      (await this.listRealtime()).map((room) => [room.roomId, room] as const),
-    );
-    return lives
-      .map((summary) => {
-        const now = live.get(summary.roomId);
-        return now ? { ...summary, realViewers: now.realViewers, isPK: now.isPK } : summary;
-      })
-      .sort((a, b) => b.realViewers - a.realViewers || b.startedAt - a.startedAt);
-  }
-
-  private async listFromApi(): Promise<LiveSummary[]> {
-    const res = await fetch(`${this.apiBase}/lives`);
-    if (!res.ok) throw new Error(`listagem de lives falhou (${res.status})`);
-    const body = (await res.json()) as { lives?: ApiLiveListing[] };
-    return (body.lives ?? [])
-      // Sem roomId ninguém consegue entrar: uma linha assim é sessão órfã de
-      // um game server que caiu, não uma live assistível.
-      .filter((row) => typeof row.roomId === 'string' && row.roomId.length > 0)
-      .map((row) => ({
-        roomId: row.roomId as string,
-        liveId: row.externalId ?? row.liveId,
-        hostId: row.hostId,
-        hostName: row.hostName,
-        title: row.title,
-        category: row.category,
-        realViewers: 0,
-        isPK: false,
-        agency: '',
-        startedAt: new Date(row.startedAt).getTime(),
-      }));
-  }
-
-  /** Contagens do game server. Best-effort: um erro aqui não some com o feed. */
-  private async listRealtime(): Promise<LiveSummary[]> {
-    try {
-      const res = await fetch(`${this.httpBase}/live`);
-      if (!res.ok) return [];
-      return (await res.json()) as LiveSummary[];
-    } catch {
-      return [];
-    }
   }
 
   /** Qual apartamento é o do jogador (a API é dona dessa resposta). */

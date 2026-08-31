@@ -21,8 +21,28 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 
 const CLIENT = args.client ?? 'http://127.0.0.1:5273';
 const SERVER = args.server ?? 'ws://127.0.0.1:2567';
+const API = args.api ?? 'http://127.0.0.1:8787';
 const out = args.out ?? 'shots/live.png';
 const gift = args.gift ?? 'g_star';
+
+/**
+ * Token de quem entra. Com a API no ar (e o game server apontado para ela) é um
+ * JWT de verdade; sem ela, o game server aceita o próprio username como token
+ * de desenvolvimento. Fixar um dos dois quebra o script metade das vezes.
+ */
+async function tokenFor(username) {
+  try {
+    const res = await fetch(`${API}/auth/dev-login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    if (res.ok) return (await res.json()).token;
+  } catch {
+    // API fora: segue no modo de desenvolvimento do game server.
+  }
+  return username;
+}
 
 const errors = [];
 const checks = [];
@@ -40,8 +60,9 @@ page.on('pageerror', (e) => errors.push(String(e.message)));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 console.log('\n1) Ana abre a própria live');
+const anaToken = await tokenFor('ana');
 await page.goto(
-  `${CLIENT}/?view=world&token=ana&name=Ana&golive=1&title=Primeira%20live&category=musica`,
+  `${CLIENT}/?view=world&token=${anaToken}&name=Ana&golive=1&title=Primeira%20live&category=musica`,
   { waitUntil: 'networkidle', timeout: 60_000 },
 );
 await page.waitForFunction(() => window.__ready === true, { timeout: 60_000 })
@@ -60,7 +81,7 @@ check('a sala é uma LiveRoom com host', Boolean(room?.hostId), room?.hostId);
 
 console.log('\n2) Beto entra como espectador');
 const betoClient = new Client(SERVER);
-const beto = await betoClient.joinById(room.id, { token: 'beto' });
+const beto = await betoClient.joinById(room.id, { token: await tokenFor('beto') });
 await new Promise((r) => setTimeout(r, 800));
 
 const viewers = await page.evaluate(() => window.__world.connection.state.viewers);

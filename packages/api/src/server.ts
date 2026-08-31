@@ -10,8 +10,11 @@ import { assertWearable, readAvatar, saveAvatar, validateAvatar } from './profil
 import { recordPKResult, listPKHistory } from './pk/PkRecords.ts';
 import { canEnter, getHome, getOrCreateHomeOf, setVisibility } from './world/Homes.ts';
 import { closeLive, listLives, openLive } from './world/Lives.ts';
-import { requireService, requireUser, type AuthedRequest } from './http/middleware/auth.ts';
+import { optionalUser, requireService, requireUser, type AuthedRequest } from './http/middleware/auth.ts';
+import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
+import { listInventory, purchaseItem } from './shop/Purchases.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
+import { cors } from './http/middleware/cors.ts';
 
 /**
  * API REST (SPECs §51, §52).
@@ -28,6 +31,8 @@ app.disable('x-powered-by');
 // limitador conta todo mundo no mesmo balde (o do proxy). Configurável porque
 // confiar no header quando NÃO há proxy é o contrário: qualquer um forja o IP.
 app.set('trust proxy', config.trustProxy);
+// Antes do limitador: um preflight recusado não deve gastar a cota de ninguém.
+app.use(cors);
 
 // Teto global do público. `/internal/*` fica de fora porque tem o seu próprio
 // teto (bem mais alto) e um chamador só: somar os dois derrubaria o game server
@@ -123,7 +128,15 @@ app.get('/me', requireUser, async (req: AuthedRequest, res, next) => {
       res.status(404).json({ error: 'not_found' });
       return;
     }
-    res.json({ identity, wallet: await getBalances(identity.userId) });
+    // Perfil junto: a tela de perfil precisa de fama, seguidores e nível, e
+    // uma segunda ida ao servidor para o próprio dono da conta é desperdício.
+    const [wallet, profile, inventory, following] = await Promise.all([
+      getBalances(identity.userId),
+      getPublicProfile(identity.userId, identity.userId),
+      listInventory(identity.userId),
+      listFollowing(identity.userId),
+    ]);
+    res.json({ identity, wallet, profile, inventory, following });
   } catch (err) {
     next(err);
   }
@@ -202,6 +215,64 @@ app.get('/me/ledger', rateLimit('economy'), requireUser, async (req: AuthedReque
 app.get('/me/pk', requireUser, async (req: AuthedRequest, res, next) => {
   try {
     res.json({ matches: await listPKHistory(req.userId as string) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ----------------------------------------------------------------- loja ---
+
+app.get('/me/inventory', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json({ items: await listInventory(req.userId as string) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const purchaseSchema = z.object({
+  itemId: z.string().min(2).max(64),
+  currency: z.enum(['credits', 'coins']),
+  // O preço NÃO vem daqui. O cliente escolhe o item e a moeda; quanto custa é
+  // resposta do banco (SPECs §68 regra 6).
+  idempotencyKey: z.string().min(8).max(96),
+});
+
+app.post('/me/purchases', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = purchaseSchema.parse(req.body);
+    res.json(await purchaseItem({ ...body, userId: req.userId as string }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------- perfil ---
+
+app.get('/users/:userId', optionalUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const profile = await getPublicProfile(param(req.params.userId), req.userId);
+    if (!profile) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.json({ profile });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const followSchema = z.object({ following: z.boolean() });
+
+app.put('/users/:userId/follow', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = followSchema.parse(req.body);
+    const target = param(req.params.userId);
+    if (!/^[0-9a-f-]{36}$/i.test(target)) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.json(await setFollow(req.userId as string, target, body.following));
   } catch (err) {
     next(err);
   }

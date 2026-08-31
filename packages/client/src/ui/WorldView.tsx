@@ -15,6 +15,8 @@ export interface WorldViewProps {
   displayName?: string;
   avatar?: AvatarConfig;
   endpoint?: string;
+  /** Uma tela cobre o mundo: pausa o laço em vez de desmontar a cena. */
+  paused?: boolean;
 }
 
 /**
@@ -30,6 +32,7 @@ export interface WorldViewProps {
  */
 export function WorldView(props: WorldViewProps) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const worldRef = useRef<World | null>(null);
   const [status, setStatus] = useState<'loading' | 'online' | 'offline' | 'failed'>('loading');
   const [message, setMessage] = useState<string>(describeIntent(props.intent));
   const [inLive, setInLive] = useState(false);
@@ -86,6 +89,8 @@ export function WorldView(props: WorldViewProps) {
         __world: world,
       });
 
+      worldRef.current = world;
+      world.setPaused(props.paused === true);
       await world.start();
       if (cancelled) return;
       setStatus(world.online ? 'online' : 'offline');
@@ -106,12 +111,19 @@ export function WorldView(props: WorldViewProps) {
       cancelled = true;
       window.removeEventListener('resize', onResize);
       useSessionStore.getState().detach();
+      worldRef.current = null;
       world?.dispose();
     };
     // As props são lidas uma vez, na montagem, de propósito: reconectar no meio
     // da partida derrubaria a cena inteira.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Pausar é barato e reversível; desmontar custaria reconstruir a cena inteira
+  // e reconectar a sala só porque alguém abriu a loja por dez segundos.
+  useEffect(() => {
+    worldRef.current?.setPaused(props.paused === true);
+  }, [props.paused]);
 
   return (
     <>
