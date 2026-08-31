@@ -1,0 +1,256 @@
+import type { Room } from 'colyseus.js';
+import {
+  MSG,
+  PLAY_AREA,
+  TICK_MS,
+  type AnimState,
+  type ChatMessage,
+  type FollowEvent,
+  type GiftEvent,
+  type LikeTotals,
+  type MoveCorrection,
+  type PKResult,
+  type SystemNotice,
+} from '@streampolis/shared';
+import { RemoteBuffer } from './Interpolation.js';
+import { Predictor } from './Predictor.js';
+import type { PlayerView, RenderPose, WorldStateView } from './types.js';
+
+export interface WorldEvents {
+  chat: (message: ChatMessage) => void;
+  gift: (event: GiftEvent) => void;
+  likes: (totals: LikeTotals) => void;
+  follow: (event: FollowEvent) => void;
+  notice: (notice: SystemNotice) => void;
+  pkResult: (result: PKResult) => void;
+  /** Fired after every state patch, for UI that mirrors room state. */
+  state: (state: WorldStateView) => void;
+  left: (code: number) => void;
+  error: (code: number, message?: string) => void;
+}
+
+export interface MoveInput {
+  /** Planar direction in world space, magnitude 0..1. */
+  dx: number;
+  dz: number;
+  /** Where the avatar faces, in radians. */
+  yaw: number;
+  run: boolean;
+}
+
+/** Yaw change below this is camera noise, not an intent worth a packet. */
+const YAW_EPSILON = 0.02;
+
+type Listener<K extends keyof WorldEvents> = WorldEvents[K];
+
+/**
+ * One joined room, from the browser's side.
+ *
+ * Owns the three things that make multiplayer feel right and are easy to get
+ * wrong: a fixed-step intent stream (never per frame — a 144 Hz monitor would
+ * otherwise move six times faster than a 24 Hz one), prediction for the local
+ * avatar, and a delay buffer for everyone else.
+ */
+export class WorldConnection<S extends WorldStateView = WorldStateView> {
+  readonly predictor: Predictor;
+
+  private buffers = new Map<string, RemoteBuffer>();
+  private listeners: { [K in keyof WorldEvents]: Set<Listener<K>> } = {
+    chat: new Set(), gift: new Set(), likes: new Set(), follow: new Set(),
+    notice: new Set(), pkResult: new Set(), state: new Set(), left: new Set(), error: new Set(),
+  };
+  private accumulator = 0;
+  private lastSentYaw = 0;
+  private wasMoving = false;
+  private disposed = false;
+
+  constructor(readonly room: Room<S>) {
+    const area = PLAY_AREA[room.state?.sceneId ?? 'central_plaza'];
+    this.predictor = new Predictor({ x: 0, z: 0, yaw: 0, moving: false }, area);
+    this.wire();
+  }
+
+  get sessionId(): string {
+    return this.room.sessionId;
+  }
+
+  get state(): S {
+    return this.room.state;
+  }
+
+  /** The local player's server-side entry, absent for live spectators. */
+  get localPlayer(): PlayerView | undefined {
+    return this.room.state?.players?.get(this.room.sessionId);
+  }
+
+  on<K extends keyof WorldEvents>(event: K, listener: Listener<K>): () => void {
+    this.listeners[event].add(listener);
+    return () => { this.listeners[event].delete(listener); };
+  }
+
+  private emit<K extends keyof WorldEvents>(event: K, ...args: Parameters<Listener<K>>): void {
+    for (const listener of this.listeners[event]) {
+      (listener as (...a: Parameters<Listener<K>>) => void)(...args);
+    }
+  }
+
+  private wire(): void {
+    this.room.onMessage(MSG.chatMessage, (m: ChatMessage) => this.emit('chat', m));
+    this.room.onMessage(MSG.giftEvent, (e: GiftEvent) => this.emit('gift', e));
+    this.room.onMessage(MSG.likeTotals, (t: LikeTotals) => this.emit('likes', t));
+    this.room.onMessage(MSG.follow, (f: FollowEvent) => this.emit('follow', f));
+    this.room.onMessage(MSG.notice, (n: SystemNotice) => this.emit('notice', n));
+    this.room.onMessage(MSG.pkResult, (r: PKResult) => this.emit('pkResult', r));
+    this.room.onMessage(MSG.correction, (c: MoveCorrection) => this.predictor.reconcile(c));
+
+    let placed = false;
+    this.room.onStateChange((state) => {
+      const now = performance.now();
+      state.players?.forEach((player, sessionId) => {
+        if (sessionId === this.room.sessionId) {
+          // The first patch carries the spawn the server chose; adopt it once,
+          // then never again — after that the predictor is ahead on purpose.
+          if (!placed) {
+            this.predictor.place({ x: player.x, z: player.z, yaw: player.yaw, moving: false });
+            this.lastSentYaw = player.yaw;
+            placed = true;
+          }
+          return;
+        }
+        let buffer = this.buffers.get(sessionId);
+        if (!buffer) this.buffers.set(sessionId, (buffer = new RemoteBuffer()));
+        buffer.push({ t: now, x: player.x, y: player.y, z: player.z, yaw: player.yaw });
+      });
+
+      // Forget buffers of players who left, otherwise a long session leaks one
+      // ring buffer per visitor the room ever had.
+      for (const sessionId of [...this.buffers.keys()]) {
+        if (!state.players?.get(sessionId)) this.buffers.delete(sessionId);
+      }
+      this.emit('state', state);
+    });
+
+    this.room.onLeave((code) => { this.disposed = true; this.emit('left', code); });
+    this.room.onError((code, message) => this.emit('error', code, message));
+  }
+
+  /**
+   * Advances the intent clock. Call once per rendered frame with the real
+   * frame time; the fixed accumulator does the rest.
+   */
+  update(dtSeconds: number, input: MoveInput): void {
+    if (this.disposed) return;
+    // A tab that was backgrounded returns with a huge dt. Replaying it would
+    // fire a burst the server's flood guard rejects — drop the debt instead.
+    this.accumulator = Math.min(this.accumulator + dtSeconds * 1000, TICK_MS * 4);
+
+    while (this.accumulator >= TICK_MS) {
+      this.accumulator -= TICK_MS;
+      const moving = Math.hypot(input.dx, input.dz) > 1e-3;
+      const turned = Math.abs(input.yaw - this.lastSentYaw) > YAW_EPSILON;
+
+      // Standing still costs nothing on the wire: no intents means the server
+      // marks the player idle on its own. The one exception is the step right
+      // after stopping, which has to travel or the avatar keeps walking there.
+      if (!moving && !turned && !this.wasMoving) continue;
+
+      const intent = this.predictor.step(input.dx, input.dz, input.yaw, input.run);
+      this.room.send(MSG.move, intent);
+      this.lastSentYaw = input.yaw;
+      this.wasMoving = moving;
+    }
+  }
+
+  /** Poses to draw this frame: local predicted, remote interpolated. */
+  poses(now = performance.now()): RenderPose[] {
+    const out: RenderPose[] = [];
+    const state = this.room.state;
+    if (!state?.players) return out;
+
+    state.players.forEach((player, sessionId) => {
+      if (sessionId === this.room.sessionId) {
+        const local = this.predictor.current;
+        out.push({
+          ...toRenderPose(player, sessionId, true),
+          x: local.x,
+          z: local.z,
+          yaw: local.yaw,
+          moving: local.moving,
+        });
+        return;
+      }
+      const sample = this.buffers.get(sessionId)?.sample(now);
+      out.push({
+        ...toRenderPose(player, sessionId, false),
+        x: sample?.x ?? player.x,
+        y: sample?.y ?? player.y,
+        z: sample?.z ?? player.z,
+        yaw: sample?.yaw ?? player.yaw,
+      });
+    });
+    return out;
+  }
+
+  // ---- intents the UI sends -------------------------------------------------
+
+  chat(text: string): void {
+    this.room.send(MSG.chat, { text });
+  }
+
+  emote(anim: AnimState): void {
+    this.room.send(MSG.emote, { anim });
+  }
+
+  like(count = 1): void {
+    this.room.send(MSG.like, { count });
+  }
+
+  /**
+   * Sends a gift. The key is generated here and MUST be reused verbatim on a
+   * retry — that is what makes a resend free instead of a second charge
+   * (SPECs §27). The client never claims an amount; the server prices it.
+   */
+  gift(giftId: string, quantity: number, idempotencyKey = newIdempotencyKey()): string {
+    this.room.send(MSG.gift, { giftId, quantity, idempotencyKey });
+    return idempotencyKey;
+  }
+
+  startPK(opponentId: string): void {
+    this.room.send(MSG.startPK, { opponentId });
+  }
+
+  endLive(): void {
+    this.room.send(MSG.endLive, {});
+  }
+
+  block(userId: string, on = true): void {
+    this.room.send(MSG.block, { userId, on });
+  }
+
+  async leave(): Promise<void> {
+    this.disposed = true;
+    this.buffers.clear();
+    await this.room.leave();
+  }
+}
+
+function toRenderPose(player: PlayerView, sessionId: string, isLocal: boolean): RenderPose {
+  return {
+    id: player.id,
+    sessionId,
+    name: player.name,
+    x: player.x,
+    y: player.y,
+    z: player.z,
+    yaw: player.yaw,
+    anim: player.anim,
+    moving: player.moving,
+    gifterLevel: player.gifterLevel,
+    avatar: player.avatar,
+    isLocal,
+  };
+}
+
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID();
+}
