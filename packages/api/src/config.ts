@@ -41,6 +41,17 @@ export const config = {
     issuer: 'streampolis-api',
   },
   webhookSecret: secret('PAYMENT_WEBHOOK_SECRET', 'dev-only-webhook-secret'),
+  /**
+   * Segredo entre API e game server. O game server nunca fala com o banco: ele
+   * chama /internal/* com este token, e essas rotas movem dinheiro — por isso
+   * em produção não existe valor default.
+   */
+  serviceToken: secret('API_SERVICE_TOKEN', 'dev-only-service-token'),
+  /**
+   * Login sem senha para desenvolvimento (POST /auth/dev-login). Ligado só
+   * fora de produção e nunca por acidente: exige a env explícita.
+   */
+  devLogin: !isProd && env('API_DEV_LOGIN', '1') === '1',
   rateLimit: {
     windowMs: intEnv('RATE_WINDOW_MS', 60_000),
     generalMax: intEnv('RATE_GENERAL_MAX', 300),

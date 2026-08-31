@@ -40,6 +40,52 @@ ar, `http://127.0.0.1:5273/?view=world&token=ana&name=Ana` entra de verdade (o
 token de desenvolvimento É o id do usuário enquanto a API não emite os reais).
 `?view=lab` continua abrindo o laboratório de avatares.
 
+## Quem manda em quê (não negociável)
+
+| Verdade | Dono | O outro lado faz |
+|---|---|---|
+| Placar e fases do PK | **Game Server** | API grava o resultado apurado |
+| Saldo, preço, inventário | **API + Postgres** | Game server pede a cobrança e obedece |
+| Identidade do jogador | **Token assinado pela API** | Game server confere assinatura |
+| Aparência do avatar | **API** (validada contra o inventário) | Viaja assinada dentro do token |
+| Dono/decoração/privacidade do apartamento | **API** | Sala recebe só o `apartmentId` |
+| Posição e colisão | **Game Server** | Cliente prevê com a mesma função |
+
+O que o navegador PODE dizer: seu token, para onde quer andar, o que quer
+falar, qual presente quer mandar, e o título da própria live. Só isso. Se você
+está prestes a aceitar um `hostId`, `ownerId`, `avatar` ou `visibility` vindo do
+cliente, pare: já tivemos essa falha e ela custou uma rodada de correções.
+
+Um convite de palco é convite de verdade: host manda `invite`, o convidado
+manda `acceptStage`, e o servidor confere que o convite é dele e não expirou.
+Não existe "pedir para ser co-host" no join.
+
+## Como rodar a API
+
+```
+cd packages/api
+npm run migrate && npm run seed     # Postgres de dev já roda em :55432
+npm run dev                          # :8787
+```
+
+O seed cria ana/beto/caio/moderador (senha `streampolis-dev`).
+`POST /auth/dev-login {"username":"ana"}` devolve o token de sessão — é ele que
+vai no `?token=` do cliente e no join das salas.
+
+Para rodar o game server contra a API de verdade:
+
+```
+AUTH_JWT_SECRET=dev-only-access-secret-change-me \
+API_BASE_URL=http://127.0.0.1:8787 \
+API_SERVICE_TOKEN=dev-only-service-token \
+npm run dev --workspace @streampolis/game-server
+```
+
+Sem `API_BASE_URL` o game server usa stubs em memória e AVISA no log — bom para
+desenvolver, proibido em produção (o próprio código recusa subir assim lá).
+`npm run e2e:api --workspace @streampolis/game-server` prova a integração
+inteira: token assinado, débito real na carteira, PK gravado no banco.
+
 ## Onde a colisão mora
 
 Em `packages/shared/src/collision.ts`, e só ali. O servidor decide onde dá para

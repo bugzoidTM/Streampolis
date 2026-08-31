@@ -22,6 +22,7 @@ export interface WorldOptions {
   canvas: HTMLCanvasElement;
   sceneId?: SceneId;
   tier?: 'low' | 'medium' | 'high';
+  /** Look used only in offline mode; online it comes signed in the token. */
   avatar?: AvatarConfig;
   displayName?: string;
   /** Auth token. Absent means offline: the plaza runs with no server at all. */
@@ -91,10 +92,9 @@ export class World {
 
     if (this.opts.token) {
       try {
-        const client = new NetworkClient(
-          { token: this.opts.token, avatar: this.opts.avatar },
-          this.opts.endpoint,
-        );
+        // Only the token travels: identity and appearance are read from it on
+        // the server, never sent by the browser (SPECs §36, §68 regra 6).
+        const client = new NetworkClient({ token: this.opts.token }, this.opts.endpoint);
         this.connection = await client.joinCity(this.opts.sceneId ?? 'central_plaza');
         this.detachStores = attachStores(this.connection);
       } catch (err) {

@@ -80,7 +80,12 @@ async function main() {
 
   // ---------------------------------------------------------------- praça ---
   step('1) Praça: dois usuários reais, avatares visíveis');
-  const anaCity = await ana.joinOrCreate(ROOM_CITY, { token: 'ana', sceneId: 'central_plaza' });
+  // O cliente TENTA vestir um item pago no próprio join; o servidor usa o que
+  // veio assinado no token.
+  const anaCity = await ana.joinOrCreate(ROOM_CITY, {
+    token: 'ana', sceneId: 'central_plaza',
+    avatar: { top: 'top_holo_01', accessory: 'acc_halo_01' },
+  });
   const betoCity = await beto.joinOrCreate(ROOM_CITY, { token: 'beto', sceneId: 'central_plaza' });
   // Registrado já: a sala anuncia a chegada de cada um antes do primeiro patch.
   const betoInbox = [];
@@ -96,6 +101,9 @@ async function main() {
   const anaSeenByBeto = findPlayer(betoCity, 'ana');
   check('nome do jogador chega junto do avatar', Boolean(anaSeenByBeto?.name));
   check('cosmético veio no join', Boolean(anaSeenByBeto?.avatar?.top));
+  // Ana entrou pedindo roupa premium nas opções de join (ver joinOrCreate acima).
+  check('roupa premium pedida pelo cliente é ignorada', anaSeenByBeto?.avatar?.top !== 'top_holo_01',
+    `top=${anaSeenByBeto?.avatar?.top}`);
 
   // ----------------------------------------------------------- movimento ---
   step('2) Movimentação sincronizada e autoritativa');
@@ -157,16 +165,45 @@ async function main() {
 
   // ---------------------------------------------------------------- live ---
   step('4) Go Live, espectador, gift e PK');
-  const liveId = `live_e2e_${Date.now()}`;
-  const anaLive = await ana.joinOrCreate(ROOM_LIVE, {
-    token: 'ana', liveId, hostId: 'ana', hostName: 'Ana', title: 'Primeira live', category: 'música',
+  // O cliente TENTA se declarar host de outra pessoa. O servidor lê o token.
+  const anaLive = await ana.create(ROOM_LIVE, {
+    token: 'ana', title: 'Primeira live', category: 'música',
+    hostId: 'beto', hostName: 'Impostor', liveId: 'live_forjada',
   });
-  const caioLive = await caio.joinOrCreate(ROOM_LIVE, { token: 'caio', liveId, hostId: 'ana', role: 'cohost' });
-  const betoLive = await beto.joinOrCreate(ROOM_LIVE, { token: 'beto', liveId, hostId: 'ana' });
+  await waitForState(anaLive, 'live (Ana)');
+  check('host vem do token, não do que o cliente mandou', anaLive.state.hostId === 'ana',
+    `hostId=${anaLive.state.hostId}`);
+  check('id da live é do servidor', anaLive.state.liveId !== 'live_forjada',
+    `liveId=${anaLive.state.liveId}`);
+
+  const caioLive = await caio.joinById(anaLive.roomId, { token: 'caio', role: 'cohost' });
+  const betoLive = await beto.joinById(anaLive.roomId, { token: 'beto' });
+  await waitForState(betoLive, 'live (Beto)');
 
   check('todos entraram na mesma live', anaLive.roomId === betoLive.roomId && caioLive.roomId === betoLive.roomId);
+  await sleep(400);
+  check('pedir co-host no join não dá palco', playersOf(betoLive).size === 1,
+    `palco com ${playersOf(betoLive).size}`);
+
+  // Aceitar sem ter sido convidado também não promove.
+  const caioNotices = [];
+  caioLive.onMessage('notice', (n) => caioNotices.push(n));
+  caioLive.onMessage('chatMessage', () => {});
+  caioLive.send('acceptStage', {});
+  await sleep(300);
+  check('aceitar sem convite não promove', playersOf(betoLive).size === 1);
+
+  // Convite de verdade: host oferece, convidado aceita.
+  const invites = [];
+  caioLive.onMessage('stageInvite', (i) => invites.push(i));
+  betoLive.onMessage('stageInvite', (i) => invites.push({ ...i, to: 'beto' }));
+  anaLive.send('invite', { userId: 'caio' });
+  await waitFor('convite chegar ao convidado', () => invites.length > 0);
+  check('só o convidado recebe o convite', invites.length === 1 && invites[0].fromId === 'ana');
+
+  caioLive.send('acceptStage', {});
   await waitFor('palco com host e co-host', () => playersOf(betoLive).size === 2);
-  check('só o palco tem avatar (host + co-host)', playersOf(betoLive).size === 2,
+  check('convite aceito coloca o co-host no palco', playersOf(betoLive).size === 2,
     `palco com ${playersOf(betoLive).size}`);
   await waitFor('contador de espectadores', () => betoLive.state.viewers === 1);
   check('espectador conta como audiência, não como avatar', betoLive.state.viewers === 1);

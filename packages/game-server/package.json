@@ -10,7 +10,8 @@
     "start": "node dist/game-server/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test \"dist/game-server/test/*.test.js\"",
-    "e2e": "node scripts/e2e-two-clients.mjs"
+    "e2e": "node scripts/e2e-two-clients.mjs",
+    "e2e:api": "npm run build && node scripts/e2e-with-api.mjs"
   },
   "dependencies": {
     "@colyseus/core": "0.16.24",

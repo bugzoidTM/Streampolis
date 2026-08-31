@@ -12,6 +12,7 @@ import {
   type LikeTotals,
   type MoveCorrection,
   type PKResult,
+  type StageInvite,
   type SystemNotice,
 } from '@streampolis/shared';
 import { RemoteBuffer } from './Interpolation.js';
@@ -25,6 +26,8 @@ export interface WorldEvents {
   follow: (event: FollowEvent) => void;
   notice: (notice: SystemNotice) => void;
   pkResult: (result: PKResult) => void;
+  /** The host offered this client a seat on stage; it expires (SPECs §17). */
+  stageInvite: (invite: StageInvite) => void;
   /** Fired after every state patch, for UI that mirrors room state. */
   state: (state: WorldStateView) => void;
   left: (code: number) => void;
@@ -59,7 +62,8 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   private buffers = new Map<string, RemoteBuffer>();
   private listeners: { [K in keyof WorldEvents]: Set<Listener<K>> } = {
     chat: new Set(), gift: new Set(), likes: new Set(), follow: new Set(),
-    notice: new Set(), pkResult: new Set(), state: new Set(), left: new Set(), error: new Set(),
+    notice: new Set(), pkResult: new Set(), stageInvite: new Set(),
+    state: new Set(), left: new Set(), error: new Set(),
   };
   private accumulator = 0;
   private lastSentYaw = 0;
@@ -108,6 +112,7 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
     this.room.onMessage(MSG.follow, (f: FollowEvent) => this.emit('follow', f));
     this.room.onMessage(MSG.notice, (n: SystemNotice) => this.emit('notice', n));
     this.room.onMessage(MSG.pkResult, (r: PKResult) => this.emit('pkResult', r));
+    this.room.onMessage(MSG.stageInvite, (i: StageInvite) => this.emit('stageInvite', i));
     this.room.onMessage(MSG.correction, (c: MoveCorrection) => this.predictor.reconcile(c));
 
     let placed = false;
@@ -224,6 +229,19 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
 
   startPK(opponentId: string): void {
     this.room.send(MSG.startPK, { opponentId });
+  }
+
+  /** Host only: offers the stage to a spectator, who still has to accept. */
+  inviteToStage(userId: string): void {
+    this.room.send(MSG.invite, { userId });
+  }
+
+  acceptStage(): void {
+    this.room.send(MSG.acceptStage, {});
+  }
+
+  leaveStage(): void {
+    this.room.send(MSG.leaveStage, {});
   }
 
   endLive(): void {

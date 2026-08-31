@@ -1,60 +1,82 @@
 import { ServerError, type Client } from '@colyseus/core';
 import { ITEM_BY_ID, type SceneId } from '../shared.js';
-import type { AuthIdentity } from '../auth/AuthProvider.js';
+import { AuthError, type AuthIdentity } from '../auth/AuthProvider.js';
+import { defaultApiGateway, type ApiGateway, type HomeSnapshot } from '../api/ApiGateway.js';
 import { config } from '../config.js';
 import { BaseWorldRoom, type RoomCreateOptions } from './BaseWorldRoom.js';
 import { ApartmentState, type RoomRole } from './schema.js';
 
+/**
+ * What the browser may say to enter a home: WHICH home.
+ *
+ * It used to send ownerId, ownerName, decor and visibility, which is the same
+ * as letting a visitor declare "this apartment is mine, these are its furniture
+ * and it is open to everyone". Ownership, contents and privacy now come from
+ * the API — the room only carries the key.
+ */
 export interface ApartmentOptions extends RoomCreateOptions {
-  ownerId?: string;
-  ownerName?: string;
-  /** Item ids the API says this apartment currently has placed (PRD §8). */
-  decor?: string[];
-  /** Private apartments only accept the owner; open ones accept visitors. */
-  visibility?: 'open' | 'friends' | 'private';
+  token?: string;
+  apartmentId?: string;
 }
 
 /**
- * A player's home (SPECs §17). Owner plus guests, and it is live-capable —
- * the MVP's "Go Live" happens here before the dedicated stage exists.
- *
- * The decor list is a projection of what the API stored. The room never
- * invents an item and never persists one: a client that sends a decor change
- * is only allowed to reorder what it already owns, and the API is what will
- * write it (TODO(api agent): PUT /apartments/:id/decor, then drop this echo).
+ * A player's home (PRD §8). Owner plus guests, and it is live-capable — the
+ * MVP's "Go Live" happens here before the dedicated stage exists.
  */
 export class ApartmentRoom extends BaseWorldRoom<ApartmentState> {
   sceneId: SceneId = 'apartment';
 
-  private ownerId = '';
-  private visibility: ApartmentOptions['visibility'] = 'open';
+  private readonly api: ApiGateway = defaultApiGateway();
+  private home: HomeSnapshot | null = null;
 
   protected createState(): ApartmentState {
     return new ApartmentState();
   }
 
-  override onCreate(options: ApartmentOptions = {}): void {
-    this.ownerId = typeof options.ownerId === 'string' ? options.ownerId : '';
-    this.visibility = options.visibility ?? 'open';
+  override async onCreate(options: ApartmentOptions = {}): Promise<void> {
+    // The creator has to be authenticated even to open the room: an anonymous
+    // create would let anyone spin up a room keyed to someone's apartment.
+    try {
+      await this.auth.authenticate(options.token ?? '');
+    } catch (err) {
+      throw new ServerError(401, err instanceof AuthError ? err.code : 'auth_failed');
+    }
+
+    const apartmentId = typeof options.apartmentId === 'string' ? options.apartmentId : '';
+    if (!apartmentId) throw new ServerError(400, 'apartment_id_required');
+
+    const home = await this.api.getHome(apartmentId);
+    if (!home) throw new ServerError(404, 'apartment_not_found');
+    this.home = home;
+
     super.onCreate({ ...options, capacity: config.apartmentCapacity });
 
-    this.state.ownerId = this.ownerId;
-    this.state.ownerName = options.ownerName ?? '';
-    for (const id of options.decor ?? []) {
+    this.state.ownerId = home.ownerId;
+    this.state.ownerName = home.ownerName;
+    for (const id of home.decor) {
+      // Unknown ids are dropped rather than rendered: the client has no mesh
+      // for an item this build does not ship.
       if (ITEM_BY_ID.has(id)) this.state.decor.push(id);
     }
-    this.setMetadata({ sceneId: this.sceneId, ownerId: this.ownerId, visibility: this.visibility });
+    this.setMetadata({ sceneId: this.sceneId, apartmentId, ownerId: home.ownerId });
   }
 
-  override onJoin(client: Client, options: Record<string, unknown> = {}, auth?: AuthIdentity): void {
-    const identity = auth ?? (client.auth as AuthIdentity);
-    if (this.visibility === 'private' && identity?.userId !== this.ownerId) {
+  /**
+   * Privacy is the API's answer, not the room's guess. Fail closed: when the
+   * API cannot be reached, `canEnterHome` returns false and the door stays shut.
+   */
+  override async onAuth(client: Client, options: ApartmentOptions): Promise<AuthIdentity> {
+    const identity = await super.onAuth(client, options);
+    const home = this.home;
+    if (!home) throw new ServerError(503, 'apartment_unavailable');
+    if (identity.userId === home.ownerId) return identity;
+    if (!(await this.api.canEnterHome(home.apartmentId, identity.userId))) {
       throw new ServerError(403, 'apartment_private');
     }
-    super.onJoin(client, options, auth);
+    return identity;
   }
 
   protected override roleFor(identity: AuthIdentity): RoomRole {
-    return identity.userId === this.ownerId ? 'owner' : 'visitor';
+    return identity.userId === this.home?.ownerId ? 'owner' : 'visitor';
   }
 }

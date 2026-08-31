@@ -48,6 +48,8 @@ async function listLives(): Promise<LiveSummary[]> {
   return rooms
     .filter((room) => room.metadata && room.metadata.ended !== true)
     .map((room) => ({
+      /** Room id is the join key: watchers call joinById with it. */
+      roomId: room.roomId,
       liveId: String(room.metadata.liveId ?? room.roomId),
       hostId: String(room.metadata.hostId ?? ''),
       hostName: String(room.metadata.hostName ?? ''),
@@ -69,8 +71,17 @@ export const gameServer = new Server({
 // filterBy is what shards the world: a full central-plaza-001 makes the
 // matchmaker create a second plaza instead of overfilling the first (§17).
 gameServer.define(ROOM_CITY, CityRoom).filterBy(['sceneId']);
-gameServer.define(ROOM_APARTMENT, ApartmentRoom).filterBy(['ownerId']);
-gameServer.define(ROOM_LIVE, LiveRoom).filterBy(['liveId']);
+gameServer.define(ROOM_APARTMENT, ApartmentRoom).filterBy(['apartmentId']);
+
+/**
+ * Lives are NOT matched by a client-supplied key.
+ *
+ * A host calls create(); a viewer calls joinById() with the room id the feed
+ * gave them. With joinOrCreate + a filter, a manipulated client could ask to
+ * "join" a live that does not exist and end up CREATING it — which is how you
+ * open a broadcast in someone else's name.
+ */
+gameServer.define(ROOM_LIVE, LiveRoom);
 
 export async function start(port = config.port, host = config.host): Promise<void> {
   await gameServer.listen(port, host);

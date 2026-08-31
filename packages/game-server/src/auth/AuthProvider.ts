@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { DEFAULT_AVATAR, type AvatarConfig } from '../shared.js';
 import { config, isProduction } from '../config.js';
 
 /**
@@ -14,6 +15,16 @@ export interface AuthIdentity {
   agency: string;
   /** Opaque session id, useful to correlate with API audit logs. */
   sessionId: string;
+  /**
+   * Appearance as the API validated and SIGNED it.
+   *
+   * It arrives inside the token, never in join options. The browser used to
+   * send its own avatar, which meant anyone could wear a 5.000-Coin item from
+   * the console: no coins stolen, monetisation bypassed all the same. Here the
+   * game server only checks a signature the API produced after checking the
+   * player's inventory.
+   */
+  avatar: AvatarConfig;
 }
 
 export class AuthError extends Error {
@@ -39,8 +50,35 @@ interface JwtPayload {
   gifterLevel?: unknown;
   agency?: unknown;
   sid?: unknown;
+  avatar?: unknown;
   exp?: unknown;
   nbf?: unknown;
+}
+
+/**
+ * Reads the avatar claim. Anything missing falls back to the default look:
+ * a malformed claim must never become an avatar with no body, and it must
+ * never become "whatever the client asked for" either.
+ */
+function avatarFromClaim(claim: unknown): AvatarConfig {
+  if (typeof claim !== 'object' || claim === null) return { ...DEFAULT_AVATAR };
+  const c = claim as Record<string, unknown>;
+  const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v.slice(0, 64) : fallback);
+  const int = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : fallback);
+  return {
+    bodyPreset: int(c.bodyPreset, DEFAULT_AVATAR.bodyPreset),
+    skinTone: int(c.skinTone, DEFAULT_AVATAR.skinTone),
+    facePreset: int(c.facePreset, DEFAULT_AVATAR.facePreset),
+    hair: str(c.hair, ''),
+    hairColor: int(c.hairColor, DEFAULT_AVATAR.hairColor),
+    top: str(c.top, ''),
+    bottom: str(c.bottom, ''),
+    shoes: str(c.shoes, ''),
+    accessory: str(c.accessory, ''),
+    height: typeof c.height === 'number' && Number.isFinite(c.height)
+      ? Math.min(Math.max(c.height, 0.92), 1.08)
+      : DEFAULT_AVATAR.height,
+  };
 }
 
 function b64urlToBuf(input: string): Buffer {
@@ -103,6 +141,7 @@ export class JwtAuthProvider implements AuthProvider {
       gifterLevel: typeof payload.gifterLevel === 'number' ? payload.gifterLevel : 0,
       agency: typeof payload.agency === 'string' ? payload.agency : '',
       sessionId: typeof payload.sid === 'string' ? payload.sid : `${payload.sub}:${now}`,
+      avatar: avatarFromClaim(payload.avatar),
     };
   }
 }
@@ -127,6 +166,7 @@ export class DevAuthProvider implements AuthProvider {
       gifterLevel: 0,
       agency: '',
       sessionId: `${userId}:dev`,
+      avatar: { ...DEFAULT_AVATAR },
     };
   }
 }

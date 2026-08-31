@@ -25,7 +25,16 @@ export interface GiftIntent {
   /** Required for exactly-once semantics (SPECs §27). */
   idempotencyKey: string;
 }
+/**
+ * Opening a broadcast. There is no hostId here on purpose: the server reads it
+ * from the authenticated session. A client that could name the host could open
+ * a live in someone else's name.
+ */
 export interface GoLiveIntent { title: string; category: string; sceneId: SceneId }
+
+/** Host offers a stage seat; the guest has to accept it (SPECs §17). */
+export interface StageInviteIntent { userId: string }
+export interface StageInvite { fromId: string; fromName: string; expiresAt: number }
 
 // ---- server -> client ----
 export interface PlayerSnapshot {
@@ -75,6 +84,8 @@ export interface PKState {
 }
 
 export interface LiveSummary {
+  /** Colyseus room id — the key a viewer joins by (never a client-chosen one). */
+  roomId: string;
   liveId: string;
   hostId: string;
   hostName: string;
@@ -219,6 +230,9 @@ export const MSG = {
   goLive: 'goLive',
   endLive: 'endLive',
   startPK: 'startPK',
+  invite: 'invite',
+  acceptStage: 'acceptStage',
+  leaveStage: 'leaveStage',
   mute: 'mute',
   block: 'block',
   // server -> client
@@ -229,6 +243,7 @@ export const MSG = {
   follow: 'follow',
   notice: 'notice',
   pkResult: 'pkResult',
+  stageInvite: 'stageInvite',
 } as const;
 
 export type ClientMessage = typeof MSG[keyof typeof MSG];

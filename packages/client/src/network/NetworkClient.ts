@@ -1,5 +1,5 @@
 import { Client } from 'colyseus.js';
-import type { AvatarConfig, LiveSummary, SceneId } from '@streampolis/shared';
+import type { LiveSummary, SceneId } from '@streampolis/shared';
 import { WorldConnection } from './WorldConnection.js';
 import type { LiveStateView, WorldStateView } from './types.js';
 
@@ -24,14 +24,16 @@ function defaultEndpoint(): string {
 }
 
 export interface SessionOptions {
+  /**
+   * Session token minted by the API. It carries the identity AND the validated
+   * appearance — the client no longer sends either, because the server has no
+   * way to tell a real claim from a forged one when the browser is the source.
+   */
   token: string;
-  avatar?: AvatarConfig;
 }
 
+/** What a host may choose about their own broadcast. Not who they are. */
 export interface GoLiveOptions {
-  liveId: string;
-  hostId: string;
-  hostName: string;
   title: string;
   category: string;
   sceneId?: SceneId;
@@ -60,32 +62,40 @@ export class NetworkClient {
     return new WorldConnection(room);
   }
 
-  async joinApartment(ownerId: string, ownerName = ''): Promise<WorldConnection> {
+  /**
+   * Enters an apartment by id. Owner, furniture and privacy are resolved by the
+   * server against the API — the browser only names the door.
+   */
+  async joinApartment(apartmentId: string): Promise<WorldConnection> {
     const room = await this.client.joinOrCreate<WorldStateView>(ROOM_APARTMENT, {
       ...this.joinOptions(),
-      ownerId,
-      ownerName,
+      apartmentId,
     });
     return new WorldConnection(room);
   }
 
-  /** Opens a broadcast. The caller must be the host named in `options`. */
+  /**
+   * Opens a broadcast. `create`, never `joinOrCreate`: the host is read from
+   * the token inside onCreate, so this can only ever open the caller's own live.
+   */
   async goLive(options: GoLiveOptions): Promise<WorldConnection<LiveStateView>> {
-    const room = await this.client.joinOrCreate<LiveStateView>(ROOM_LIVE, {
+    const room = await this.client.create<LiveStateView>(ROOM_LIVE, {
       ...this.joinOptions(),
       ...options,
     });
     return new WorldConnection(room);
   }
 
-  /** Enters someone else's live as audience, or as co-host when invited. */
-  async watchLive(liveId: string, hostId: string, asCohost = false): Promise<WorldConnection<LiveStateView>> {
-    const room = await this.client.joinOrCreate<LiveStateView>(ROOM_LIVE, {
-      ...this.joinOptions(),
-      liveId,
-      hostId,
-      ...(asCohost ? { role: 'cohost' } : {}),
-    });
+  /**
+   * Enters someone else's live as audience, by the room id the feed listed.
+   * Joining by id cannot create anything, which is what stops a client from
+   * "joining" a live that does not exist and becoming its host.
+   *
+   * The stage is never requested here: the host invites, and the guest accepts
+   * with `connection.acceptStage()`.
+   */
+  async watchLive(roomId: string): Promise<WorldConnection<LiveStateView>> {
+    const room = await this.client.joinById<LiveStateView>(roomId, this.joinOptions());
     return new WorldConnection(room);
   }
 
@@ -100,10 +110,11 @@ export class NetworkClient {
     return (await res.json()) as LiveSummary[];
   }
 
+  /**
+   * Everything the browser is allowed to say about itself: the token. Identity
+   * and appearance are read from it server-side (SPECs §36, §68 regra 6).
+   */
   private joinOptions(): Record<string, unknown> {
-    return {
-      token: this.session.token,
-      ...(this.session.avatar ? { avatar: this.session.avatar } : {}),
-    };
+    return { token: this.session.token };
   }
 }

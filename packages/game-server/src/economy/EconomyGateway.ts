@@ -28,8 +28,12 @@ export interface GiftChargeRequest {
   receiverId: string;
   giftId: string;
   quantity: number;
-  /** Contextual only — the API stores it for the audit trail. */
-  liveId: string;
+  /**
+   * Linha de stream_sessions no banco, ou null quando a live ainda não foi
+   * registrada. String vazia NÃO serve: a API valida o campo como uuid e
+   * recusaria o presente inteiro por causa do contexto.
+   */
+  liveId: string | null;
   roomId: string;
 }
 

@@ -1,13 +1,11 @@
 import { Room, ServerError, type Client } from '@colyseus/core';
 import {
-  DEFAULT_AVATAR,
   MSG,
   PLAY_AREA,
   SCENE_AREA,
   SCENE_COLLIDERS,
   TICK_MS,
   type AnimState,
-  type AvatarConfig,
   type ChatMessage,
   type MoveCorrection,
   type SceneId,
@@ -35,7 +33,6 @@ export interface RoomCreateOptions {
 
 export interface WorldJoinOptions {
   token?: string;
-  avatar?: Partial<AvatarConfig>;
   sceneId?: SceneId;
 }
 
@@ -131,6 +128,19 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
       return;
     }
 
+    const player = this.spawnPlayer(client, identity);
+    this.onPlayerJoined(client, identity, player);
+  }
+
+  /**
+   * Gives a connected client a body. Separate from onJoin because a live room
+   * promotes a spectator to the stage mid-session, and that must go through
+   * exactly the same construction — including the avatar rule below.
+   */
+  protected spawnPlayer(client: Client, identity: AuthIdentity): PlayerState {
+    const session = this.sessions.get(client.sessionId);
+    const spawn = session ? { ...session.movement.current } : spawnFor(this.sceneId, this.joinCounter++);
+
     const player = new PlayerState();
     player.id = identity.userId;
     player.name = identity.displayName;
@@ -141,10 +151,18 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
     player.gifterLevel = identity.gifterLevel;
     player.agency = identity.agency;
     player.role = this.roleFor(identity);
-    player.avatar.apply({ ...DEFAULT_AVATAR, ...(options.avatar ?? {}) });
+    // Appearance comes from the token the API signed — NEVER from join
+    // options. Trusting the browser here is how a free tee becomes a
+    // 5.000-Coin item without anyone paying (SPECs §68 regra 6).
+    player.avatar.apply(identity.avatar);
 
     this.state.players.set(client.sessionId, player);
-    this.onPlayerJoined(client, identity, player);
+    return player;
+  }
+
+  /** Removes the body but keeps the session: the client is still connected. */
+  protected despawnPlayer(client: Client): void {
+    this.state.players.delete(client.sessionId);
   }
 
   /** False for clients that watch instead of inhabiting the room. */

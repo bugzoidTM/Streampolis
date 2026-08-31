@@ -23,7 +23,6 @@ import type {
   LedgerEntry,
   TransactionType,
 } from './types.ts';
-import { applyGiftPoints } from './PkEngine.ts';
 
 interface LedgerRow {
   id: string;
@@ -370,9 +369,18 @@ export interface SendGiftInput {
   quantity: number;
   liveId?: string | null;
   idempotencyKey: string;
-  /** Quando a live está em PK, os pontos entram na mesma transação do débito. */
-  pk?: { matchId: string; team: 'a' | 'b' } | null;
 }
+
+/**
+ * NÃO existe entrada de PK aqui, de propósito.
+ *
+ * O placar de uma batalha é do Game Server (SPECs §33): ele tem o relógio, as
+ * fases e a ordem dos eventos. Se a API também somasse pontos dentro da
+ * transação do débito, existiriam duas autoridades para o mesmo número e a
+ * primeira divergência de rede decidiria um PK. A API guarda o RESULTADO que o
+ * servidor apurou — ver src/pk/PkRecords.ts — e o `pk_points` gravado em
+ * gift_events é o valor do presente, não um voto no placar.
+ */
 
 /**
  * §26. Fluxo: lock wallet → valida saldo → debita → ledger → gift_event →
@@ -481,15 +489,6 @@ export async function sendGift(input: SendGiftInput): Promise<GiftResult> {
           'UPDATE stream_sessions SET gift_coin_total = gift_coin_total + $2 WHERE id = $1',
           [input.liveId, coinTotal],
         );
-      }
-
-      if (input.pk != null) {
-        await applyGiftPoints(client, {
-          matchId: input.pk.matchId,
-          team: input.pk.team,
-          points: pkPoints,
-          giftEventId,
-        });
       }
 
       return {
