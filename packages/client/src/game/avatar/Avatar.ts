@@ -3,8 +3,25 @@ import type { AnimState, AvatarConfig } from '@streampolis/shared';
 import { Animator } from '../anim/Animator.js';
 import { buildRig, PROPORTION_PRESETS, type BuiltRig, BONE_INDEX } from './Skeleton.js';
 import { buildBody, buildHead, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
+import { buildFaceStatic, buildFaceRig, type Expression, type FaceRig } from './Face.js';
+import { mergeGeometries } from './Loft.js';
 import { buildHair, TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS } from './Wardrobe.js';
-import { makeSkinMaterial, makeIrisMaterial, makeScleraMaterial } from './Materials.js';
+import { makeSkinMaterial, EYE_COLORS } from './Materials.js';
+
+/**
+ * Which face goes with which action. Deliberately blunt: the world reports
+ * movement, not mood, and guessing one from the other beats a host who wins a
+ * PK with the same expression they had while standing still.
+ */
+const EXPRESSION_FOR_ANIM: Partial<Record<AnimState, Expression>> = {
+  wave: 'smile',
+  dance: 'smile',
+  clap: 'smile',
+  pkWin: 'smile',
+  pkLose: 'focus',
+  giftReact: 'surprise',
+  celebrate: 'surprise',
+};
 
 /**
  * A complete avatar: one skeleton driving a body, a head, eyes and any number
@@ -21,7 +38,7 @@ export class Avatar {
   private bodyMesh!: THREE.SkinnedMesh;
   private headMesh!: THREE.SkinnedMesh;
   private parts = new Map<string, THREE.Object3D>();
-  private eyes: THREE.Group | null = null;
+  private face: FaceRig | null = null;
   private disposables: Array<{ dispose(): void }> = [];
 
   constructor(config: AvatarConfig) {
@@ -37,7 +54,7 @@ export class Avatar {
 
     this.buildBodyMesh();
     this.buildHeadMesh();
-    this.buildEyes();
+    this.buildFace();
     this.rebuildWardrobe();
   }
 
@@ -64,7 +81,10 @@ export class Avatar {
 
   private buildHeadMesh() {
     const face = FACE_PRESETS[this.config.facePreset % FACE_PRESETS.length];
-    const geo = buildHead(this.rig, face, BONE_INDEX.Head);
+    // Nose and ears never move, so they ride inside the head's own geometry:
+    // no extra draw call, and no chance of a feature drifting off the skull.
+    const geo = mergeGeometries([buildHead(this.rig, face, BONE_INDEX.Head), buildFaceStatic(this.rig, face)]);
+    geo.computeVertexNormals();
     const mat = makeSkinMaterial(this.config.skinTone);
     this.headMesh = new THREE.SkinnedMesh(geo, mat);
     this.headMesh.name = 'head';
@@ -77,37 +97,20 @@ export class Avatar {
   }
 
   /**
-   * Eyes are parented to the Head bone rather than skinned, which keeps them
-   * perfectly rigid inside the socket — skinning an eyeball to a deforming
-   * head is what produces the classic "melting eye" artefact.
+   * The expression rig hangs off the Head bone rather than being skinned:
+   * skinning an eyeball to a deforming head is what produces the classic
+   * "melting eye", and a brow that follows the skull's vertices cannot be
+   * raised without dragging the forehead with it.
    */
-  private buildEyes() {
-    const R = 0.128 * this.rig.proportions.headScale * this.rig.proportions.height;
-    const group = new THREE.Group();
-    const eyeR = R * 0.135;
-    const sclera = makeScleraMaterial();
-    const iris = makeIrisMaterial(this.config.facePreset % 6);
-    this.disposables.push(sclera, iris);
-
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Group();
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 20, 16), sclera);
-      eye.add(ball);
-      // Iris disc sits on the front of the ball, slightly proud so the
-      // clearcoat catches a highlight independent of the sclera.
-      const irisMesh = new THREE.Mesh(new THREE.CircleGeometry(eyeR * 0.62, 24), iris);
-      irisMesh.position.z = eyeR * 0.86;
-      eye.add(irisMesh);
-      eye.position.set(side * R * 0.33, R * 0.05, R * 0.60);
-      eye.rotation.y = side * -0.07;
-      group.add(eye);
-      this.disposables.push(ball.geometry, irisMesh.geometry);
-    }
-
-    // Positioned in Head-bone local space.
-    group.position.set(0, R * 0.42, 0.008);
-    this.rig.bones.Head.add(group);
-    this.eyes = group;
+  private buildFace() {
+    this.face?.dispose();
+    const shape = FACE_PRESETS[this.config.facePreset % FACE_PRESETS.length];
+    this.face = buildFaceRig(this.rig, shape, {
+      skinTone: this.config.skinTone,
+      hairColor: this.config.hairColor,
+      eyeColor: this.config.facePreset % EYE_COLORS.length,
+    });
+    this.rig.bones.Head.add(this.face.group);
   }
 
   private setPart(slot: string, obj: THREE.Object3D | null) {
@@ -160,13 +163,26 @@ export class Avatar {
   }
 
   /** What the world says this avatar is doing right now. */
-  setAnim(state: AnimState) { this.animator.request(state); }
+  setAnim(state: AnimState) {
+    this.animator.request(state);
+    // A body that dances with a blank face reads as a mannequin on a turntable.
+    // The world only ever says what the avatar is DOING; the face is inferred.
+    this.setExpression(EXPRESSION_FOR_ANIM[state] ?? 'neutral');
+  }
+
+  /** Overrides the face for a beat — a gift landing, a PK swinging. */
+  setExpression(e: Expression) { this.face?.setExpression(e); }
+
+  get expression(): Expression { return this.face?.current ?? 'neutral'; }
 
   /**
    * Advances the animation. `speed` is the ground speed the renderer is about
    * to draw, in m/s, which is what the locomotion clips are timed against.
    */
-  animate(dt: number, speed: number) { this.animator.update(dt, speed); }
+  animate(dt: number, speed: number) {
+    this.animator.update(dt, speed);
+    this.face?.update(dt);
+  }
 
   /** Applies a config change, rebuilding only what actually differs. */
   update(next: Partial<AvatarConfig>) {
@@ -187,10 +203,18 @@ export class Avatar {
       (this.headMesh.material as THREE.MeshPhysicalMaterial).color.copy(fresh.color);
       fresh.dispose();
     }
-    if (faceChanged) {
-      this.root.remove(this.headMesh);
-      this.headMesh.geometry.dispose();
-      this.buildHeadMesh();
+    if (faceChanged || skinChanged) {
+      if (faceChanged) {
+        this.root.remove(this.headMesh);
+        this.headMesh.geometry.dispose();
+        this.buildHeadMesh();
+      }
+      // Lips and lids are tinted from the skin tone, so a tone change has to
+      // rebuild them even when the face preset did not move.
+      if (this.face) this.rig.bones.Head.remove(this.face.group);
+      const keep = this.face?.current ?? 'neutral';
+      this.buildFace();
+      this.face?.setExpression(keep);
     }
     this.rebuildWardrobe();
   }
@@ -209,8 +233,9 @@ export class Avatar {
       if (m.geometry) m.geometry.dispose();
     });
     for (const d of this.disposables) d.dispose();
+    this.face?.dispose();
+    this.face = null;
     this.disposables = [];
     this.parts.clear();
-    this.eyes = null;
   }
 }

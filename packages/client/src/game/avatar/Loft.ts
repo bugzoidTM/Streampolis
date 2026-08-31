@@ -326,3 +326,44 @@ export function assemble(parts: Built[]): THREE.BufferGeometry {
   geo.computeBoundingSphere();
   return geo;
 }
+
+/**
+ * Concatenates skinned geometries that already share a skeleton. Used to fold
+ * static face features into the head and hair strands into the hair cap, so a
+ * detail costs triangles instead of a draw call.
+ */
+export function mergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const out = new THREE.BufferGeometry();
+  const attrs = ['position', 'normal', 'uv'] as const;
+  const sizes: Record<string, number> = { position: 3, normal: 3, uv: 2 };
+  const acc: Record<string, number[]> = { position: [], normal: [], uv: [], skinIndex: [], skinWeight: [] };
+  const indices: number[] = [];
+  let offset = 0;
+
+  for (const g of geos) {
+    for (const a of attrs) {
+      const attr = g.getAttribute(a) as THREE.BufferAttribute;
+      for (let i = 0; i < attr.count * sizes[a]; i++) acc[a].push(attr.array[i] as number);
+    }
+    const si = g.getAttribute('skinIndex') as THREE.BufferAttribute;
+    const sw = g.getAttribute('skinWeight') as THREE.BufferAttribute;
+    for (let i = 0; i < si.count * 4; i++) acc.skinIndex.push(si.array[i] as number);
+    for (let i = 0; i < sw.count * 4; i++) acc.skinWeight.push(sw.array[i] as number);
+
+    const idx = g.getIndex();
+    const count = (g.getAttribute('position') as THREE.BufferAttribute).count;
+    if (idx) for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i) + offset);
+    else for (let i = 0; i < count; i++) indices.push(i + offset);
+    offset += count;
+  }
+
+  out.setAttribute('position', new THREE.Float32BufferAttribute(acc.position, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(acc.normal, 3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(acc.uv, 2));
+  out.setAttribute('uv1', new THREE.Float32BufferAttribute(acc.uv, 2));
+  out.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(acc.skinIndex, 4));
+  out.setAttribute('skinWeight', new THREE.Float32BufferAttribute(acc.skinWeight, 4));
+  out.setIndex(indices);
+  out.computeBoundingSphere();
+  return out;
+}

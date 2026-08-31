@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loft, assemble, sliceStationsByY, type Station } from './Loft.js';
+import { loft, assemble, sliceStationsByY, mergeGeometries, type Station } from './Loft.js';
 import type { BoneName, BuiltRig } from './Skeleton.js';
 import { BONE_INDEX } from './Skeleton.js';
 import { type BodyShape, torso, arm, leg, limbGirth, clampLegStation } from './BodyBuilder.js';
@@ -362,50 +362,13 @@ export function buildHair(rig: BuiltRig, styleId: string, colorIndex: number): T
   if (extras?.length) {
     const parts = extras.map((st) => loft(st, { segments: 12, capStart: true, capEnd: true, subdivisions: 2 }));
     const extraGeo = assemble(parts);
-    geo = mergeSkinned([shell, extraGeo]);
+    geo = mergeGeometries([shell, extraGeo]);
   }
 
   const mesh = new THREE.SkinnedMesh(geo, makeHairMaterial(colorIndex));
   mesh.name = 'hair';
   mesh.castShadow = true;
   return mesh;
-}
-
-/** Concatenates skinned geometries that already share a skeleton. */
-export function mergeSkinned(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const out = new THREE.BufferGeometry();
-  const attrs = ['position', 'normal', 'uv'] as const;
-  const sizes: Record<string, number> = { position: 3, normal: 3, uv: 2 };
-  const acc: Record<string, number[]> = { position: [], normal: [], uv: [], skinIndex: [], skinWeight: [] };
-  const indices: number[] = [];
-  let offset = 0;
-
-  for (const g of geos) {
-    for (const a of attrs) {
-      const attr = g.getAttribute(a) as THREE.BufferAttribute;
-      for (let i = 0; i < attr.count * sizes[a]; i++) acc[a].push(attr.array[i] as number);
-    }
-    const si = g.getAttribute('skinIndex') as THREE.BufferAttribute;
-    const sw = g.getAttribute('skinWeight') as THREE.BufferAttribute;
-    for (let i = 0; i < si.count * 4; i++) acc.skinIndex.push(si.array[i] as number);
-    for (let i = 0; i < sw.count * 4; i++) acc.skinWeight.push(sw.array[i] as number);
-
-    const idx = g.getIndex();
-    const count = (g.getAttribute('position') as THREE.BufferAttribute).count;
-    if (idx) for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i) + offset);
-    else for (let i = 0; i < count; i++) indices.push(i + offset);
-    offset += count;
-  }
-
-  out.setAttribute('position', new THREE.Float32BufferAttribute(acc.position, 3));
-  out.setAttribute('normal', new THREE.Float32BufferAttribute(acc.normal, 3));
-  out.setAttribute('uv', new THREE.Float32BufferAttribute(acc.uv, 2));
-  out.setAttribute('uv1', new THREE.Float32BufferAttribute(acc.uv, 2));
-  out.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(acc.skinIndex, 4));
-  out.setAttribute('skinWeight', new THREE.Float32BufferAttribute(acc.skinWeight, 4));
-  out.setIndex(indices);
-  out.computeBoundingSphere();
-  return out;
 }
 
 // --------------------------------------------------------------------------

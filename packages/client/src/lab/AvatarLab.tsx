@@ -147,6 +147,38 @@ export function AvatarLab() {
         avatars,
 
         matrix: () => buildMatrix().map(({ index, label, group: g }) => ({ index, label, group: g })),
+
+        /**
+         * A head, framed as a portrait, in one expression and one yaw. The
+         * face is the part of the avatar a live puts on screen for hours, so
+         * it gets a review loop of its own rather than being judged from a
+         * full-body tile 40 px wide.
+         */
+        portrait: (cfg: Partial<AvatarConfig>, expression: string, headYaw = 0) => {
+          const avatar = new Avatar({ ...DEFAULT_AVATAR, ...cfg });
+          group.add(avatar.root);
+          try {
+            avatar.setExpression(expression as never);
+            // Settle the blend instantly instead of waiting on real seconds.
+            for (let i = 0; i < 40; i++) avatar.animate(0.05, 0);
+            avatar.rig.bones.Head.rotation.y = headYaw;
+            avatar.rig.bones.Head.updateMatrixWorld(true);
+
+            const head = avatar.eyeHeight;
+            camera.position.set(0, head + 0.02, 0.62);
+            camera.lookAt(0, head + 0.01, 0);
+            key.target.position.set(0, head, 0);
+            rim.target.position.set(0, head, 0);
+            env.update(camera);
+            renderer.render(0.016);
+            return canvas.toDataURL('image/png');
+          } finally {
+            group.remove(avatar.root);
+            avatar.dispose();
+            key.target.position.copy(focus);
+            rim.target.position.copy(focus);
+          }
+        },
         limits: () => AUDIT_LIMITS,
 
         /**

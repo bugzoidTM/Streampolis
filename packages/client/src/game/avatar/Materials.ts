@@ -164,25 +164,79 @@ function irisTexture(color: string): THREE.Texture {
 export function makeIrisMaterial(colorIndex: number): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
     map: irisTexture(EYE_COLORS[colorIndex % EYE_COLORS.length]),
-    roughness: 0.22,
+    roughness: 0.30,
     metalness: 0,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.02,
-    envMapIntensity: 1.4,
+    // A full-strength clearcoat over the whole iris washed every eye colour
+    // to the same grey. The wet look belongs on the cornea, and the catch
+    // light already plays that part.
+    clearcoat: 0.20,
+    clearcoatRoughness: 0.06,
+    // The sky dome is blue, and any real amount of environment reflection on
+    // a surface this small turns every eye colour into the same blue-grey.
+    envMapIntensity: 0.22,
     transparent: true,
   });
 }
 
 export function makeScleraMaterial(): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#f2f0ee').convertSRGBToLinear(),
-    roughness: 0.16,
+    // Not white: a real sclera is a shaded, slightly warm grey, and pure
+    // white next to a dark iris is what makes an eye read as a cartoon decal.
+    color: new THREE.Color('#ddd8d4').convertSRGBToLinear(),
+    roughness: 0.18,
     metalness: 0,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.04,
+    clearcoat: 0.8,
+    clearcoatRoughness: 0.05,
     sheen: 0.2,
-    envMapIntensity: 1.2,
+    envMapIntensity: 0.8,
   });
+}
+
+/**
+ * Lips. Derived from the skin tone rather than picked from a palette, so a
+ * dark-skinned avatar does not get a pale mouth pasted on: same hue family,
+ * pushed redder and darker, and wet enough to catch a highlight of its own.
+ */
+export function makeLipMaterial(toneIndex: number): THREE.MeshPhysicalMaterial {
+  const hsl = { h: 0, s: 0, l: 0 };
+  new THREE.Color(SKIN_TONES[toneIndex % SKIN_TONES.length]).getHSL(hsl);
+  // A small nudge, not lipstick: pushed a third of the way toward red and a
+  // quarter darker. The first pass multiplied saturation by 1.35 and every
+  // avatar came out wearing orange gloss.
+  const lip = new THREE.Color().setHSL(
+    hsl.h * 0.94,
+    Math.min(1, hsl.s * 1.10 + 0.03),
+    Math.max(0.08, hsl.l * 0.84),
+  ).convertSRGBToLinear();
+
+  return new THREE.MeshPhysicalMaterial({
+    color: lip,
+    roughness: 0.36,
+    metalness: 0,
+    sheen: 0.5,
+    sheenRoughness: 0.5,
+    clearcoat: 0.45,
+    clearcoatRoughness: 0.22,
+    envMapIntensity: 1.1,
+  });
+}
+
+/** The inside of a mouth, and the pupil: things that swallow light. */
+export function makeMouthMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#160d10').convertSRGBToLinear(),
+    roughness: 0.75,
+    metalness: 0,
+  });
+}
+
+/**
+ * The catch light. Unlit on purpose: a real one is a reflection of the key
+ * light, and faking it with a lit material means it dies in every scene whose
+ * key does not happen to point at the eye — which is most of a live.
+ */
+export function makeHighlightMaterial(): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
 }
 
 export interface ClothOptions {
