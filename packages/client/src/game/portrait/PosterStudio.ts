@@ -149,6 +149,10 @@ function shoot(
   if (rimColor !== undefined) s.rim.color.setHex(rimColor);
 
   const avatar = new Avatar(config);
+  // Retrato não pisca: o laço abaixo adianta segundos de animação para o corpo
+  // ter peso, e o reflexo corre junto — sem prender, um card em cada tantos
+  // sai com a modelo de olho fechado.
+  avatar.pinBlink(0);
   // Um frame parado no meio de um clipe é muito mais vivo do que a pose de
   // descanso: o corpo aparece com peso de um lado, os braços fora do eixo.
   avatar.animator.pin(o.pose);

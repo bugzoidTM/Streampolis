@@ -26,6 +26,10 @@ export function AvatarLab() {
     const count = Number(params.get('count') ?? '5');
     const only = params.get('only') ?? 'all';
     const variantStart = Number(params.get('start') ?? '0');
+    // O piscar é reflexo e corre sozinho; numa FOLHA DE CONTATO isso viraria
+    // ruído (um tile de olho fechado por sorteio). Aqui ele fica preso — e
+    // `?blink=1` é a régua que mede onde a pálpebra fecha.
+    const blinkPin = params.get('blink') !== null ? Number(params.get('blink')) : 0;
 
     const renderer = new Renderer(canvas, tier);
     const scene = new THREE.Scene();
@@ -205,6 +209,7 @@ export function AvatarLab() {
          */
         handShot: (cfg: Partial<AvatarConfig>, yaw = 0) => {
           const avatar = new Avatar({ ...DEFAULT_AVATAR, ...cfg });
+          avatar.pinBlink(blinkPin);
           group.add(avatar.root);
           const prev = group.rotation.y;
           try {
@@ -238,6 +243,7 @@ export function AvatarLab() {
          */
         portrait: (cfg: Partial<AvatarConfig>, expression: string, headYaw = 0, zoom = 1) => {
           const avatar = new Avatar({ ...DEFAULT_AVATAR, ...cfg });
+          avatar.pinBlink(blinkPin);
           group.add(avatar.root);
           try {
             avatar.setExpression(expression as never);

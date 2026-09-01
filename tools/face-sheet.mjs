@@ -33,7 +33,8 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
-const url = `${args.url ?? 'http://127.0.0.1:5273/'}?view=lab&matrix=1&spin=0&yaw=0&tier=${args.tier ?? 'high'}&exp=${args.exp ?? 0.5}`;
+const url = `${args.url ?? 'http://127.0.0.1:5273/'}?view=lab&matrix=1&spin=0&yaw=0&tier=${args.tier ?? 'high'}&exp=${args.exp ?? 0.5}`
+  + `&blink=${args.blink ?? 0}`;
 await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
 await page.waitForFunction(() => window.__ready === true, { timeout: 60_000 });
 await page.waitForTimeout(1000);

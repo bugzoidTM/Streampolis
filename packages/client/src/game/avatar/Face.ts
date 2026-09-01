@@ -53,6 +53,29 @@ const EXPRESSIONS: Record<Expression, Pose> = {
   focus:    { browInner: -0.024, browOuter: 0.008,  lidUpper: 0.22,  lidLower: 0.08,  mouthCorner: -0.07, mouthOpen: 0.00, mouthWidth: 0.94 },
 };
 
+/**
+ * O piscar, e por que ele importa mais do que parece.
+ *
+ * O rosto tinha quatro expressões e nenhuma vida entre elas: parado, ele fica
+ * de olho arregalado indefinidamente, que é exatamente a cara de manequim de
+ * vitrine. Piscar é o sinal barato mais forte de "isto está vivo" — e não é
+ * expressão, é reflexo: acontece POR CIMA de qualquer pose, inclusive de
+ * `surprise`, e por isso é um canal separado em vez de mais uma linha na
+ * tabela acima.
+ *
+ * Os valores fechados são MEDIDOS: `node tools/face-sheet.mjs --blink=1`
+ * desenha a pálpebra na posição de fechamento, e a pergunta "sobra fresta?" é
+ * de imagem. Chutar deixa uma linha de esclera aparecendo no meio do piscar,
+ * que lê como olho revirado.
+ */
+const LID_CLOSED_UPPER = 0.62;
+const LID_CLOSED_LOWER = 0.26;
+
+/** Tempos de um piscar humano, em segundos. Fecha rápido, abre devagar. */
+const BLINK_CLOSE = 0.06;
+const BLINK_HOLD = 0.03;
+const BLINK_OPEN = 0.13;
+
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /** A tapered tube through a run of directions on the face. */
@@ -176,6 +199,17 @@ export interface FaceRig {
   /** Parent this to the Head bone. */
   group: THREE.Group;
   setExpression(e: Expression): void;
+  /**
+   * Prende o piscar num valor (0 = olho aberto) ou solta o reflexo com `null`.
+   *
+   * Existe porque um RETRATO é um quadro só, tirado depois de adiantar o
+   * relógio da animação para o corpo ter peso — e nesse adiantamento o piscar
+   * também corre. Sem prender, um card da loja em cada tantos sai com a
+   * modelo de olho fechado, e o defeito não se reproduz olhando o jogo.
+   * Também é a régua de medição: `?blink=1` no laboratório desenha a pálpebra
+   * exatamente onde ela fecha.
+   */
+  pinBlink(value: number | null): void;
   /** Blends toward the requested expression; call once per frame. */
   update(dt: number): void;
   current: Expression;
@@ -187,6 +221,8 @@ interface Movable {
   browR: THREE.Object3D;
   lidUpper: THREE.Object3D[];
   lidLower: THREE.Object3D[];
+  /** Os globos. Um olho que nunca se move é a outra metade do olhar morto. */
+  eyes: THREE.Object3D[];
   mouthL: THREE.Object3D;
   mouthR: THREE.Object3D;
   mouthOpen: THREE.Object3D;
@@ -237,6 +273,16 @@ function lidShell(r: number, open: number, up: boolean, seg = 20, rings = 4): TH
   const A = 1.10;
   const AMAX = 1.50;
   const dir = up ? 1 : -1;
+  /**
+   * Quanto a casca passa DO POLO do globo, em radianos.
+   *
+   * Terminava exatamente no polo, e enquanto a pálpebra só abria e fechava um
+   * pouco isso bastava. Piscar gira a casca 35°: a borda de cima desce junto e
+   * o topo do globo fica NU — no meio do piscar aparecia uma meia-lua de
+   * esclera acima da pálpebra, que lê como olho revirado. O excedente fica
+   * enterrado na órbita com o olho aberto, onde ninguém o vê.
+   */
+  const OVER_POLE = 0.75;
 
   const pos: number[] = [];
   const uv: number[] = [];
@@ -253,7 +299,7 @@ function lidShell(r: number, open: number, up: boolean, seg = 20, rings = 4): TH
     const rim = dir * (open * shape - 0.13 * over);
 
     for (let j = 0; j <= rings; j++) {
-      const e = THREE.MathUtils.lerp(rim, dir * Math.PI * 0.5, j / rings);
+      const e = THREE.MathUtils.lerp(rim, dir * (Math.PI * 0.5 + OVER_POLE), j / rings);
       const ce = Math.cos(e);
       pos.push(Math.sin(psi) * ce * r, Math.sin(e) * r, Math.cos(psi) * ce * r);
       uv.push(i / seg, j / rings);
@@ -342,6 +388,8 @@ export function buildFaceRig(
   const eyeR = R * 0.132;
   const lidUpper: THREE.Object3D[] = [];
   const lidLower: THREE.Object3D[] = [];
+  const eyes: THREE.Object3D[] = [];
+  const eyeRest: THREE.Quaternion[] = [];
 
   for (const side of [-1, 1]) {
     const dir = EYE_DIR(side);
@@ -352,6 +400,8 @@ export function buildFaceRig(
     eye.position.copy(surface).addScaledVector(dir.clone().normalize(), -eyeR * 0.74);
     eye.quaternion.setFromUnitVectors(V(0, 0, 1), dir.clone().normalize());
     group.add(eye);
+    eyes.push(eye);
+    eyeRest.push(eye.quaternion.clone());
 
     const ball = new THREE.Mesh(track(new THREE.SphereGeometry(eyeR, 20, 16)), scleraMat);
     eye.add(ball);
@@ -449,7 +499,7 @@ export function buildFaceRig(
 
   const parts: Movable = {
     browL: brows[1], browR: brows[0],
-    lidUpper, lidLower,
+    lidUpper, lidLower, eyes,
     mouthL: halves[1], mouthR: halves[0],
     mouthOpen: open,
     mouth,
@@ -462,7 +512,7 @@ export function buildFaceRig(
   let pose: Pose = { ...EXPRESSIONS.neutral };
   let target: Pose = { ...EXPRESSIONS.neutral };
 
-  const apply = (p: Pose) => {
+  const apply = (p: Pose, blink: number, gaze: { x: number; y: number }) => {
     parts.browL.position.y = browRestY[1] + (p.browInner + p.browOuter) * 0.5 * R;
     parts.browR.position.y = browRestY[0] + (p.browInner + p.browOuter) * 0.5 * R;
     // The tilt between inner and outer end is what separates worry from anger
@@ -471,8 +521,19 @@ export function buildFaceRig(
     parts.browL.rotation.z = -tilt;
     parts.browR.rotation.z = tilt;
 
-    for (const lid of parts.lidUpper) lid.rotation.x = p.lidUpper;
-    for (const lid of parts.lidLower) lid.rotation.x = -p.lidLower;
+    // O piscar INTERPOLA a pose até o fechado em vez de somar a ela: somado,
+    // um piscar durante `surprise` (pálpebra em -0,20) fecharia menos do que
+    // um piscar em repouso, e a pessoa arregalada pisca com os olhos abertos.
+    const upper = THREE.MathUtils.lerp(p.lidUpper, LID_CLOSED_UPPER, blink);
+    const lower = THREE.MathUtils.lerp(p.lidLower, LID_CLOSED_LOWER, blink);
+    for (const lid of parts.lidUpper) lid.rotation.x = upper;
+    for (const lid of parts.lidLower) lid.rotation.x = -lower;
+
+    // O olhar. Os dois olhos giram JUNTOS e pouco: a mira é longe, e olhos
+    // que divergem viram estrabismo instantâneo.
+    for (let i = 0; i < parts.eyes.length; i++) {
+      parts.eyes[i].quaternion.copy(eyeRest[i]).multiply(gazeQuat.setFromEuler(gazeEuler.set(gaze.y, gaze.x, 0, 'YXZ')));
+    }
 
     parts.mouthL.rotation.z = p.mouthCorner;
     parts.mouthR.rotation.z = -p.mouthCorner;
@@ -481,9 +542,28 @@ export function buildFaceRig(
     parts.mouthL.position.y = -p.mouthOpen * R * 0.035;
     parts.mouthR.position.y = -p.mouthOpen * R * 0.035;
   };
-  apply(pose);
+  const gazeQuat = new THREE.Quaternion();
+  const gazeEuler = new THREE.Euler();
+
+  apply(pose, 0, { x: 0, y: 0 });
 
   const KEYS = Object.keys(EXPRESSIONS.neutral) as Array<keyof Pose>;
+
+  // Estado do reflexo. Fase de piscar em segundos DESDE o início do piscar;
+  // negativa = ainda faltam tantos segundos para o próximo.
+  //
+  // O primeiro piscar nunca cai no instante zero (o sorteio começa em 1,4 s)
+  // porque um único quadro é capturado assim, sem tempo passar: o retrato da
+  // loja e do feed renderiza uma vez, e um avatar de olho fechado no card é
+  // um bug que ninguém consegue reproduzir olhando o jogo.
+  let blinkPhase = -(1.4 + Math.random() * 3.2);
+  let blink = 0;
+  const gaze = { x: 0, y: 0 };
+  const gazeTo = { x: 0, y: 0 };
+  let nextSaccade = 0.8 + Math.random() * 2.4;
+  let pinnedBlink: number | null = null;
+
+  const BLINK_TOTAL = BLINK_CLOSE + BLINK_HOLD + BLINK_OPEN;
 
   return {
     group,
@@ -491,6 +571,13 @@ export function buildFaceRig(
     setExpression(e: Expression) {
       current = e;
       target = EXPRESSIONS[e] ?? EXPRESSIONS.neutral;
+    },
+    pinBlink(value: number | null) {
+      pinnedBlink = value;
+      if (value !== null) {
+        blink = value;
+        apply(pose, blink, gaze);
+      }
     },
     update(dt: number) {
       // A face that snaps between poses reads as a puppet. 12 Hz is fast
@@ -502,7 +589,50 @@ export function buildFaceRig(
         if (Math.abs(next - pose[key]) > 1e-5) moved = true;
         pose[key] = next;
       }
-      if (moved) apply(pose);
+
+      // ---- Piscar -------------------------------------------------------
+      const before = blink;
+      if (pinnedBlink !== null) {
+        blink = pinnedBlink;
+      } else {
+        blinkPhase += dt;
+        if (blinkPhase >= BLINK_TOTAL) {
+          // Um em cada seis piscares vem em par, como o de gente. Sem isso o
+          // intervalo fica regular demais e lê como pisca-pisca de máquina.
+          blinkPhase = Math.random() < 0.17 ? -0.14 : -(2.2 + Math.random() * 3.8);
+          blink = 0;
+        } else if (blinkPhase < 0) {
+          blink = 0;
+        } else if (blinkPhase < BLINK_CLOSE) {
+          blink = blinkPhase / BLINK_CLOSE;
+        } else if (blinkPhase < BLINK_CLOSE + BLINK_HOLD) {
+          blink = 1;
+        } else {
+          // Abre com desaceleração: a pálpebra sobe rápido e freia no fim, e é
+          // essa assimetria que separa piscar de obturador.
+          const u = (blinkPhase - BLINK_CLOSE - BLINK_HOLD) / BLINK_OPEN;
+          blink = 1 - u * u;
+        }
+      }
+      if (Math.abs(blink - before) > 1e-4) moved = true;
+
+      // ---- Olhar --------------------------------------------------------
+      nextSaccade -= dt;
+      if (nextSaccade <= 0) {
+        // Sacada: o olho salta, não desliza. Amplitude pequena de propósito —
+        // isto é o olhar de quem está parado, não de quem procura alguém.
+        gazeTo.x = (Math.random() - 0.5) * 0.17;
+        gazeTo.y = (Math.random() - 0.5) * 0.09;
+        nextSaccade = 1.1 + Math.random() * 2.8;
+      }
+      const g = 1 - Math.exp(-22 * dt);
+      const gx = THREE.MathUtils.lerp(gaze.x, gazeTo.x, g);
+      const gy = THREE.MathUtils.lerp(gaze.y, gazeTo.y, g);
+      if (Math.abs(gx - gaze.x) > 1e-5 || Math.abs(gy - gaze.y) > 1e-5) moved = true;
+      gaze.x = gx;
+      gaze.y = gy;
+
+      if (moved) apply(pose, blink, gaze);
     },
     dispose() {
       for (const d of disposables) d.dispose();

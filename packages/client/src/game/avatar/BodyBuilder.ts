@@ -645,6 +645,61 @@ export function paintSkin(geo: THREE.BufferGeometry, rig: BuiltRig, face: FaceSh
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
 
+/**
+ * Zoneamento de cor do CORPO, como cor por vértice.
+ *
+ * O rosto ganhou o dele e o corpo ficou para trás: num close com manga curta o
+ * braço aparece ao lado do rosto e a diferença denuncia os dois — um tem
+ * maçã do rosto e órbita, o outro é um tubo de uma cor só. As zonas aqui são as
+ * mesmas de qualquer corpo: extremidade quente porque é fina e mal irrigada,
+ * dobra escura porque a luz não entra nela.
+ *
+ * Função da POSIÇÃO, medida contra os ossos do rig — assim ela acompanha
+ * qualquer preset de proporção sem tabela paralela.
+ */
+export function paintBody(geo: THREE.BufferGeometry, rig: BuiltRig): void {
+  const rw = rig.restWorld;
+  const h = rig.proportions.height;
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const colors = new Float32Array(pos.count * 3);
+  const p = new THREE.Vector3();
+
+  /** Peso de proximidade a um ponto, em metros. */
+  const near = (point: THREE.Vector3, radius: number) =>
+    Math.exp(-Math.pow(p.distanceTo(point) / (radius * h), 2));
+
+  const armpit = (side: 'Left' | 'Right') =>
+    rw[`${side}Arm` as const].clone().add(new THREE.Vector3(0, -0.05 * h, 0));
+  const crotch = rw.Hips.clone().add(new THREE.Vector3(0, -0.15 * h, 0));
+
+  for (let i = 0; i < pos.count; i++) {
+    p.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+    let r = 1, g = 1, b = 1;
+    const warm = (m: number) => { r += m * 0.13; g -= m * 0.06; b -= m * 0.09; };
+    const dark = (m: number) => { r -= m; g -= m * 0.98; b -= m * 0.92; };
+
+    // Extremidades: mão e pé são as partes mais quentes de um corpo.
+    warm(Math.max(near(rw.LeftHand, 0.075), near(rw.RightHand, 0.075)) * 0.9);
+    warm(Math.max(near(rw.LeftFoot, 0.07), near(rw.RightFoot, 0.07)) * 0.5);
+    // Cotovelo e joelho: pele esticada sobre osso.
+    warm(Math.max(near(rw.LeftForeArm, 0.05), near(rw.RightForeArm, 0.05)) * 0.55);
+    warm(Math.max(near(rw.LeftLeg, 0.055), near(rw.RightLeg, 0.055)) * 0.4);
+
+    // Dobras. Axila e virilha são as duas sombras que todo corpo tem e que
+    // nenhuma luz de cena alcança.
+    dark(Math.max(near(armpit('Left'), 0.055), near(armpit('Right'), 0.055)) * 0.16);
+    dark(near(crotch, 0.07) * 0.14);
+    // Base do pescoço, onde a cabeça faz sombra o dia inteiro.
+    dark(near(rw.Neck, 0.06) * 0.10);
+
+    const grain = (fbm(p.x * 7 + 1.7, p.y * 7 + 4.3, 3, 24) - 0.5) * 0.024;
+    colors[i * 3] = Math.max(0, r + grain);
+    colors[i * 3 + 1] = Math.max(0, g + grain);
+    colors[i * 3 + 2] = Math.max(0, b + grain);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+
 export function buildBody(rig: BuiltRig, shape: BodyShape, segments = 20): THREE.BufferGeometry {
   const sub = 2;
   const parts = [

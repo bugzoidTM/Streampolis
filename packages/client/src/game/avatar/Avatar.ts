@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
 import { Animator } from '../anim/Animator.js';
 import { buildRig, PROPORTION_PRESETS, type BuiltRig, BONE_INDEX } from './Skeleton.js';
-import { buildBody, buildHead, paintSkin, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
+import { buildBody, buildHead, paintBody, paintSkin, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
 import { buildFaceStatic, buildFaceRig, type Expression, type FaceRig } from './Face.js';
 import { mergeGeometries } from './Loft.js';
 import { TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS, type Builder, type GarmentBuild } from './Wardrobe.js';
@@ -83,7 +83,12 @@ export class Avatar {
   private buildBodyMesh() {
     const shape = BODY_PRESETS[this.config.bodyPreset % BODY_PRESETS.length];
     const geo = buildBody(this.rig, shape);
+    paintBody(geo, this.rig);
     const mat = makeSkinMaterial(this.config.skinTone);
+    // Mesma decisão da cabeça: o zoneamento é cor por vértice. O corpo tem UV
+    // em ilhas por membro, então um mapa de pele exigiria um atlas pintado
+    // por preset de proporção — e a zona é função da posição, não do desenho.
+    mat.vertexColors = true;
     this.bodyMesh = new THREE.SkinnedMesh(geo, mat);
     this.bodyMesh.name = 'body';
     this.bind(this.bodyMesh);
@@ -209,6 +214,14 @@ export class Avatar {
 
   /** Overrides the face for a beat — a gift landing, a PK swinging. */
   setExpression(e: Expression) { this.face?.setExpression(e); }
+
+  /**
+   * Prende (ou solta) o piscar. Quem tira RETRATO prende em 0: o retrato
+   * adianta o relógio da animação para o corpo ter peso, e nesse adiantamento
+   * o reflexo também corre — um card da loja em cada tantos sairia de olho
+   * fechado.
+   */
+  pinBlink(value: number | null) { this.face?.pinBlink(value); }
 
   get expression(): Expression { return this.face?.current ?? 'neutral'; }
 
