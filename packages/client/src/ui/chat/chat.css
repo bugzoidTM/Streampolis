@@ -1,0 +1,87 @@
+/*
+ * Chat do mundo. Discreto por padrão e grande só enquanto se escreve: a tela
+ * de um jogo 3D é o jogo, e um histórico permanente come um quarto dela.
+ */
+
+.wchat {
+  position: fixed;
+  left: var(--sp-s4);
+  bottom: calc(var(--sp-s6) + 62px);
+  z-index: 40;
+  width: min(380px, 46vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s2);
+  pointer-events: none;
+}
+
+.wchat__log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 132px;
+  overflow: hidden auto;
+  /* Fechado, as linhas flutuam sobre a cena sem caixa: caixa vazia no canto de
+     uma praça é interface, e o que se quer ver é a praça. */
+  mask-image: linear-gradient(to bottom, transparent, #000 24px);
+}
+
+.wchat--open .wchat__log {
+  max-height: 40vh;
+  padding: var(--sp-s3);
+  border-radius: var(--sp-r-md);
+  background: rgba(10, 12, 20, 0.72);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+  mask-image: none;
+}
+
+.wchat__line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #eef1f8;
+  /* Legível contra céu claro e contra sombra, sem caixa por trás. */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.wchat--open .wchat__line { text-shadow: none; }
+
+.wchat__name { font-weight: 700; flex: none; }
+.wchat__text { min-width: 0; overflow-wrap: anywhere; }
+
+.wchat__line--system .wchat__text,
+.wchat__line--gift .wchat__text,
+.wchat__line--follow .wchat__text { color: var(--sp-text-2); font-style: italic; }
+
+.wchat__composer { pointer-events: auto; }
+
+.wchat__input {
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: var(--sp-r-pill);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(10, 12, 20, 0.58);
+  color: var(--sp-text-1);
+  font: inherit;
+  font-size: 13px;
+  backdrop-filter: blur(10px);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.wchat__input::placeholder { color: var(--sp-text-3); }
+
+.wchat__input:focus {
+  outline: none;
+  border-color: var(--sp-violet);
+  background: rgba(10, 12, 20, 0.86);
+}
+
+/* Telas estreitas: o chat divide espaço com o direcional de toque, que mora na
+   metade esquerda de baixo. Ele sobe. */
+@media (max-width: 620px) {
+  .wchat { width: 62vw; bottom: calc(var(--sp-s6) + 108px); }
+  .wchat__log { max-height: 96px; }
+}

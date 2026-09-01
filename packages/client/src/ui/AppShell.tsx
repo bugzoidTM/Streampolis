@@ -93,6 +93,14 @@ export function AppShell(props: AppShellProps) {
         avatar={props.avatar}
         endpoint={props.endpoint}
         paused={tab !== 'world'}
+        onTravel={(portal) => navigate(
+          // `home` não é uma cena: é uma pergunta que só a API responde, e a
+          // resposta muda de pessoa para pessoa. As outras são cenas públicas
+          // e viram uma CityRoom.
+          portal.to === 'home'
+            ? { kind: 'apartment', apartmentId: 'me' }
+            : { kind: 'city', sceneId: portal.to },
+        )}
       />
 
       {tab === 'feed' && (

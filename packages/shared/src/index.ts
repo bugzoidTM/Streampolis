@@ -5,5 +5,6 @@ export * from './scenes.js';
 export * from './layout.js';
 export * from './interiors.js';
 export * from './placeables.js';
+export * from './portals.js';
 export * from './collision.js';
 export * from './protocol.js';

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { HomePlacement } from '@streampolis/shared';
+import { PORTALS, type ChatMessage, type HomePlacement, type Portal } from '@streampolis/shared';
 import { InteriorScene } from './scenes/InteriorScene.js';
 import {
   DEFAULT_AVATAR,
@@ -18,6 +18,8 @@ import { InputManager } from './InputManager.js';
 import type { AvatarLike } from './avatar/AvatarLike.js';
 import { createAvatar, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
+import { SpeechBubble } from './SpeechBubble.js';
+import { Portals } from './Portals.js';
 import { createScene } from './scenes/index.js';
 import type { GameScene } from './scenes/GameScene.js';
 import { clipReport, type ClipReport } from './anim/Library.js';
@@ -36,6 +38,11 @@ import { attachStores } from '../network/bridge.js';
 const REVEAL_FRAME = 4;
 
 export interface WorldOptions {
+  /**
+   * Avisa que o jogador entrou (ou saiu) do alcance de uma porta. Quem oferece
+   * a viagem é a interface; quem sabe onde o corpo está é o mundo.
+   */
+  onPortal?: (portal: Portal | null) => void;
   canvas: HTMLCanvasElement;
   /**
    * Sala JÁ CONECTADA. Quem escolhe em qual entrar é a camada de sessão
@@ -62,6 +69,13 @@ interface Actor {
   avatar: AvatarLike;
   /** Nulo no avatar local: ninguém precisa de uma placa com o próprio nome. */
   tag: NameTag | null;
+  /**
+   * A última fala, pairando sobre a cabeça. O balão do jogador LOCAL também
+   * aparece — ao contrário da placa de nome, que seria redundante: ver a
+   * própria fala sair é o retorno de que ela foi aceita pelo servidor, e sem
+   * isso quem fala num canto vazio não sabe se o chat funcionou.
+   */
+  bubble: SpeechBubble | null;
   /** Smoothed yaw, so a remote turning in place does not snap. */
   yaw: number;
   /** Where this actor was drawn last frame, to measure its real speed. */
@@ -91,6 +105,9 @@ export class World {
   private scene: GameScene | null = null;
   private gifts: GiftEffectManager | null = null;
   private offGift: (() => void) | null = null;
+  private offChat: (() => void) | null = null;
+  private portals: Portals | null = null;
+  private nearPortal: Portal | null = null;
   private sceneId: SceneId = 'central_plaza';
   /** The boom starts behind the avatar, once, on the first pose it sees. */
   private cameraAligned = false;
@@ -163,6 +180,11 @@ export class World {
     this.camera.setLimits({ maxDistance: scene.maxBoom });
     scene.populate?.(this.renderer.quality.settings.ambientNpcs);
 
+    // As portas da cena. Ficam FORA da cena autoral de propósito: uma porta é
+    // navegação, não cenário, e a tabela que a descreve é compartilhada com o
+    // servidor.
+    this.portals = new Portals(scene.scene, this.sceneId);
+
     this.gifts = new GiftEffectManager(scene.scene, {
       budget: this.renderer.quality.settings.particleBudget,
       shake: (amount) => this.camera.shake(amount),
@@ -172,6 +194,10 @@ export class World {
     // O presente só vira efeito depois de cobrado: este evento chega do
     // servidor DEPOIS do débito, e um replay nunca chega (SPECs §68 regra 4).
     this.offGift = this.connection?.on('gift', (event) => this.showGift(event)) ?? null;
+    // A fala vira balão no mundo. Vem do MESMO evento que alimenta o painel de
+    // chat, e não de um eco local: quem decide se a mensagem existe, se passou
+    // no filtro e em que ordem ela entra é o servidor (SPECs §31).
+    this.offChat = this.connection?.on('chat', (message) => this.say(message)) ?? null;
 
     if (!this.connection) {
       const spawn = scene.spawnPoints[0] ?? new THREE.Vector3(0, 0, 6);
@@ -210,6 +236,37 @@ export class World {
       // que um presente pago nunca seja invisível.
       : this.inFrontOfCamera();
     this.gifts.play(event, at);
+  }
+
+  /**
+   * Põe uma fala sobre a cabeça de quem falou.
+   *
+   * Mensagem de sistema não ganha balão: ela não tem boca. E fala de alguém que
+   * não está desenhado aqui — um espectador de outra sala, alguém que acabou de
+   * sair — simplesmente não aparece no mundo; ela continua no painel de chat,
+   * que é onde esse tipo de mensagem pertence.
+   */
+  private say(message: ChatMessage): void {
+    if (message.system) return;
+    const actor = this.actorOfUser(message.senderId);
+    if (!actor) return;
+    actor.bubble?.dispose();
+    const bubble = new SpeechBubble(message.text, actor.avatar.eyeHeight + 0.34);
+    bubble.place(0);
+    actor.avatar.root.add(bubble.sprite);
+    actor.bubble = bubble;
+  }
+
+  /**
+   * Suspende o teclado do jogo enquanto alguém DIGITA.
+   *
+   * Sem isto, escrever "vamos" no chat manda o avatar andar para trás e para a
+   * esquerda — o `w` e o `a` são teclas de movimento, e o laço de entrada
+   * escuta a janela inteira. O interruptor já existia no `InputManager` e nunca
+   * tinha sido ligado por ninguém; o chat da live tinha o mesmo defeito.
+   */
+  setTyping(typing: boolean): void {
+    this.input.setSuspended(typing);
   }
 
   private actorOfUser(userId: string): Actor | undefined {
@@ -285,6 +342,18 @@ export class World {
 
     const me = this.actors.get(this.localKey());
     if (me) this.camera.follow(me.avatar.root.position);
+
+    // Porta ao alcance. O aviso só sobe quando MUDA: um callback por quadro
+    // faria a casca do React renderizar sessenta vezes por segundo para dizer
+    // a mesma coisa.
+    if (me && this.portals) {
+      const p = me.avatar.root.position;
+      const near = this.portals.update(dt, p.x, p.z);
+      if ((near?.id ?? null) !== (this.nearPortal?.id ?? null)) {
+        this.nearPortal = near;
+        this.opts.onPortal?.(near);
+      }
+    }
 
     this.camera.update(dt);
     this.scene?.update(dt, this.camera.camera);
@@ -374,7 +443,7 @@ export class World {
         this.scene?.scene.add(avatar.root);
         actor = {
           userId: pose.id,
-          avatar, tag, yaw: pose.yaw,
+          avatar, tag, bubble: null, yaw: pose.yaw,
           last: new THREE.Vector3(pose.x, pose.y, pose.z),
           speed: 0,
         };
@@ -415,11 +484,17 @@ export class World {
       actor.avatar.setAnim(pose.anim ?? 'idle');
       if (isProcedural(actor.avatar)) actor.avatar.animator.pin(this.forcedAnim);
       actor.avatar.animate(dt, actor.speed);
+
+      if (actor.bubble && !actor.bubble.update(dt)) {
+        actor.bubble.dispose();
+        actor.bubble = null;
+      }
     }
 
     for (const [key, actor] of this.actors) {
       if (seen.has(key)) continue;
       actor.tag?.dispose();
+      actor.bubble?.dispose();
       this.scene?.scene.remove(actor.avatar.root);
       actor.avatar.dispose();
       this.actors.delete(key);
@@ -488,7 +563,22 @@ export class World {
       })),
       renderer: this.renderer.stats(),
       particles: this.gifts?.activeParticles ?? 0,
+      // Quantas falas estão no ar. É por aqui que `tools/chat-check.mjs` prova
+      // que a mensagem virou balão sobre uma cabeça, e não só uma linha no
+      // painel — as duas coisas podem falhar separadamente.
+      bubbles: [...this.actors.values()].filter((a) => a.bubble !== null).length,
+      typing: this.input.isSuspended,
       local: this.connection ? this.connection.predictor.stats : { solo: this.solo },
+      // Onde o corpo do jogador ESTÁ, depois de predição e colisão. O relatório
+      // do preditor fala de reconciliação, não de posição, e toda ferramenta
+      // que quis saber "onde ele está" acabou lendo zero de um campo que não
+      // existia ali.
+      player: (() => {
+        const me = this.actors.get(this.localKey());
+        return me ? { x: me.avatar.root.position.x, z: me.avatar.root.position.z } : null;
+      })(),
+      portal: this.nearPortal?.id ?? null,
+      portals: (PORTALS[this.sceneId] ?? []).length,
     };
   }
 
@@ -517,6 +607,8 @@ export class World {
     this.offGift?.();
     this.gifts?.dispose();
     this.detachStores?.();
+    this.offChat?.();
+    this.portals?.dispose();
     void this.connection?.leave();
     for (const [, actor] of this.actors) {
       actor.tag?.dispose();

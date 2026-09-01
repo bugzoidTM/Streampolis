@@ -1,0 +1,50 @@
+/* Aviso de porta. Perto do centro e acima do rodapé: é sobre o lugar onde o
+   jogador está, não sobre o menu. */
+.portal {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--sp-s6) + 96px);
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s3);
+  padding: 10px 18px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--sp-r-pill);
+  background: rgba(10, 12, 20, 0.74);
+  backdrop-filter: blur(10px);
+  color: var(--sp-text-1);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  animation: portal-in 180ms ease-out;
+}
+
+.portal:hover { border-color: var(--sp-violet); }
+
+.portal__key {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--sp-violet), #5b43d6);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+@keyframes portal-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal { animation: none; }
+}
+
+/* Num telefone o rodapé e o direcional já ocupam a base. */
+@media (max-width: 620px) {
+  .portal { bottom: calc(var(--sp-s6) + 132px); font-size: 13px; }
+}

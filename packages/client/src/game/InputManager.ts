@@ -45,6 +45,11 @@ export class InputManager {
   };
 
   /** Set true while a text field has focus, so WASD types instead of walking. */
+  /**
+   * Teclado e ponteiro ignorados. Ligado enquanto alguém digita no chat: `w`,
+   * `a`, `s` e `d` são teclas de movimento e este laço escuta a JANELA, então
+   * escrever uma frase fazia o avatar sair andando.
+   */
   suspended = false;
 
   private keys = new Set<string>();
@@ -67,6 +72,21 @@ export class InputManager {
   ) {
     target.addEventListener(type, handler as EventListener, opts);
     this.detach.push(() => target.removeEventListener(type, handler as EventListener));
+  }
+
+  /**
+   * Liga ou desliga a suspensão, esquecendo o que estava pressionado.
+   *
+   * O esquecimento é o ponto: quem estava correndo e abriu o chat com a tecla
+   * ainda apertada nunca receberia o `keyup` (ele chega suspenso), e o avatar
+   * ficaria correndo para sempre — o mesmo defeito que o `blur` da janela já
+   * tratava.
+   */
+  get isSuspended(): boolean { return this.suspended; }
+
+  setSuspended(on: boolean): void {
+    this.suspended = on;
+    if (on) this.keys.clear();
   }
 
   private attach() {

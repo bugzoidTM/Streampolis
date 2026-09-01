@@ -8,7 +8,10 @@ import type { AnyWorldConnection } from '../network/WorldConnection.js';
 import { useSessionStore } from '../state/useSessionStore.js';
 import { LiveView } from './LiveView.js';
 import { LoadingScreen } from './LoadingScreen.js';
+import { WorldChat } from './chat/WorldChat.js';
+import { PortalPrompt } from './PortalPrompt.js';
 import type { LoadReport } from '../game/assets/loading.js';
+import type { Portal } from '@streampolis/shared';
 
 export interface WorldViewProps {
   /** O que o jogador quer fazer. Quem decide a sala é isto, não o World. */
@@ -20,6 +23,11 @@ export interface WorldViewProps {
   endpoint?: string;
   /** Uma tela cobre o mundo: pausa o laço em vez de desmontar a cena. */
   paused?: boolean;
+  /**
+   * Atravessar uma porta. Quem traduz destino em INTENÇÃO é a casca, que é
+   * dona da navegação; aqui só se sabe que o jogador pisou no portal.
+   */
+  onTravel?: (portal: Portal) => void;
 }
 
 /**
@@ -43,6 +51,7 @@ export function WorldView(props: WorldViewProps) {
   const [message, setMessage] = useState<string>(describeIntent(props.intent));
   const [inLive, setInLive] = useState(false);
   const [progress, setProgress] = useState<LoadReport | null>(null);
+  const [portal, setPortal] = useState<Portal | null>(null);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -83,6 +92,7 @@ export function WorldView(props: WorldViewProps) {
         tier: props.tier,
         displayName: props.displayName,
         avatar: props.avatar,
+        onPortal: (p) => { if (!cancelled) setPortal(p); },
       });
 
       Object.assign(window as object, {
@@ -155,6 +165,16 @@ export function WorldView(props: WorldViewProps) {
         error={status === 'failed' ? 'Não foi possível carregar a cena' : null}
       />
       {inLive && <LiveView />}
+      {/* Conversar é uma das cinco coisas que o PRD §6 pede da praça. Escondido
+          dentro de uma live, que tem o chat dela: dois seria um dentro do
+          outro, e os dois leem da mesma store. */}
+      <WorldChat world={ready} hidden={inLive || status === 'loading'} />
+
+      {/* "Acessar outros locais" é outra delas. Numa live não: quem está
+          transmitindo não atravessa uma porta sem querer. */}
+      {!inLive && props.onTravel && (
+        <PortalPrompt portal={portal} onEnter={props.onTravel} />
+      )}
       {/* A barra decide sozinha se a casa é do jogador; visitante vê a
           mobília do anfitrião e nenhuma alça. */}
       <BuildBar
