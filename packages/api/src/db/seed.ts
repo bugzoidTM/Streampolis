@@ -43,7 +43,7 @@ interface DevUser {
  * Espelha `ITEM_CATALOG` na tabela `items`. Idempotente: roda a cada seed e
  * atualiza nome, preço e disponibilidade de quem já existe.
  */
-async function mirrorCatalog(): Promise<number> {
+export async function mirrorCatalog(): Promise<number> {
   await withTransaction(async (client) => {
     for (const item of ITEM_CATALOG) {
       await client.query(
