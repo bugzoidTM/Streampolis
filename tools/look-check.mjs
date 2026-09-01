@@ -48,12 +48,14 @@ await page.goto(`${CLIENT}/?scene=central_plaza&token=${token}&tier=low`, { wait
 await page.waitForFunction(() => window.__ready === true, { timeout: 180_000 });
 await page.waitForTimeout(800);
 
-/** A roupa como a SALA a conhece — não como a interface a desenha. */
-const inRoom = () => page.evaluate(() => {
-  const w = window.__world;
-  const p = w?.connection?.state?.players?.get?.(w.connection.sessionId);
-  return p ? { skinTone: p.avatar.skinTone, hairColor: p.avatar.hairColor, top: p.avatar.top } : null;
-});
+/**
+ * A roupa como a SALA a conhece — não como a interface a desenha.
+ *
+ * Pelo relatório de depuração do mundo, e não espiando o objeto de conexão: em
+ * produção o código é minificado e campo privado troca de nome, então a versão
+ * "esperta" passa no dev e falha no ar. Aconteceu com esta ferramenta.
+ */
+const inRoom = () => page.evaluate(() => window.__lab.stats().look ?? null);
 
 console.log('\n1) A tela existe e abre pelo perfil');
 const antes = await inRoom();
@@ -83,11 +85,10 @@ const salvou = await page
   .then(() => true).catch(() => false);
 check('a tela confirma que salvou', salvou);
 
-const naSala = await page.waitForFunction((esperado) => {
-  const w = window.__world;
-  const p = w?.connection?.state?.players?.get?.(w.connection.sessionId);
-  return p?.avatar?.skinTone === esperado;
-}, alvo, { timeout: 60_000 }).then(() => true).catch(() => false);
+const naSala = await page.waitForFunction(
+  (esperado) => window.__lab.stats().look?.skinTone === esperado,
+  alvo, { timeout: 60_000 },
+).then(() => true).catch(() => false);
 check('a SALA repintou o avatar sem reconectar', naSala, `tom ${antes.skinTone} → ${alvo}`);
 
 const persistido = await fetch(`${API}/me/avatar`, { headers: { authorization: `Bearer ${token}` } })

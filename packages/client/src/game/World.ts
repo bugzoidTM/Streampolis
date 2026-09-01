@@ -578,6 +578,19 @@ export class World {
         return me ? { x: me.avatar.root.position.x, z: me.avatar.root.position.z } : null;
       })(),
       portal: this.nearPortal?.id ?? null,
+      // A roupa como a SALA a conhece, que é diferente do que a interface
+      // desenha: é aqui que se prova que trocar de visual chegou ao servidor.
+      // Publicado por este caminho, e não lido do objeto de conexão, porque em
+      // produção o código é minificado e campo privado troca de nome — uma
+      // ferramenta que espia campo interno passa no dev e falha no ar.
+      look: this.connection?.localPlayer
+        ? {
+          skinTone: this.connection.localPlayer.avatar.skinTone,
+          hairColor: this.connection.localPlayer.avatar.hairColor,
+          hair: this.connection.localPlayer.avatar.hair,
+          top: this.connection.localPlayer.avatar.top,
+        }
+        : null,
       portals: (PORTALS[this.sceneId] ?? []).length,
     };
   }
