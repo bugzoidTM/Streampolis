@@ -22,12 +22,15 @@ export interface AuditLimits {
   legGap: number;
   /** How far body may protrude past the outermost garment before it counts. */
   skinTolerance: number;
+  /** Widest daylight allowed between the trunk and an arm at the shoulder. */
+  shoulderSeam: number;
 }
 
 export const AUDIT_LIMITS: AuditLimits = {
   shoeGap: 0.022,
   legGap: 0.018,
   skinTolerance: 0.0,
+  shoulderSeam: 0.0,
 };
 
 export interface SkinLeak {
@@ -47,6 +50,8 @@ export interface AvatarAudit {
   /** Worst gap across the sampled heights below the knee. */
   legGap: number;
   legGapByHeight: Array<{ y: number; gap: number }>;
+  /** Widest gap found between the trunk and an arm across the shoulder band. */
+  shoulderSeam: number;
   /** Deepest skin protrusion through a garment; <= 0 means fully covered. */
   skinLeakDepth: number;
   /** How many sampled rays found bare skin where a garment should be. */
@@ -94,6 +99,43 @@ function crossingsEven(probes: Probe[], y: number, z: number, slots: string[]): 
     if (xs.length >= 2 && xs.length % 2 === 0) return xs;
   }
   return [];
+}
+
+/**
+ * The widest span of genuine daylight a ray crosses, measured with a depth
+ * counter rather than by parity.
+ *
+ * Parity is wrong here: the body is a MERGED set of interpenetrating shells,
+ * not a boolean union, so an arm buried in a torso still contributes two
+ * surfaces inside the solid and a crossing count says "gap" where there is a
+ * metre of flesh. Walking the hits and tracking how many shells the ray is
+ * currently inside gets it right for any number of overlapping parts: only
+ * when the counter returns to zero between the first entry and the last exit
+ * is the ray actually in the open.
+ */
+function daylightSpan(probes: Probe[], y: number, z: number, slots: string[]): number {
+  const meshes = probes.filter((p) => slots.includes(p.slot)).map((p) => p.mesh);
+  if (!meshes.length) return 0;
+  const ray = new THREE.Raycaster(new THREE.Vector3(-0.9, y, z), new THREE.Vector3(1, 0, 0), 0, 1.8);
+  const hits = ray.intersectObjects(meshes, false);
+
+  let depth = 0;
+  let started = false;
+  let lastExit = 0;
+  let worst = 0;
+  for (const hit of hits) {
+    // A front face on a ray travelling +X has a normal pointing back at it.
+    const entering = (hit.face?.normal.x ?? 0) < 0;
+    if (entering) {
+      if (started && depth === 0) worst = Math.max(worst, hit.point.x - lastExit);
+      depth++;
+      started = true;
+    } else if (depth > 0) {
+      depth--;
+      if (depth === 0) lastExit = hit.point.x;
+    }
+  }
+  return worst;
 }
 
 /**
@@ -160,6 +202,22 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
     }
     const legGap = Math.min(...legGapByHeight.map((s) => s.gap));
 
+    // ---- Shoulder seam ---------------------------------------------------
+    // A ray across the figure at shoulder height must not find open air
+    // between the trunk and either arm. When it does, the arm is a separate
+    // tube hung off the ribcage — which is what an articulated doll looks
+    // like, and what this figure did look like. Measured on skin only:
+    // whether a sleeve happens to bridge the hole is not the question.
+    let shoulderSeam = 0;
+    {
+      const armY = rw.LeftArm.y;
+      for (const y of [armY - 0.045, armY - 0.03, armY - 0.015, armY, armY + 0.012, armY + 0.024, armY + 0.036]) {
+        for (const z of [-0.06, -0.03, 0, 0.03, 0.06]) {
+          shoulderSeam = Math.max(shoulderSeam, daylightSpan(probes, y, z, ['body']));
+        }
+      }
+    }
+
     // ---- Waist seam ------------------------------------------------------
     // Rays fired inward at the trunk from front and back. The sides are left
     // out on purpose: an arm hangs there and its skin is not a leak.
@@ -169,12 +227,34 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
     let skinLeakDepth = -Infinity;
 
     if (bodyMeshes.length) {
-      // Front and back arcs only. Past ~45° the arm hangs in the way, and a
-      // bare forearm below a short sleeve is not a hole in the shirt — the
-      // first version of this gate failed every tee on exactly that.
+      // Front and back arcs where an arm can hang. Past ~45° a bare forearm
+      // below a short sleeve is not a hole in the shirt, and the first version
+      // of this gate failed every tee on exactly that.
       const arcs: number[] = [];
       for (let a = -42; a <= 42; a += 7) arcs.push(a);
       for (let a = 138; a <= 222; a += 7) arcs.push(a);
+      // BELOW the waist there is no arm, so the sides get swept too. The hips
+      // were the one place the old probe could not see, and they were exactly
+      // where the trunk profile stopped short of the thigh and left a wedge of
+      // bare skin on each side of every outfit in the catalogue.
+      const allArcs: number[] = [];
+      for (let a = 0; a < 360; a += 7) allArcs.push(a);
+      const armFree = rw.Hips.y + 0.06 * h;
+
+      // A hand hangs at hip height, so sweeping the sides puts the first hit
+      // on a knuckle rather than on the trunk. Bare skin on a hand is not a
+      // hole in the trousers: anything within reach of the arm chain is not
+      // this gate's business.
+      const armSegments = (['Left', 'Right'] as const).flatMap((side) => [
+        [rw[`${side}Arm` as const], rw[`${side}ForeArm` as const]] as const,
+        [rw[`${side}ForeArm` as const], rw[`${side}Hand` as const]] as const,
+      ]);
+      const scratch = new THREE.Vector3();
+      const nearArm = (p: THREE.Vector3) => armSegments.some(([a, b]) => {
+        const ab = scratch.subVectors(b, a);
+        const t = THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1);
+        return p.distanceTo(a.clone().addScaledVector(ab, t)) < 0.11 * h;
+      });
       // The WAIST SEAM, not the whole trunk. Above the navel, coverage is a
       // design decision — a tank bares the shoulders on purpose, and a gate
       // that reads that as a hole in the shirt bans sleeveless clothing.
@@ -186,7 +266,8 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
 
       for (let i = 0; i <= 14; i++) {
         const y = THREE.MathUtils.lerp(from, to, i / 14);
-        for (const deg of arcs) {
+        const low = y < armFree;
+        for (const deg of low ? allArcs : arcs) {
           const rad = THREE.MathUtils.degToRad(deg);
           const dir = new THREE.Vector3(Math.sin(rad), 0, Math.cos(rad));
           const origin = dir.clone().multiplyScalar(R).setY(y);
@@ -194,8 +275,11 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
           const ray = new THREE.Raycaster(origin, inward, 0, R * 1.9);
 
           const skin = ray.intersectObjects(bodyMeshes, false)[0];
-          // A hit this far off the mid-plane is an arm, not the trunk.
-          if (!skin || Math.abs(skin.point.x) > 0.145 * h) continue;
+          // A hit this far off the mid-plane is an arm, not the trunk. Below
+          // the waist the limit opens up, because down there the widest thing
+          // off the mid-plane IS the body.
+          if (!skin || Math.abs(skin.point.x) > (low ? 0.30 : 0.145) * h) continue;
+          if (low && nearArm(skin.point)) continue;
           const cloth = clothMeshes.length ? ray.intersectObjects(clothMeshes, false)[0] : undefined;
 
           // Distance is measured from the same origin, so a nearer garment hit
@@ -225,6 +309,9 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
     if (leaks.length) {
       failures.push(`pele à mostra em ${leaks.length} raios, até ${(skinLeakDepth * 1000).toFixed(0)} mm`);
     }
+    if (shoulderSeam > AUDIT_LIMITS.shoulderSeam) {
+      failures.push(`braço solto do tronco: ${(shoulderSeam * 1000).toFixed(0)} mm de vão no ombro`);
+    }
 
     leaks.sort((a, b) => b.depth - a.depth);
     return {
@@ -232,6 +319,7 @@ export function auditAvatar(avatar: Avatar): AvatarAudit {
       shoeGap: +shoeGap.toFixed(4),
       legGap,
       legGapByHeight,
+      shoulderSeam: +shoulderSeam.toFixed(4),
       skinLeakDepth: +skinLeakDepth.toFixed(4),
       skinLeaks: leaks.length,
       worstLeaks: leaks.slice(0, 5),

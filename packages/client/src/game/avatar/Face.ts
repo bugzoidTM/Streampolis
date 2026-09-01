@@ -83,9 +83,9 @@ function feature(
  */
 function nose(R: number, face: FaceShape): THREE.BufferGeometry {
   const stations = feature(
-    [[0, 0.13, 0.94], [0, 0.045, 0.99], [0, -0.035, 1.00], [0, -0.095, 1.00], [0, -0.150, 0.96]],
+    [[0, 0.19, 0.94], [0, 0.10, 0.99], [0, 0.020, 1.00], [0, -0.042, 1.00], [0, -0.098, 0.96]],
     [[0.030, 0.022], [0.038, 0.040], [0.052, 0.060], [0.060, 0.062], [0.040, 0.030]],
-    [-0.008, 0.030, 0.078, 0.092, 0.020],
+    [-0.008, 0.038, 0.100, 0.124, 0.028],
     R, face,
   );
   const parts = [loft(stations, { segments: 14, capStart: true, capEnd: true, capRound: 0.5, subdivisions: 2 })];
@@ -94,9 +94,9 @@ function nose(R: number, face: FaceShape): THREE.BufferGeometry {
   // not as the end of a tube.
   for (const side of [-1, 1]) {
     const wing = feature(
-      [[side * 0.050, -0.100, 0.97], [side * 0.105, -0.125, 0.95], [side * 0.090, -0.155, 0.94]],
+      [[side * 0.050, -0.047, 0.97], [side * 0.105, -0.072, 0.95], [side * 0.090, -0.102, 0.94]],
       [[0.028, 0.028], [0.034, 0.030], [0.022, 0.022]],
-      [0.052, 0.030, 0.004],
+      [0.066, 0.040, 0.006],
       R, face,
     );
     parts.push(loft(wing, { segments: 10, capStart: true, capEnd: true, capRound: 0.7, subdivisions: 2 }));
@@ -219,8 +219,103 @@ function cap(r: number, frac: number, seg = 20): THREE.BufferGeometry {
   return g;
 }
 
+/**
+ * An eyelid, as a spherical patch whose rim is an ALMOND rather than a circle.
+ *
+ * Circular lid caps leave the eye open across the ball's whole width, so the
+ * sclera escapes at both ends and the eye reads as a white marble with a dot
+ * on it — the googly-eye look, and the loudest single defect the face had.
+ * A real aperture closes at the corners: the two rims meet at the canthus and
+ * overlap past it, which is what this builds.
+ *
+ * `open` is the rim's elevation at the centre of the eye, in radians. The
+ * patch runs from that rim to the pole, so rotating the whole lid about X
+ * still opens and closes the eye exactly as a cap did.
+ */
+function lidShell(r: number, open: number, up: boolean, seg = 20, rings = 4): THREE.BufferGeometry {
+  /** Azimuth of the canthus, and how far past it the lid keeps covering. */
+  const A = 1.10;
+  const AMAX = 1.50;
+  const dir = up ? 1 : -1;
+
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+
+  for (let i = 0; i <= seg; i++) {
+    const psi = -AMAX + (i / seg) * 2 * AMAX;
+    const k = Math.min(1, Math.abs(psi) / A);
+    // 1 at the centre of the eye, 0 at the corner.
+    const shape = Math.pow(Math.cos(k * Math.PI * 0.5), 0.55);
+    // Past the corner both rims cross the equator, so they overlap instead of
+    // leaving a slot of bare sclera exactly where the lids should meet.
+    const over = Math.max(0, Math.abs(psi) - A) / (AMAX - A);
+    const rim = dir * (open * shape - 0.13 * over);
+
+    for (let j = 0; j <= rings; j++) {
+      const e = THREE.MathUtils.lerp(rim, dir * Math.PI * 0.5, j / rings);
+      const ce = Math.cos(e);
+      pos.push(Math.sin(psi) * ce * r, Math.sin(e) * r, Math.cos(psi) * ce * r);
+      uv.push(i / seg, j / rings);
+    }
+  }
+
+  for (let i = 0; i < seg; i++) {
+    for (let j = 0; j < rings; j++) {
+      const a = i * (rings + 1) + j;
+      const b = a + rings + 1;
+      if (up) idx.push(a, b, a + 1, a + 1, b, b + 1);
+      else idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * The lash line: a solid form sitting on the upper lid's rim, following the
+ * same almond. A torus followed a circle the rim no longer is, and hung in the
+ * air at the corners.
+ */
+function lashBand(r: number, open: number, thickness: number, seg = 20): THREE.BufferGeometry {
+  const A = 1.10;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+
+  for (let i = 0; i <= seg; i++) {
+    const psi = -A + (i / seg) * 2 * A;
+    const shape = Math.pow(Math.cos(Math.min(1, Math.abs(psi) / A) * Math.PI * 0.5), 0.55);
+    const rim = open * shape;
+    // Thicker over the middle of the eye and tapering to nothing at both
+    // corners, the way a lash line actually sits.
+    const w = thickness * (0.35 + 0.65 * shape);
+    for (let j = 0; j <= 1; j++) {
+      const e = rim + j * w;
+      const ce = Math.cos(e);
+      pos.push(Math.sin(psi) * ce * r, Math.sin(e) * r, Math.cos(psi) * ce * r);
+      uv.push(i / seg, j);
+    }
+  }
+  for (let i = 0; i < seg; i++) {
+    const a = i * 2;
+    idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 /** Eye direction for a side, as a unit vector out of the socket. */
-const EYE_DIR = (side: number) => V(side * 0.35, 0.02, 0.92);
+const EYE_DIR = (side: number) => V(side * 0.42, 0.08, 0.92);
 
 export function buildFaceRig(
   rig: BuiltRig,
@@ -262,42 +357,27 @@ export function buildFaceRig(
     eye.add(ball);
 
     // Iris, pupil and catch light, stacked forward so each gets its own
-    // specular response instead of one flat disc doing all three jobs.
-    const iris = new THREE.Mesh(track(cap(eyeR * 1.004, 0.60, 24)), irisMat);
-    const pupil = new THREE.Mesh(track(cap(eyeR * 1.010, 0.27, 20)), pupilMat);
-    const glint = new THREE.Mesh(track(cap(eyeR * 1.018, 0.15, 12)), glintMat);
+    // specular response instead of one flat disc doing all three jobs. The
+    // iris is deliberately large: a small iris in a wide sclera is how a doll
+    // stares, and the aperture below is now almond enough to carry it.
+    const iris = new THREE.Mesh(track(cap(eyeR * 1.004, 0.74, 24)), irisMat);
+    const pupil = new THREE.Mesh(track(cap(eyeR * 1.010, 0.33, 20)), pupilMat);
+    const glint = new THREE.Mesh(track(cap(eyeR * 1.018, 0.11, 12)), glintMat);
     // Up and inboard, where a key light above and in front of the face puts it.
     glint.position.set(-side * eyeR * 0.30, eyeR * 0.30, 0);
     eye.add(iris, pupil, glint);
 
     // Lids are shells a hair wider than the ball, hinged at its centre.
     const upper = new THREE.Group();
-    // The rim stops just above the top of the iris. Reaching past it covered
-    // the coloured part of the eye and left a band of bare sclera, which is
-    // the look of someone rolling their eyes back, not of someone awake.
-    const upperShell = new THREE.Mesh(
-      track(new THREE.SphereGeometry(eyeR * 1.06, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.33)),
-      skinMat,
-    );
+    const upperShell = new THREE.Mesh(track(lidShell(eyeR * 1.07, 0.46, true)), skinMat);
     upper.add(upperShell);
     // The lash line is a solid form on the lid's rim, not a painted stripe.
-    const lashR = eyeR * 1.06 * Math.sin(Math.PI * 0.33);
-    const lash = new THREE.Mesh(
-      track(new THREE.TorusGeometry(lashR, eyeR * 0.042, 6, 20, Math.PI * 1.2)),
-      hairMat,
-    );
-    lash.rotation.set(Math.PI / 2, 0, -Math.PI * 0.075);
-    lash.position.y = eyeR * 1.06 * Math.cos(Math.PI * 0.33);
-    upper.add(lash);
+    upper.add(new THREE.Mesh(track(lashBand(eyeR * 1.085, 0.46, 0.075)), hairMat));
     eye.add(upper);
     lidUpper.push(upper);
 
     const lower = new THREE.Group();
-    const lowerShell = new THREE.Mesh(
-      track(new THREE.SphereGeometry(eyeR * 1.05, 20, 8, 0, Math.PI * 2, Math.PI * 0.70, Math.PI * 0.30)),
-      skinMat,
-    );
-    lower.add(lowerShell);
+    lower.add(new THREE.Mesh(track(lidShell(eyeR * 1.045, 0.40, false)), skinMat));
     eye.add(lower);
     lidLower.push(lower);
   }
@@ -306,7 +386,7 @@ export function buildFaceRig(
   const brows: THREE.Object3D[] = [];
   for (const side of [-1, 1]) {
     const st = feature(
-      [[side * 0.14, 0.26, 0.95], [side * 0.30, 0.29, 0.90], [side * 0.46, 0.27, 0.80], [side * 0.56, 0.21, 0.71]],
+      [[side * 0.17, 0.30, 0.95], [side * 0.36, 0.33, 0.90], [side * 0.54, 0.30, 0.80], [side * 0.66, 0.23, 0.71]],
       [[0.017, 0.012], [0.020, 0.014], [0.015, 0.011], [0.008, 0.007]],
       [0.008, 0.010, 0.010, 0.008],
       R, face,
@@ -328,7 +408,7 @@ export function buildFaceRig(
   // Two halves hinged at the midline: a smile is the corners rising, and a
   // mouth that can only scale or rotate as one piece cannot do that.
   const mouth = new THREE.Group();
-  const mouthCentre = skullPoint(V(0, -0.38, 0.94), R, face);
+  const mouthCentre = skullPoint(V(0, -0.33, 0.94), R, face);
   mouth.position.copy(mouthCentre);
   group.add(mouth);
 

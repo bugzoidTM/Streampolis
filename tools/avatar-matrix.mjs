@@ -98,6 +98,7 @@ const worst = {
   shoeGap: Math.min(...results.map((r) => r.audit.shoeGap)),
   legGap: Math.min(...results.map((r) => r.audit.legGap)),
   skinLeakDepth: Math.max(...results.map((r) => r.audit.skinLeakDepth)),
+  shoulderSeam: Math.max(...results.map((r) => r.audit.shoulderSeam ?? 0)),
 };
 
 const report = {
@@ -120,7 +121,7 @@ if (withImages && results.length) {
   const cards = results.map((r) => `
     <figure class="${r.audit.ok ? 'ok' : 'bad'}">
       <img src="${r.file}">
-      <figcaption>${r.label}<br><span>pé ${(r.audit.shoeGap * 1000).toFixed(0)} · vão ${(r.audit.legGap * 1000).toFixed(0)} · pele ${r.audit.skinLeaks}</span></figcaption>
+      <figcaption>${r.label}<br><span>pé ${(r.audit.shoeGap * 1000).toFixed(0)} · vão ${(r.audit.legGap * 1000).toFixed(0)} · pele ${r.audit.skinLeaks} · ombro ${((r.audit.shoulderSeam ?? 0) * 1000).toFixed(0)}</span></figcaption>
     </figure>`).join('');
 
   const sheetHtml = `<!doctype html><meta charset="utf-8"><style>
@@ -137,7 +138,7 @@ if (withImages && results.length) {
     .bad figcaption span { color: #ff8fb2; }
   </style>
   <h1>Matriz do avatar — ${results.length} combinações, ${failed.length} quebradas</h1>
-  <p>pé = folga entre calçados (mm, mínimo ${limits.shoeGap * 1000}) · vão = entre as pernas (mm, mínimo ${limits.legGap * 1000}) · pele = raios com pele fora da roupa</p>
+  <p>pé = folga entre calçados (mm, mínimo ${limits.shoeGap * 1000}) · vão = entre as pernas (mm, mínimo ${limits.legGap * 1000}) · pele = raios com pele fora da roupa · ombro = vão entre tronco e braço (mm, máximo ${limits.shoulderSeam * 1000})</p>
   <div class="grid">${cards}</div>`;
 
   const sheetFile = path.join(out, 'sheet.html');

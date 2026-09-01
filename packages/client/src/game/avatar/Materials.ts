@@ -76,9 +76,12 @@ export function makeSkinMaterial(toneIndex: number): THREE.MeshPhysicalMaterial 
     sheen: 0.42,
     sheenRoughness: 0.72,
     sheenColor: new THREE.Color('#ff9b7a').convertSRGBToLinear(),
-    clearcoat: 0.14,
-    clearcoatRoughness: 0.5,
-    specularIntensity: 0.45,
+    // Kept low: the sky dome is one bright texel wide in the env map, and a
+    // clearcoat over it printed a hard white patch on the forehead of every
+    // avatar lit from above. Sebum is a broad soft sheen, not a mirror.
+    clearcoat: 0.07,
+    clearcoatRoughness: 0.62,
+    specularIntensity: 0.34,
     envMapIntensity: 0.9,
   });
   mat.name = 'skin';
@@ -182,13 +185,17 @@ export function makeScleraMaterial(): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
     // Not white: a real sclera is a shaded, slightly warm grey, and pure
     // white next to a dark iris is what makes an eye read as a cartoon decal.
-    color: new THREE.Color('#ddd8d4').convertSRGBToLinear(),
-    roughness: 0.18,
+    color: new THREE.Color('#d6d0cb').convertSRGBToLinear(),
+    roughness: 0.28,
     metalness: 0,
-    clearcoat: 0.8,
-    clearcoatRoughness: 0.05,
+    // The wet highlight belongs to the catch light, which is a mesh and sits
+    // where a key light would put it. A clearcoat this strong on a sphere
+    // this small under a sky dome painted a second, square highlight across
+    // the whole sclera and blew both eyes out to white.
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.10,
     sheen: 0.2,
-    envMapIntensity: 0.8,
+    envMapIntensity: 0.35,
   });
 }
 
@@ -246,9 +253,71 @@ export interface ClothOptions {
   metalness?: number;
   emissive?: string;
   emissiveIntensity?: number;
+  /** Strength of the shared weave relief; 0 for leather, latex or a shell. */
+  weave?: number;
+  /** Thin-film sheen, for anything the catalogue sells as holographic. */
+  iridescence?: number;
 }
 
 /** Generic garment material; the weave normal comes from the shared surface. */
+let weaveMap: THREE.Texture | null = null;
+
+/**
+ * A woven micro-relief, shared by every garment in the catalogue.
+ *
+ * Cloth had no map of any kind: one flat colour with one roughness, which the
+ * rubric calls out by name — every surface is supposed to carry its own relief.
+ * A tee, a blazer and a pair of jeans all read as the same painted vinyl
+ * without it, and vinyl is most of why the figure looked cheap in a still.
+ *
+ * Only the normal is baked. An albedo map would fight the per-item colour the
+ * shop sells, and the whole point of the wardrobe is that colour is data.
+ */
+function weaveNormal(): THREE.Texture {
+  if (weaveMap) return weaveMap;
+  const size = 128;
+  const canvas = typeof OffscreenCanvas !== 'undefined'
+    ? new OffscreenCanvas(size, size)
+    : Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = (canvas as HTMLCanvasElement).getContext('2d')!;
+  const img = ctx.createImageData(size, size);
+  const h = new Float32Array(size * size);
+
+  const threads = 16;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      // Over-under weave: two phase-shifted ridges gated by parity, so warp
+      // and weft alternate the way a plain weave actually does.
+      const wu = Math.sin(u * threads * Math.PI * 2) * 0.5 + 0.5;
+      const wv = Math.sin(v * threads * Math.PI * 2) * 0.5 + 0.5;
+      const over = (Math.floor(u * threads) + Math.floor(v * threads)) % 2 === 0;
+      // Slubs: the low-frequency thick-and-thin of a real yarn.
+      h[y * size + x] = (over ? wu : wv) * 0.82 + fbm(u * 90, v * 90, 3, 41) * 0.18;
+    }
+  }
+  const at = (x: number, y: number) => h[((y + size) % size) * size + ((x + size) % size)];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * 2.6;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * 2.6;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
+      img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
+      img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(6, 6);
+  tex.needsUpdate = true;
+  weaveMap = tex;
+  return tex;
+}
+
 export function makeClothMaterial(o: ClothOptions): THREE.MeshPhysicalMaterial {
   const mat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(o.color).convertSRGBToLinear(),
@@ -258,7 +327,14 @@ export function makeClothMaterial(o: ClothOptions): THREE.MeshPhysicalMaterial {
     sheenRoughness: 0.7,
     sheenColor: new THREE.Color(o.color).convertSRGBToLinear().lerp(new THREE.Color(1, 1, 1), 0.55),
     envMapIntensity: 0.85,
+    normalMap: weaveNormal(),
+    normalScale: new THREE.Vector2(o.weave ?? 0.5, o.weave ?? 0.5),
   });
+  if (o.iridescence) {
+    mat.iridescence = o.iridescence;
+    mat.iridescenceIOR = 1.32;
+    mat.iridescenceThicknessRange = [180, 520];
+  }
   if (o.emissive) {
     mat.emissive = new THREE.Color(o.emissive).convertSRGBToLinear();
     mat.emissiveIntensity = o.emissiveIntensity ?? 1;
@@ -269,6 +345,8 @@ export function makeClothMaterial(o: ClothOptions): THREE.MeshPhysicalMaterial {
 export function disposeAvatarMaterialCache() {
   skinNormalMap?.dispose();
   skinNormalMap = null;
+  weaveMap?.dispose();
+  weaveMap = null;
   for (const t of irisCache.values()) t.dispose();
   irisCache = new Map();
 }

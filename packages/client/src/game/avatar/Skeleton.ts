@@ -69,12 +69,16 @@ export const REST_ROTATION: Partial<Record<BoneName, [number, number, number]>> 
   // A positive Z rotation swings a down-pointing chain toward +X, so the LEFT
   // (+X) side takes the positive angle. Getting this backwards folds both arms
   // into the ribcage, which is exactly what the first pass did.
+  //
+  // The elbow carries real flexion. An arm that hangs straight is a plumb
+  // line, and a plumb line is a mannequin: nobody stands with the elbow
+  // locked, and the bend is what tells the eye the figure has weight in it.
   LeftShoulder:  [0, 0, THREE.MathUtils.degToRad(3)],
   RightShoulder: [0, 0, THREE.MathUtils.degToRad(-3)],
-  LeftArm:       [0, 0, THREE.MathUtils.degToRad(7)],
-  RightArm:      [0, 0, THREE.MathUtils.degToRad(-7)],
-  LeftForeArm:   [THREE.MathUtils.degToRad(-7), 0, THREE.MathUtils.degToRad(2)],
-  RightForeArm:  [THREE.MathUtils.degToRad(-7), 0, THREE.MathUtils.degToRad(-2)],
+  LeftArm:       [0, 0, THREE.MathUtils.degToRad(9)],
+  RightArm:      [0, 0, THREE.MathUtils.degToRad(-9)],
+  LeftForeArm:   [THREE.MathUtils.degToRad(-15), 0, THREE.MathUtils.degToRad(4)],
+  RightForeArm:  [THREE.MathUtils.degToRad(-15), 0, THREE.MathUtils.degToRad(-4)],
   // Legs converge very slightly toward the ankle, as a relaxed stance does.
   // Kept small: every degree of convergence is a centimetre the two shoes
   // move toward each other at the ankle, and they were already touching.

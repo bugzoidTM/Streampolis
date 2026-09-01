@@ -51,8 +51,42 @@ pedia, e onde está:
   franja + laterais + volume traseiro. Tudo funde numa geometria só, então um
   estilo com trinta mechas ainda custa um draw call.
 
+- ~~**Ombro**~~ — o braço deixou de ser um tubo pendurado no tronco. A cadeia
+  do braço começa DENTRO do gradil, sobe sob o trapézio e desce pelo deltoide,
+  e o tronco ganhou uma prateleira de acrômio que vai ao encontro dela. Medido
+  agora, não julgado: `shoulderSeam` no portão.
+- ~~**Mão de braço caído**~~ — a mão foi girada um quarto de volta: a palma
+  encara a coxa, como um braço pendurado encara. Construída de frente, ela
+  mostrava a palma à câmera com os dedos abertos em leque, e a curvatura de
+  descanso — a única coisa que diz "relaxado" — apontava para a lente, onde
+  encurtava até sumir.
+- ~~**Cabeça de ovo**~~ — a razão largura : profundidade : altura era
+  0,9 : 0,94 : 1 (uma bola). Agora é 0,69 : 0,86 : 0,99, com seções
+  horizontais superelípticas (têmpora e mandíbula chatas, testa e occipital
+  redondas), ângulo de mandíbula e occipital. Era por causa dessa razão que o
+  rosto lia como uma máscara pequena pintada num balão.
+- ~~**Olho de boneco**~~ — a pálpebra é uma amêndoa, não uma calota circular:
+  as duas bordas se encontram no canto e se cruzam depois dele. Uma calota
+  deixava a esclera escapar pelas duas pontas, que é o olho arregalado de
+  brinquedo. Íris maior junto, porque a abertura agora a sustenta.
+- ~~**Pescoço**~~ — o tronco terminava MAIS LARGO que o pescoço e engolia 4 cm
+  de garganta; a cabeça sentava no peito.
+- ~~**Cunha de pele no quadril**~~ — a pelve era mais estreita que o topo da
+  própria coxa (num corpo real o trocânter é o ponto mais largo), então toda
+  roupa lofteada do tronco deixava uma cunha de pele nua em cada quadril. O
+  portão não via: a sonda de pele pulava as laterais, onde normalmente pende
+  um braço. Agora a pelve é o anel mais largo abaixo do peito, a coxa se
+  enfia sob ela, e o envelope de quadril (`thighOuter`) garante que qualquer
+  peça futura cubra a coxa e não só o tronco.
+- ~~**Tecido de vinil**~~ — nenhuma roupa tinha mapa nenhum: uma cor chapada e
+  uma rugosidade, que é exatamente o que a rubrica reprova. Todas ganharam um
+  relevo de trama compartilhado, e o "holo" trocou brilho especular de balão
+  de festa por iridescência de filme fino.
+
 O que falta no personagem: dedos articulados (exige ossos novos), cabelo que
-reage ao movimento, e roupa com corte de verdade — gola, punho, caimento.
+reage ao movimento, e roupa com corte de verdade — gola, punho, caimento. A
+cabeça ainda é redonda demais atrás em três quartos, e o cabelo é uma touca
+com contas na linha da testa.
 
 **Os três defeitos de geometria estão corrigidos** (Sprint Avatar A) e agora
 são medidos, não julgados:
@@ -89,11 +123,24 @@ escreve `shots/matrix/report.json` e uma folha de contato, e sai com código
 não-zero se qualquer combinação quebrar. Ele mede por raio contra a superfície
 real, não por opinião:
 
-| Medida | Mínimo | Pior valor hoje |
+| Medida | Limite | Pior valor hoje |
 |---|---|---|
-| Folga entre calçados | 22 mm | 62 mm |
-| Vão entre as pernas abaixo do joelho | 18 mm | 36 mm |
+| Folga entre calçados | ≥ 22 mm | 61 mm |
+| Vão entre as pernas abaixo do joelho | ≥ 18 mm | 36 mm |
 | Pele fora da roupa | 0 raios | 0 raios |
+| Vão entre tronco e braço no ombro | ≤ 0 mm | 0 mm |
+
+Duas medidas mudaram em 2026-09-01 e valem para qualquer parte futura:
+
+- **o ombro é medido**, com um contador de profundidade e não por paridade. O
+  corpo é um conjunto de cascas que se interpenetram, não uma união booleana:
+  contar cruzamentos diz "vão" onde há um metro de carne. Andar pelos toques
+  somando quantas cascas o raio atravessou acerta para qualquer número de
+  peças sobrepostas.
+- **a sonda de pele varre 360° abaixo da cintura.** Acima dela continua só
+  frente e costas, porque ali pende um braço e antebraço nu sob manga curta
+  não é buraco na camisa. Abaixo não pende nada — e era exatamente ali que
+  ninguém olhava.
 
 **Nenhuma roupa nova entra no guarda-roupa com esse portão vermelho.** Uma
 peça herda o corpo de onde é lofted; cem peças sobre um corpo quebrado são cem
@@ -182,8 +229,9 @@ pelo próprio jogo. Não há coluna "alvo" para a UI porque ela é o alvo.
 2. ~~**Rosto e mãos.**~~ — feito.
 3. ~~**Cabelo em mechas.**~~ — feito, nove estilos.
 4. **Roupa com corte** — gola, punho, barra, caimento. É o próximo: hoje toda
-   peça é o corpo inflado, o que resolveu a cintura mas não dá corte a nada.
-   O ombro da manga ainda é o ponto mais fraco.
+   peça é o corpo inflado, o que resolveu a cintura e o quadril mas não dá
+   corte a nada. O ombro da manga deixou de ser o ponto mais fraco em
+   2026-09-01; a barra e o punho passaram a ser.
 5. ~~**Cor e vida na praça.**~~ — feito.
 6. ~~**Catálogo de móveis.**~~ — feito, com o modo de construção junto.
 
@@ -196,10 +244,16 @@ catálogo já tem `floor_*` e `wall_*`, e nada os aplica ainda.
 
 | Comando | O que responde |
 |---|---|
-| `npm run gate:avatar` | as 120 combinações estão geometricamente sãs? (portão, sai não-zero) |
+| `npm run gate:avatar` | as 176 combinações estão geometricamente sãs? (portão, sai não-zero) |
+| `node tools/figure-sheet.mjs` | a figura inteira, de corpo todo, em vários giros — silhueta, linha de ombro e pose |
 | `node tools/face-sheet.mjs` | cada preset de rosto, em cada expressão, em vários giros |
 | `node tools/face-sheet.mjs --styles=a,b,c --zoom=1.7` | os estilos de cabelo, de frente, de lado e de costas |
 | `node tools/hand-shot.mjs` | a mão de perto, em três vistas |
+
+Uma terceira armadilha entrou na lista com a folha de figura: **`--count=0` na
+URL do laboratório.** Com `count=1` o laboratório já montou um avatar em cena e
+a folha monta o dela por cima — duas roupas no mesmo corpo, e o que se revisa é
+um bug da ferramenta.
 
 Duas armadilhas que custaram tempo e valem para qualquer revisão futura:
 

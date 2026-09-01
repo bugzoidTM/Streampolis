@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { loft, assemble, sliceStationsByY, type Station } from './Loft.js';
 import type { BoneName, BuiltRig } from './Skeleton.js';
-import { type BodyShape, torso, arm, leg, limbGirth, clampLegStation } from './BodyBuilder.js';
+import { type BodyShape, ARM_CUT, torso, arm, leg, limbGirth, clampLegStation } from './BodyBuilder.js';
 import { makeClothMaterial } from './Materials.js';
 
 /**
@@ -45,14 +45,53 @@ export const WAIST_MIN = 0.075;
  * The thickest waistband in the catalogue. Tops inflate by this much extra
  * below the waist, which is what keeps an untucked shirt reliably OUTSIDE the
  * trousers instead of fighting them for the same millimetre.
+ *
+ * Every millimetre here is a millimetre of unlit undercut between the hem and
+ * the trousers, and at 28 mm that undercut photographed as two black notches
+ * punched into the hips. It is now the smallest value that still clears the
+ * thickest bottom over the thinnest top, and no bottom may be authored
+ * thicker than {@link BOTTOM_THICKNESS_MAX}.
  */
-const WAISTBAND_MAX = 0.028;
+const WAISTBAND_MAX = 0.016;
+
+/** The thickest a bottom may be, so {@link WAISTBAND_MAX} stays sufficient. */
+const BOTTOM_THICKNESS_MAX = 0.016;
 
 const hipsRef = (rig: BuiltRig, d: number) => rig.restWorld.Hips.y + d * rig.proportions.height;
 
 // --------------------------------------------------------------------------
 // Tops
 // --------------------------------------------------------------------------
+
+/**
+ * How far out the thigh reaches at a height, including the domed cap that
+ * closes its top.
+ *
+ * The trunk profile is NARROWER than the top of the thigh — on a real body the
+ * greater trochanter is the widest point there — so a garment lofted from the
+ * trunk alone leaves a wedge of bare skin on each hip, right where the shirt
+ * hem meets the trousers. The wardrobe's own rule answers it: cloth is the
+ * body inflated, and at the hip the body includes the legs.
+ */
+function thighOuter(rig: BuiltRig, s: BodyShape, y: number): number {
+  const st = leg(rig, s, 'Left');
+  const top = st[0];
+  const apex = top.pos.y + Math.min(top.radiusX, top.radiusZ) * 0.85;
+  if (y >= apex) return 0;
+  if (y >= top.pos.y) {
+    const k = Math.min(1, (y - top.pos.y) / Math.max(1e-4, apex - top.pos.y));
+    return top.pos.x + top.radiusX * Math.cos(Math.asin(k));
+  }
+  for (let i = 0; i < st.length - 1; i++) {
+    const a = st[i];
+    const b = st[i + 1];
+    if (y <= a.pos.y && y >= b.pos.y) {
+      const t = (a.pos.y - y) / Math.max(1e-4, a.pos.y - b.pos.y);
+      return THREE.MathUtils.lerp(a.pos.x + a.radiusX, b.pos.x + b.radiusX, t);
+    }
+  }
+  return 0;
+}
 
 /**
  * A tube of cloth over the trunk, sampled from the body's own torso profile.
@@ -78,8 +117,16 @@ function torsoBand(
     // around the hips, which looked worse than the defect it was fixing.
     const fade = 1 - THREE.MathUtils.smoothstep(st.pos.y, seam - 0.02 * h, seam + 0.09 * h);
     const extra = overWaistband ? WAISTBAND_MAX * fade : 0;
+    const wide = inflate(st, thickness + extra);
+    // Clear the thigh as well as the trunk. Raising only the width would make
+    // a pancake of the hips, so the depth follows at a third of the change.
+    const need = thighOuter(rig, s, st.pos.y) + thickness + extra;
+    if (need > wide.radiusX) {
+      wide.radiusZ += (need - wide.radiusX) * 0.33;
+      wide.radiusX = need;
+    }
     return {
-      ...inflate(st, thickness + extra),
+      ...wide,
       squareness: Math.min(3.2, (st.squareness ?? 2) + 0.12),
     };
   });
@@ -100,30 +147,21 @@ function lip(st: Station, dir: -1 | 1, depth: number, shrink = 0.93): Station[] 
 }
 
 /**
- * A sleeve, taken from the arm it covers. `to` is how far down the arm's own
- * station chain the cloth reaches: 3 is mid-biceps, 5 the elbow, 7 the wrist.
+ * A sleeve, taken from the arm it covers. `to` is a cut from {@link ARM_CUT}:
+ * how far down the arm's own station chain the cloth reaches.
  *
  * The hand-written radius ramp this replaces ran THINNER than the biceps it
  * was supposed to cover, so the shoulder ended as a floating white box with
  * the deltoid poking out beside it.
+ *
+ * The socket ring that came after it is gone too. It sat 1.6 cm ABOVE the
+ * joint while the arm chain's own first station sat 4 cm above that, so the
+ * loft ran up, doubled back and creased — the hard angular shelf every top in
+ * the catalogue grew off the shoulder. The arm chain now begins inside the
+ * ribcage on its own, and cloth that follows it inherits that.
  */
 function sleeve(rig: BuiltRig, s: BodyShape, side: 'Left' | 'Right', to: number, thickness: number): Station[] {
-  const L = (n: string) => `${side}${n}` as BoneName;
-  const t = limbGirth(s);
-  const sign = side === 'Left' ? 1 : -1;
-  const shoulder = rig.restWorld[L('Arm')];
-
-  // A socket ring pushed inboard, so the open top of the sleeve is buried
-  // inside the torso band instead of showing as a hole at the armpit.
-  const out: Station[] = [{
-    pos: shoulder.clone().add(V(-sign * 0.045, 0.016, 0)),
-    radiusX: 0.080 * t + thickness,
-    radiusZ: 0.078 * t + thickness,
-    bone: L('Arm'),
-    blendBone: 'Spine2',
-    blendWeight: 0.55,
-    squareness: 2.4,
-  }];
+  const out: Station[] = [];
 
   for (const st of arm(rig, s, side).slice(0, to + 1)) {
     out.push({ ...inflate(st, thickness), squareness: Math.min(3.0, (st.squareness ?? 2) + 0.15) });
@@ -240,7 +278,9 @@ function topBody(rig: BuiltRig, s: BodyShape, hem: number, thickness: number, to
   // Tucked to just INSIDE the skin: a hem that stops flush with the body still
   // leaves a millimetre of white rim showing between the thighs.
   const shrink = THREE.MathUtils.clamp((skin.radiusX * 0.93) / band[0].radiusX, 0.55, 0.99);
-  const stations = [...lip(band[0], -1, 0.018, shrink).reverse(), ...band];
+  // Shallow on purpose: the turn-under is a tunnel no light reaches, and at
+  // 18 mm it photographed as a black notch cut into each hip.
+  const stations = [...lip(band[0], -1, 0.011, shrink).reverse(), ...band];
   return [{ stations, segments: 22, capStart: true, capEnd: true, capRound: 0.2 }];
 }
 
@@ -334,33 +374,39 @@ function straps(rig: BuiltRig, s: BodyShape, thickness: number): GarmentSpec[] {
 export const TOP_BUILDERS: Record<string, Builder> = {
   top_tee_01: (rig, s, color) => build([
     ...topBody(rig, s, -0.055, 0.011),
-    { stations: sleeve(rig, s, 'Left', 3, 0.012), segments: 16, capEnd: true },
-    { stations: sleeve(rig, s, 'Right', 3, 0.012), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Left', ARM_CUT.biceps, 0.012), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Right', ARM_CUT.biceps, 0.012), segments: 16, capEnd: true },
   ], makeClothMaterial({ color, roughness: 0.86, sheen: 0.28 })),
 
   top_hoodie_01: (rig, s, color) => build([
     ...topBody(rig, s, -0.07, 0.026),
-    { stations: sleeve(rig, s, 'Left', 7, 0.024), segments: 16, capEnd: true },
-    { stations: sleeve(rig, s, 'Right', 7, 0.024), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Left', ARM_CUT.wrist, 0.024), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Right', ARM_CUT.wrist, 0.024), segments: 16, capEnd: true },
   ], makeClothMaterial({ color, roughness: 0.92, sheen: 0.18 })),
 
   top_jacket_01: (rig, s, color) => build([
     ...topBody(rig, s, -0.04, 0.032),
-    { stations: sleeve(rig, s, 'Left', 7, 0.03), segments: 16, capEnd: true },
-    { stations: sleeve(rig, s, 'Right', 7, 0.03), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Left', ARM_CUT.wrist, 0.03), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Right', ARM_CUT.wrist, 0.03), segments: 16, capEnd: true },
   ], makeClothMaterial({ color, roughness: 0.44, sheen: 0.5, metalness: 0.05 })),
 
   top_blazer_01: (rig, s, color) => build([
     ...topBody(rig, s, -0.09, 0.022),
-    { stations: sleeve(rig, s, 'Left', 7, 0.02), segments: 16, capEnd: true },
-    { stations: sleeve(rig, s, 'Right', 7, 0.02), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Left', ARM_CUT.wrist, 0.02), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Right', ARM_CUT.wrist, 0.02), segments: 16, capEnd: true },
   ], makeClothMaterial({ color, roughness: 0.68, sheen: 0.42 })),
 
   // Was a crop top, and it was the loudest single source of bare midriff in
   // the matrix. It keeps its metallic sheen and now respects the waist seam.
   top_holo_01: (rig, s, color) => build(
     topBody(rig, s, -0.035, 0.009),
-    makeClothMaterial({ color, roughness: 0.18, metalness: 0.55, sheen: 0.9, emissive: color, emissiveIntensity: 0.35 }),
+    // Holographic, not vinyl. Roughness 0.18 over metalness 0.55 put one
+    // enormous white highlight down the front of the garment and read as a
+    // party balloon; the thin-film sheen is what "holo" was always asking for.
+    makeClothMaterial({
+      color, roughness: 0.34, metalness: 0.15, sheen: 0.5,
+      emissive: color, emissiveIntensity: 0.18, iridescence: 0.9, weave: 0.18,
+    }),
   ),
 
   /** Sleeveless: the band stops at the chest and two straps carry it. */
@@ -372,8 +418,8 @@ export const TOP_BUILDERS: Record<string, Builder> = {
   top_shirt_01: (rig, s, color) => [
     build([
       ...topBody(rig, s, -0.075, 0.014),
-      { stations: sleeve(rig, s, 'Left', 7, 0.016), segments: 16, capEnd: true },
-      { stations: sleeve(rig, s, 'Right', 7, 0.016), segments: 16, capEnd: true },
+      { stations: sleeve(rig, s, 'Left', ARM_CUT.wrist, 0.016), segments: 16, capEnd: true },
+      { stations: sleeve(rig, s, 'Right', ARM_CUT.wrist, 0.016), segments: 16, capEnd: true },
       collar(rig, s, { from: -0.03, to: 0.055, thickness: 0.020 }),
     ], makeClothMaterial({ color, roughness: 0.72, sheen: 0.45 })),
     build(
@@ -384,16 +430,16 @@ export const TOP_BUILDERS: Record<string, Builder> = {
 
   top_knit_01: (rig, s, color) => build([
     ...topBody(rig, s, -0.06, 0.020),
-    { stations: ribbed(sleeve(rig, s, 'Left', 7, 0.022), 5, 0.03), segments: 16, capEnd: true },
-    { stations: ribbed(sleeve(rig, s, 'Right', 7, 0.022), 5, 0.03), segments: 16, capEnd: true },
+    { stations: ribbed(sleeve(rig, s, 'Left', ARM_CUT.wrist, 0.022), 5, 0.03), segments: 16, capEnd: true },
+    { stations: ribbed(sleeve(rig, s, 'Right', ARM_CUT.wrist, 0.022), 5, 0.03), segments: 16, capEnd: true },
     // A turtleneck: tall, and it folds over at the top like the real thing.
     collar(rig, s, { from: -0.04, to: 0.115, thickness: 0.026, flare: 1.1 }),
   ], makeClothMaterial({ color, roughness: 0.95, sheen: 0.2 })),
 
   top_puffer_01: (rig, s, color) => build([
     ...topBody(rig, s, -0.05, 0.048).map((spec) => quilt(spec, 5, 0.028)),
-    { stations: sleeve(rig, s, 'Left', 7, 0.044), segments: 16, capEnd: true },
-    { stations: sleeve(rig, s, 'Right', 7, 0.044), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Left', ARM_CUT.wrist, 0.044), segments: 16, capEnd: true },
+    { stations: sleeve(rig, s, 'Right', ARM_CUT.wrist, 0.044), segments: 16, capEnd: true },
     collar(rig, s, { from: -0.04, to: 0.05, thickness: 0.05, flare: 1.05 }),
   ], makeClothMaterial({ color, roughness: 0.34, sheen: 0.6, metalness: 0.04 })),
 
@@ -404,8 +450,8 @@ export const TOP_BUILDERS: Record<string, Builder> = {
       collar(rig, s, { from: -0.03, to: 0.048, thickness: 0.030, flare: 1.05 }),
     ], makeClothMaterial({ color, roughness: 0.8, sheen: 0.35 })),
     build([
-      { stations: ribbed(sleeve(rig, s, 'Left', 7, 0.028), 3, 0.02), segments: 16, capEnd: true },
-      { stations: ribbed(sleeve(rig, s, 'Right', 7, 0.028), 3, 0.02), segments: 16, capEnd: true },
+      { stations: ribbed(sleeve(rig, s, 'Left', ARM_CUT.wrist, 0.028), 3, 0.02), segments: 16, capEnd: true },
+      { stations: ribbed(sleeve(rig, s, 'Right', ARM_CUT.wrist, 0.028), 3, 0.02), segments: 16, capEnd: true },
     ], makeClothMaterial({ color: '#e8e4dd', roughness: 0.42, sheen: 0.6, metalness: 0.06 })),
   ],
 };
@@ -421,6 +467,7 @@ function trousers(
   // Quoted from the ankle, not from the hips: the leg-length presets move the
   // two apart, and a hem measured from the wrong end rides up on short legs.
   const hemY = rig.restWorld.LeftFoot.y + hemAboveAnkle;
+  thickness = Math.min(thickness, BOTTOM_THICKNESS_MAX);
   return [
     // The waistband's top ring is closed even though a top always hides it:
     // an open ring shows its own backfaces the day someone authors a shorter
@@ -465,7 +512,6 @@ export const BOTTOM_BUILDERS: Record<string, Builder> = {
   ),
 
   bottom_skirt_01: (rig, s, color) => {
-    const m = s.mass;
     const topY = hipsRef(rig, WAIST_MIN);
     const hemY = hipsRef(rig, -0.32);
     // The waistband is the body's own profile; only below the hip does the
@@ -475,12 +521,17 @@ export const BOTTOM_BUILDERS: Record<string, Builder> = {
     // parallel-transport frame flip 180° and the whole garment turn to noise.
     const band = torsoBand(rig, s, hipsRef(rig, -0.05), topY, 0.016).slice().reverse();
     const st: Station[] = [...band];
+    // The cone opens FROM the hip ring the band ended on, not from a written
+    // radius. A hand-written cone is a second profile, and a second profile
+    // drifts: at 0.16 it was already narrower than the widest preset's hip and
+    // showed skin through the side of the skirt.
+    const hip = band[band.length - 1];
     for (let i = 1; i <= 6; i++) {
       const t = i / 6;
       st.push({
         pos: V(0, THREE.MathUtils.lerp(hipsRef(rig, -0.05), hemY, t), -0.004),
-        radiusX: (0.16 + t * 0.12) * m,
-        radiusZ: (0.125 + t * 0.10) * m,
+        radiusX: hip.radiusX * (1 + t * 0.72),
+        radiusZ: hip.radiusZ * (1 + t * 0.86),
         bone: 'Hips',
         // Pleats. Squareness matched to the trunk's own (~2.3): a rounder
         // cone over a squarer body lets the hip poke through on the diagonal,
@@ -495,19 +546,19 @@ export const BOTTOM_BUILDERS: Record<string, Builder> = {
   },
 
   bottom_skirtlong_01: (rig, s, color) => {
-    const m = s.mass;
     const topY = hipsRef(rig, WAIST_MIN);
     const hemY = rig.restWorld.LeftLeg.y - 0.10;
     const band = torsoBand(rig, s, hipsRef(rig, -0.05), topY, 0.016).slice().reverse();
     const st: Station[] = [...band];
+    const hip = band[band.length - 1];
     for (let i = 1; i <= 8; i++) {
       const t = i / 8;
       st.push({
         pos: V(0, THREE.MathUtils.lerp(hipsRef(rig, -0.05), hemY, t), -0.004),
         // Narrower flare than the mini: a long skirt that opens as fast reads
         // as a lampshade.
-        radiusX: (0.16 + t * 0.07) * m,
-        radiusZ: (0.125 + t * 0.06) * m,
+        radiusX: hip.radiusX * (1 + t * 0.42),
+        radiusZ: hip.radiusZ * (1 + t * 0.52),
         bone: 'Hips',
         squareness: 2.4,
         scale: 1 + Math.sin(t * 5) * 0.012,

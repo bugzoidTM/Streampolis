@@ -221,6 +221,39 @@ export function AvatarLab() {
             rim.target.position.copy(focus);
           }
         },
+        /**
+         * A whole figure, framed head to floor. The portrait sheet judges the
+         * face and the matrix judges geometry; neither answers "does this read
+         * as a character?" — that is a silhouette question, and a silhouette
+         * is only visible when the whole body is in frame at once.
+         */
+        figure: (variant: number, yaw = 0, animState = 'idle') => {
+          const cfg = variants[variant % variants.length];
+          const avatar = new Avatar(cfg);
+          group.add(avatar.root);
+          const prev = group.rotation.y;
+          try {
+            avatar.setAnim(animState as never);
+            // Settle pose and expression blends without waiting on real time.
+            for (let i = 0; i < 60; i++) avatar.animate(0.05, 0);
+            group.rotation.y = yaw;
+            group.updateMatrixWorld(true);
+            const top = avatar.eyeHeight + 0.16;
+            camera.position.set(0, top * 0.52, 2.95);
+            camera.lookAt(0, top * 0.5, 0);
+            key.target.position.set(0, top * 0.6, 0);
+            rim.target.position.set(0, top * 0.6, 0);
+            env.update(camera);
+            renderer.render(0.016);
+            return canvas.toDataURL('image/png');
+          } finally {
+            group.rotation.y = prev;
+            group.remove(avatar.root);
+            avatar.dispose();
+            key.target.position.copy(focus);
+            rim.target.position.copy(focus);
+          }
+        },
         limits: () => AUDIT_LIMITS,
 
         /**

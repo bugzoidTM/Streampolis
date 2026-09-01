@@ -51,6 +51,9 @@
   figure img { display: block; width: 100%; height: auto; background: #0d0f16; }
   figcaption { padding: 10px 14px 14px; font-size: 12.5px; color: var(--text-2); }
   figcaption b { color: var(--text); display: block; font-size: 13px; margin-bottom: 2px; }
+  /* Ênfase no meio da frase: `b` aqui é o rótulo e é bloco, então
+     destacar com ele partia a legenda em três linhas. */
+  figcaption strong { color: var(--text); font-weight: 650; }
 
   .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
   .tag--alvo { background: rgba(124,92,255,.18); border: 1px solid var(--violet); color: #d9ccff; }
@@ -114,8 +117,9 @@
 
   <h2><span class="num">01</span>Personagem</h2>
   <p class="lead">
-    É aqui que está a maior distância — e é a que mais importa, porque o avatar
-    é o produto que o jogador compra roupa para vestir.
+    Era aqui a maior distância. Quatro entregas depois — costura do corpo,
+    rosto, mãos e cabelo — o que sobra é <b>corte de roupa</b>: toda peça hoje é
+    o corpo inflado, e isso resolve a cintura sem dar caimento a nada.
   </p>
   <div class="pair">
     <figure>
@@ -127,11 +131,13 @@
     <figure>
       <img src="hoje-avatar-feminina.jpg" alt="Hoje: avatar do jogo">
       <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
-        Proporção correta e roupa que troca de verdade — mas rosto sem feições,
-        mão em bloco único, cabelo como casca e três defeitos de geometria que
-        aparecem em qualquer combinação: <b>pés fundidos num bloco só</b>,
-        <b>pele aparecendo na cintura</b> entre a blusa e a calça e
-        <b>pernas sem vão</b> entre elas.</figcaption>
+        O <strong>ombro</strong> deixou de ser uma emenda: a cadeia do braço
+        começa dentro do gradil e sobe sob o trapézio, então braço e tronco são
+        uma superfície só — e o portão mede isso agora. A mão foi girada um
+        quarto de volta, com a palma na coxa, e a pelve passou a ser o anel
+        mais largo abaixo do peito, o que fechou a cunha de pele nua que toda
+        roupa deixava em cada quadril. Falta <strong>corte</strong>: gola,
+        punho e barra.</figcaption>
     </figure>
   </div>
   <div class="pair" style="margin-top:16px">
@@ -143,14 +149,20 @@
     <figure>
       <img src="hoje-avatar-masculino.jpg" alt="Hoje: avatar masculino do jogo">
       <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
-        Os presets de corpo já diferenciam a silhueta; falta o resto.</figcaption>
+        Preset mais largo de ombro, e a mesma família de feições, mãos e cabelo
+        atendendo os dois. O guarda-roupa tem 45 peças — 10 blusas, 8 calças e
+        saias, 8 sapatos, 9 cabelos e 10 acessórios. Esta combinação (moletom e
+        cargo escuros contra céu claro) mostra o custo de não ter
+        <strong>caimento</strong>: sem gola nem punho, a peça escura vira um
+        bloco e come a silhueta que o preset acabou de dar.</figcaption>
     </figure>
   </div>
 
-  <h2><span class="num">02</span>Rosto: o buraco de verdade</h2>
+  <h2><span class="num">02</span>Rosto</h2>
   <p class="lead">
-    Um avatar sem rosto não é um personagem, é um manequim. Nas duas imagens
-    abaixo, olhe só para a cabeça.
+    Era o maior buraco: um avatar sem rosto não é um personagem, é um manequim.
+    Hoje a cabeça tem geometria de verdade — e é o que mais mudou a percepção
+    do produto inteiro, porque a live põe esse rosto no centro da tela.
   </p>
   <div class="pair">
     <figure>
@@ -162,27 +174,41 @@
     <figure>
       <img src="hoje-rosto.jpg" alt="Hoje: close do avatar do jogo">
       <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
-        Olhos são duas esferas; não há sobrancelha, boca, nariz definido nem
-        orelha. O cabelo é uma cúpula que engole a face.</figcaption>
+        A cabeça deixou de ser um ovo: a razão largura : profundidade : altura
+        saiu de 0,9 : 0,94 : 1 — uma bola — para 0,69 : 0,86 : 0,99, com
+        têmpora e mandíbula chatas, ângulo de mandíbula e occipital. A
+        pálpebra virou uma amêndoa que fecha nos cantos, em vez de uma calota
+        que deixava a esclera escapar pelas duas pontas. Quatro expressões
+        (neutro, sorriso, surpresa, foco), escolhidas pela própria ação:
+        dançar sorri, presente surpreende, perder um PK concentra.</figcaption>
     </figure>
   </div>
   <ul class="gap">
-    <li><b>Feições:</b> nariz, boca, sobrancelha e orelha como geometria, não como textura.</li>
-    <li><b>Olhos:</b> íris com anel escuro e brilho pequeno; cílio como forma sólida.</li>
-    <li><b>Cabelo:</b> mechas separadas com espessura, não uma casca sobre o crânio.</li>
-    <li><b>Mãos:</b> cinco dedos. Hoje o código chama a mão de <i>mitten</i> — e ela é mesmo.</li>
-    <li><b>Expressão:</b> ao menos quatro poses faciais (neutro, sorriso, surpresa, foco) para a live.</li>
+    <li><b>Feições:</b> <s>nariz, boca, sobrancelha e orelha como geometria</s> — feito. Nariz e orelha entram fundidos na cabeça: nenhum draw call a mais e nenhuma chance de descolar do crânio.</li>
+    <li><b>Olhos:</b> <s>íris com anel escuro e brilho pequeno; cílio como forma sólida</s> — feito, tudo como calota sobre o globo.</li>
+    <li><b>Cabelo:</b> <s>mechas separadas com espessura</s> — feito. Base, mechas, franja, laterais e volume traseiro, em nove estilos, tudo numa geometria só.</li>
+    <li><b>Mãos:</b> <s>cinco dedos</s> — feito. Sem juntas de dedo: o rig não as tem e inventá-las obrigaria a retargetar todo clipe. O que se compra é silhueta.</li>
+    <li><b>Expressão:</b> <s>quatro poses faciais</s> — feito, interpoladas a 12 Hz.</li>
+    <li><b>Crânio:</b> <s>uma cabeça, não um ovo</s> — feito. Seções horizontais superelípticas: têmpora e mandíbula chatas, testa e occipital redondas. Era a razão largura×profundidade — perto de uma bola — que fazia o rosto ler como uma máscara pequena pintada num balão.</li>
+    <li><b>Ombro:</b> <s>o braço faz parte do corpo</s> — feito, e medido: zero milímetro de vão entre tronco e braço nas 176 combinações.</li>
+    <li><b>Tecido:</b> <s>relevo próprio em toda peça</s> — feito. Um relevo de trama compartilhado por todo o guarda-roupa; o mapa é só de normal, porque um mapa de cor brigaria com a cor que a loja vende.</li>
+    <li><b>Falta:</b> corte de roupa — gola, punho, barra e caimento —, dedos articulados, e a nuca ainda é redonda demais em três quartos.</li>
   </ul>
   <ul class="gap" style="margin-top:10px">
-    <li><b>E três defeitos de geometria, antes de qualquer beleza:</b> os dois
-      calçados se fundem num bloco único; a barra da blusa não encontra o
-      cós da calça e a pele aparece em manchas na cintura; as pernas não têm
-      vão entre si, o que mata a silhueta a 60 px. Nenhum deles depende de
-      arte nova — são o loft do corpo e o corte das peças.</li>
+    <li><b>Os três defeitos de geometria viraram um portão.</b> Calçados
+      fundidos, pele na cintura e pernas sem vão eram invisíveis num teste e
+      fáceis de perder a olho em cem combinações — então são medidos por raio
+      contra a superfície real, em 176 combinações, a cada mudança.
+      <b>Folga mínima entre calçados 61 mm</b> (mínimo 22),
+      <b>vão entre as pernas 36 mm</b> (mínimo 18) e
+      <b>zero raios com pele fora da roupa</b> e <b>zero milímetro de vão no
+      ombro</b>. Nenhuma roupa nova entra no
+      guarda-roupa com esse portão vermelho: uma peça herda o corpo de onde é
+      lofted, e cem peças sobre um corpo quebrado são cem peças quebradas.</li>
   </ul>
 
   <h2><span class="num">03</span>Praça Central</h2>
-  <p class="lead">A cidade já tem composição e luz; falta densidade, cor e vida.</p>
+  <p class="lead">Composição e luz já estavam; cor e vida entraram.</p>
   <div class="pair">
     <figure>
       <img src="praca.jpg" alt="Conceito: praça central">
@@ -192,15 +218,17 @@
     </figure>
     <figure>
       <img src="hoje-praca.jpg" alt="Hoje: praça do jogo">
-      <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
-        Fonte, escadaria, bancos, postes, quiosques, árvores e telão já
-        existem — em paleta cinza e sem ninguém além de você.</figcaption>
+      <figcaption><b><span class="tag tag--ok">Perto do alvo</span></b>
+        Calçamento em terracota, fachadas em família quente, palmeira entre as
+        copas, arbusto florido e toldo nos quiosques — e gente circulando:
+        figurantes que atravessam a praça, sentam no banco, olham o telão e
+        conversam em par.</figcaption>
     </figure>
   </div>
   <ul class="gap">
-    <li><b>Cor:</b> a praça é cinza-pedra; o alvo tem laranja, terracota e verde saturado.</li>
-    <li><b>Vida:</b> NPCs decorativos caminhando (o QualityManager já reserva orçamento para eles).</li>
-    <li><b>Vegetação:</b> hoje três variantes de copa; o alvo pede palmeira, arbusto florido e canteiro.</li>
+    <li><b>Cor:</b> <s>a praça é cinza-pedra</s> — feito, em família quente e ainda dessaturada. A saturação alta continua reservada ao interativo, e a única coisa saturada na vegetação são as flores.</li>
+    <li><b>Vida:</b> <s>NPCs decorativos</s> — feito. Quantos cabem é decisão do governador de qualidade, não da cena: no tier baixo o certo é nenhum, não uma praça a 12 fps.</li>
+    <li><b>Vegetação:</b> <s>palmeira e arbusto florido</s> — feito. Três copas redondas iguais eram uma skyline de pirulitos.</li>
   </ul>
 
   <h2><span class="num">04</span>Apartamento</h2>
@@ -214,8 +242,12 @@
     <figure>
       <img src="hoje-apartamento.jpg" alt="Hoje: apartamento do jogo">
       <figcaption><b><span class="tag tag--hoje">Hoje</span></b>
-        A planta está certa e a luz da janela já desenha no chão. Falta
-        variedade de móvel, tecido e bugigangas.</figcaption>
+        26 peças colocáveis e um modo de construção: colocar, mover, girar,
+        guardar, em grade de 25 cm e giro de 90° — colocação livre fica pior,
+        móvel a 3,7° da parede lê como erro em todo print. Quem decide onde o
+        sofá cabe é a API, não o navegador. A captura mostra também um defeito
+        de <strong>enquadramento</strong>: num quarto pequeno a câmera fica colada nas
+        costas e o avatar come um terço do quadro. Falta aplicar piso e parede.</figcaption>
     </figure>
   </div>
 
@@ -250,8 +282,9 @@
     <figure>
       <img src="hoje-loja.jpg" alt="Hoje: loja">
       <figcaption><b><span class="tag tag--ok">No alvo</span></b>
-        Loja mostrando a peça vestida em quem está olhando. Quando o rosto
-        melhorar, esta tela melhora sozinha.</figcaption>
+        Loja mostrando a peça vestida em quem está olhando — e cada tipo no seu
+        enquadramento: busto para blusa e cabelo, pernas para calça, pé para
+        sapato. Calça em busto era um card que não mostrava a peça.</figcaption>
     </figure>
   </div>
 
@@ -278,14 +311,14 @@
 
   <h2><span class="num">08</span>Ordem de ataque</h2>
   <ol class="prio">
-    <li><b>Costura do corpo.</b> Pés que não se fundem, cintura que fecha,
-      vão entre as pernas. É correção de geometria, não de arte, e sem ela
-      qualquer roupa nova nasce quebrada.</li>
-    <li><b>Rosto e mãos.</b> Feições como geometria, cinco dedos, quatro expressões. Destrava avatar, loja, feed e perfil de uma vez.</li>
-    <li><b>Cabelo em mechas.</b> A peça mais comprada de qualquer jogo desse gênero — e hoje a mais fraca.</li>
-    <li><b>Roupa com corte.</b> Gola, punho, barra e caimento; o que faz uma jaqueta parecer jaqueta.</li>
-    <li><b>Cor e vida na praça.</b> Paleta quente, vegetação variada, NPCs decorativos.</li>
-    <li><b>Catálogo de móveis.</b> A loja cria a pressão; o apartamento é onde ela vira permanência.</li>
+    <li><s><b>Costura do corpo.</b> Pés que não se fundem, cintura que fecha, vão entre as pernas.</s> Feito, e defendido por um portão automático.</li>
+    <li><s><b>Rosto e mãos.</b> Feições como geometria, cinco dedos, quatro expressões.</s> Feito.</li>
+    <li><s><b>Cabelo em mechas.</b></s> Feito: nove estilos sobre base, mechas, franja, laterais e volume traseiro.</li>
+    <li><b>Roupa com corte.</b> Gola, punho, barra e caimento; o que faz uma jaqueta parecer jaqueta. <b>É o único item da lista original ainda aberto</b> — e agora aparece em 10 blusas em vez de 5.</li>
+    <li><s><b>Cor e vida na praça.</b></s> Feito.</li>
+    <li><s><b>Catálogo de móveis.</b></s> Feito, com o modo de construção junto.</li>
+    <li><b>Piso e parede.</b> O catálogo já vende <code>floor_*</code> e <code>wall_*</code>, e nada os aplica.</li>
+    <li><b>Item de parede que gruda na parede.</b> Quadro e fita LED hoje ficam onde você largar, na grade do chão.</li>
   </ol>
 
   <div class="note">
@@ -297,10 +330,17 @@
   </div>
 
   <footer>
-    Streampolis · Visual Target v1 · gerado com a arte conceitual em
-    <code>packages/client/public/visual-target/</code> e as capturas reais do
-    build de agosto de 2026. As regras completas estão em
-    <code>docs/VISUAL_TARGET.md</code> e <code>docs/VISUAL_RUBRIC.md</code>.
+    Streampolis · Visual Target v1 · a arte conceitual está em
+    <code>packages/client/public/visual-target/</code>; a coluna <b>Hoje</b> é
+    capturada do build por <code>node tools/visual-target-shots.mjs</code>, que
+    carimba abaixo de onde ela veio. Uma comparação publicada e desatualizada é
+    pior do que nenhuma: ela convence a equipe a consertar o que já está
+    consertado.
+    <br>
+    <span id="hoje-stamp">Capturas <b>Hoje</b>: build <code>a993aac</code>, 2026-09-01.</span>
+    <br>
+    As regras completas estão em <code>docs/VISUAL_TARGET.md</code> e
+    <code>docs/VISUAL_RUBRIC.md</code>.
   </footer>
 </div>
 
