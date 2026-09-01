@@ -25,6 +25,14 @@ const EXPRESSION_FOR_ANIM: Partial<Record<AnimState, Expression>> = {
   celebrate: 'surprise',
 };
 
+export interface AvatarOptions {
+  /**
+   * Constrói o rig de expressão (olho, pálpebra, sobrancelha, lábio). Falso
+   * para figurantes: são oito meshes por pessoa que ninguém olha de perto.
+   */
+  face?: boolean;
+}
+
 /**
  * A complete avatar: one skeleton driving a body, a head, eyes and any number
  * of garment meshes. Changing an item rebuilds only that part, so the
@@ -41,10 +49,12 @@ export class Avatar {
   private headMesh!: THREE.SkinnedMesh;
   private parts = new Map<string, THREE.Object3D>();
   private face: FaceRig | null = null;
+  private wantsFace = true;
   private disposables: Array<{ dispose(): void }> = [];
 
-  constructor(config: AvatarConfig) {
+  constructor(config: AvatarConfig, options: AvatarOptions = {}) {
     this.config = { ...config };
+    this.wantsFace = options.face !== false;
     const proportions = {
       ...PROPORTION_PRESETS[config.bodyPreset % PROPORTION_PRESETS.length],
     };
@@ -106,6 +116,11 @@ export class Avatar {
    */
   private buildFace() {
     this.face?.dispose();
+    this.face = null;
+    // Um figurante a quinze metros não tem expressão que alguém leia, e o rig
+    // custa umas oito chamadas de desenho por pessoa. Nariz e orelha continuam
+    // lá: eles estão fundidos na cabeça e são de graça.
+    if (!this.wantsFace) return;
     const shape = FACE_PRESETS[this.config.facePreset % FACE_PRESETS.length];
     this.face = buildFaceRig(this.rig, shape, {
       skinTone: this.config.skinTone,

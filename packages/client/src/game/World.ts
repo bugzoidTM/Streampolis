@@ -126,6 +126,7 @@ export class World {
     this.camera.obstacles = [...scene.scene.children];
     this.camera.setFraming(scene.framing, true);
     this.camera.setLimits({ maxDistance: scene.maxBoom });
+    scene.populate?.(this.renderer.quality.settings.ambientNpcs);
 
     this.gifts = new GiftEffectManager(scene.scene, {
       budget: this.renderer.quality.settings.particleBudget,

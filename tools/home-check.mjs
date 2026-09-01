@@ -1,6 +1,24 @@
+#!/usr/bin/env node
+/**
+ * Prova do apartamento: mobília colocada, modo de construção aberto.
+ *
+ * Precisa da API de desenvolvimento no ar e de um token:
+ *
+ *   TOKEN=$(curl -s -X POST http://127.0.0.1:8787/auth/dev-login \
+ *     -H 'content-type: application/json' \
+ *     -d '{"username":"ana","password":"streampolis-dev"}' | jq -r .token)
+ *   node tools/home-check.mjs "$TOKEN"
+ *
+ * Escreve shots/apto/sala.png e shots/apto/build.png.
+ */
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
+
 const token = process.argv[2];
+if (!token) {
+  console.error('uso: node tools/home-check.mjs <token>');
+  process.exit(2);
+}
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--enable-webgl','--no-sandbox','--disable-dev-shm-usage'] });
 const p = await b.newPage({ viewport:{width:1280,height:760} });
 const errs=[]; p.on('pageerror',e=>errs.push(e.message)); p.on('console',m=>{if(m.type()==='error')errs.push(m.text());});

@@ -22,6 +22,16 @@ export interface Placement {
   variant?: number;
 }
 
+/** Um figurante e o que ele faz. Ver `game/AmbientCrowd.ts`. */
+export interface CrowdWaypoint { x: number; z: number; wait?: number }
+export interface CrowdRoutine {
+  kind: 'walk' | 'sit' | 'watch' | 'talk';
+  path: CrowdWaypoint[];
+  facing?: number;
+  /** Altura do quadril. Quem senta precisa da altura do assento, não do chão. */
+  y?: number;
+}
+
 export interface BuildingPlacement extends Placement {
   width: number;
   depth: number;
@@ -104,4 +114,41 @@ export const PLAZA = {
 
   /** The plaza's live billboard (PRD §6). */
   screen: { x: 0, z: -22, ry: Math.PI, width: 9.5, height: 5.2, base: 3.4 },
+
+  /**
+   * Rotas dos figurantes. Ficam AQUI, com o resto do mobiliário urbano, pelo
+   * mesmo motivo: são posições no mundo, e posição no mundo é dado, não código
+   * de cena. Cada rota é feita para ter um motivo visível — atravessar a
+   * praça, sentar num banco, olhar o telão, conversar em par, esperar no
+   * quiosque. Ninguém aqui é jogador: não têm nome, não colidem e o servidor
+   * nunca ouviu falar deles.
+   */
+  crowd: [
+    // Atravessando, em direções diferentes: uma praça em que todos andam para
+    // o mesmo lado lê como esteira.
+    { kind: 'walk', path: [{ x: -16, z: 12 }, { x: -4, z: 6 }, { x: 6, z: -8, wait: 2.5 }, { x: 15, z: -14 }] },
+    { kind: 'walk', path: [{ x: 17, z: 9 }, { x: 5, z: 11 }, { x: -7, z: 13, wait: 1.8 }, { x: -18, z: 5 }] },
+    { kind: 'walk', path: [{ x: 0, z: 19 }, { x: 2, z: 11, wait: 3.2 }, { x: 11, z: 4 }, { x: 13, z: 16 }] },
+    { kind: 'walk', path: [{ x: -13, z: -13 }, { x: -6, z: -4, wait: 2.0 }, { x: 4, z: 3 }, { x: 12, z: 12 }] },
+
+    // Sentados nos bancos do anel interno. Vão na MESMA circunferência dos
+    // bancos e na altura do assento: no chão, um figurante sentado atravessa
+    // o banco e lê como alguém caído.
+    { kind: 'sit', y: 0.44, path: [{ x: Math.cos(0.31 + 0.628) * 9.8, z: Math.sin(0.31 + 0.628) * 9.8 }], facing: -(0.31 + 0.628) + Math.PI / 2 },
+    { kind: 'sit', y: 0.44, path: [{ x: Math.cos(0.31 + 2.513) * 9.8, z: Math.sin(0.31 + 2.513) * 9.8 }], facing: -(0.31 + 2.513) + Math.PI / 2 },
+
+    // Olhando o telão, que é o ponto do produto: a praça mostra o feed.
+    { kind: 'watch', path: [{ x: -1.8, z: -14.5 }], facing: Math.PI },
+    { kind: 'watch', path: [{ x: 1.6, z: -13.2 }], facing: Math.PI },
+    { kind: 'watch', path: [{ x: 3.4, z: -15.6 }], facing: Math.PI + 0.2 },
+
+    // Um par de frente um para o outro: lado a lado leriam como fila.
+    { kind: 'talk', path: [{ x: -8.6, z: 2.2 }], facing: Math.PI / 2 + 0.2 },
+    { kind: 'talk', path: [{ x: -7.4, z: 2.6 }], facing: -Math.PI / 2 + 0.2 },
+
+    // Esperando no quiosque.
+    { kind: 'watch', path: [{ x: Math.cos(0.75) * 15.4, z: Math.sin(0.75) * 15.4 }], facing: 0.75 },
+    { kind: 'talk', path: [{ x: Math.cos(3.95) * 16.0, z: Math.sin(3.95) * 16.0 }], facing: 3.95 },
+    { kind: 'walk', path: [{ x: 20, z: -6 }, { x: 9, z: -9, wait: 4.0 }, { x: 8, z: 2 }, { x: 19, z: 3 }] },
+  ] as CrowdRoutine[],
 } as const;

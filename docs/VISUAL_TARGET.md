@@ -103,18 +103,45 @@ O que já está certo e não deve ser mexido: proporção (1,67 m), presets de c
 que mudam silhueta de verdade, e o pipeline de vestir — que valida posse antes
 de deixar usar (SPECs §68).
 
-### Praça Central — falta cor e vida
-Composição, iluminação e mobiliário urbano já existem. O alvo acrescenta:
+### Praça Central — cor e vida entraram
+- ~~**paleta quente**~~ — calçamento em terracota, rosácea quente no miolo,
+  fachadas em família quente e bandeiras em três cores. A saturação alta
+  continua reservada ao interativo (LED, presente, PK, AO VIVO), e a única
+  coisa saturada na vegetação são as flores.
+- ~~**vegetação variada**~~ — palmeira como terceira variante de copa (três
+  copas redondas iguais eram uma skyline de pirulitos), arbusto florido em
+  duas cores, e toldo listrado nos quiosques: pano na altura da cabeça é o que
+  transforma uma fileira de fachadas em rua.
+- ~~**NPCs decorativos**~~ — `game/AmbientCrowd.ts`, com as rotas em
+  `shared/layout.ts` junto do resto do mobiliário urbano (posição no mundo é
+  dado, não código de cena). Andam, sentam no banco, olham o telão, conversam
+  em par e esperam no quiosque. Não são jogadores e nunca fingem ser: sem
+  nome, sem colisão, e o servidor nunca ouviu falar deles.
 
-- **paleta quente** (laranja, terracota, verde saturado) no lugar do cinza-pedra;
-- **vegetação variada** — palmeira, arbusto florido, canteiro;
-- **NPCs decorativos** circulando. O `QualityManager` já reserva orçamento para
-  eles (`ambientNpcs`), e ninguém os desenha ainda.
+Duas decisões que valem para qualquer figurante futuro:
 
-### Apartamento — falta variedade
-A planta e a luz da janela já entregam o clima. Falta catálogo: sofá em mais de
-um formato, cama, tapete, quadro, bugiganga de mesa. É o mesmo trabalho que a
-loja vai cobrar.
+- **quantos é decisão do governador de qualidade**, não da cena. `populate()` é
+  chamado depois do `build` com `QualityManager.ambientNpcs`: no tier baixo o
+  certo é nenhum, não uma praça a 12 fps.
+- **figurante não tem rig de expressão** (`new Avatar(cfg, { face: false })`).
+  São oito meshes por pessoa que ninguém olha de perto. Nariz e orelha
+  continuam lá — estão fundidos na cabeça e são de graça.
+
+### Apartamento — mobiliável
+A planta e a luz da janela já entregavam o clima; o que faltava era o que pôr
+dentro e um jeito de pôr. São 26 peças colocáveis e um **Build Mode Lite**:
+colocar, mover, girar, guardar, em grade de 25 cm e giro de 90°.
+
+Colocação livre fica **pior**: móvel a 3,7° da parede lê como erro em todo
+print que o jogador tira do próprio quarto.
+
+O elo é `shared/placeables.ts` — do item comprado para a geometria, e as regras
+de onde ele pode ficar. Mora em `shared` porque **o servidor precisa poder
+recusar**: `PUT /me/home/layout` confere posse, limites e sobreposição com as
+mesmas funções que o cliente usa para acinzentar o lugar.
+
+`node tools/home-check.mjs <token>` fotografa a sala mobiliada e a barra de
+construção aberta.
 
 ### Live Room — é a área mais próxima do alvo
 Painel de LED como fonte de luz, marca no chão, ring light, feixes visíveis e
@@ -157,9 +184,13 @@ pelo próprio jogo. Não há coluna "alvo" para a UI porque ela é o alvo.
 4. **Roupa com corte** — gola, punho, barra, caimento. É o próximo: hoje toda
    peça é o corpo inflado, o que resolveu a cintura mas não dá corte a nada.
    O ombro da manga ainda é o ponto mais fraco.
-5. **Cor e vida na praça.**
-6. **Catálogo de móveis.** A loja cria a pressão; o apartamento a transforma em
-   permanência.
+5. ~~**Cor e vida na praça.**~~ — feito.
+6. ~~**Catálogo de móveis.**~~ — feito, com o modo de construção junto.
+
+O que ficou de fora e é o próximo alvo natural: **corte de roupa** (item 4
+acima, o único da lista original ainda aberto), **visitar a casa de outra
+pessoa** com a mobília dela carregada, e **decoração de parede e piso** — o
+catálogo já tem `floor_*` e `wall_*`, e nada os aplica ainda.
 
 ### Ferramentas de revisão
 

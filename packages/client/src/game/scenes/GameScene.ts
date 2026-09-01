@@ -24,6 +24,12 @@ export interface GameScene {
   readonly maxBoom: number;
   build(renderer: THREE.WebGLRenderer): Promise<void>;
   update(dt: number, camera: THREE.Camera): void;
+  /**
+   * Enche a cena de figurantes, com o orçamento que o governador de qualidade
+   * permite. Separado do `build` porque quantos cabem não é decisão da cena:
+   * num tier baixo o certo é nenhum, e não uma praça a 12 fps.
+   */
+  populate?(budget: number): void;
   /** Simple collision: returns the corrected position. */
   clamp(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3;
   dispose(): void;
@@ -101,6 +107,8 @@ export abstract class SceneBase implements GameScene {
   protected blockCircle(x: number, z: number, r: number) {
     this.colliders.push({ kind: 'circle', x, z, r });
   }
+
+  populate(_budget: number): void {}
 
   update(dt: number, camera: THREE.Camera) {
     this.elapsed += dt;

@@ -273,3 +273,77 @@ export function stairRing(
   boxUV(geo, 0.9);
   return [{ geo, mat: lib.concrete('#a8a196') }];
 }
+
+/**
+ * A palm. The plaza had three canopy variants and all three were the same
+ * round tree — a skyline of identical lollipops reads as a placeholder however
+ * good the lighting is.
+ */
+export function palm(lib: MatLib, seed = 3): Prop {
+  const rnd = mulberry32(6100 + seed * 331);
+  const h = 3.4 + rnd() * 1.4;
+  const trunk: THREE.BufferGeometry[] = [];
+  const segs = 7;
+  for (let i = 0; i < segs; i++) {
+    const t = i / segs;
+    // A palm leans; a vertical pole reads as a mast.
+    const lean = Math.sin(t * 1.3) * 0.55;
+    trunk.push(place(
+      cyl(0.16 - t * 0.06, 0.19 - t * 0.06, h / segs + 0.04, 8),
+      lean, h * t + h / segs / 2, 0,
+      0, 0, Math.sin(t * 1.3) * 0.12,
+    ));
+  }
+  const fronds: THREE.BufferGeometry[] = [];
+  const top = new THREE.Vector3(Math.sin(1.3) * 0.55, h, 0);
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + rnd() * 0.3;
+    const droop = 0.5 + rnd() * 0.4;
+    const leaf = box(2.1, 0.05, 0.42);
+    leaf.translate(1.05, 0, 0);
+    fronds.push(place(leaf, top.x, top.y, top.z, 0, -a, -droop));
+  }
+  return [
+    { geo: merge(trunk), mat: lib.painted(0x8a6f4e, 0.85) },
+    { geo: merge(fronds), mat: lib.painted(0x4f8a46, 0.78) },
+  ];
+}
+
+/** A shrub in bloom. The flowers are the only saturated thing about it. */
+export function flowerBush(lib: MatLib, r = 0.55, bloom = 0xd8567a): Prop {
+  const leaves: THREE.BufferGeometry[] = [];
+  const buds: THREE.BufferGeometry[] = [];
+  const rnd = mulberry32(8123);
+  for (let i = 0; i < 3; i++) {
+    const s = r * (0.7 + rnd() * 0.5);
+    leaves.push(place(sph(s, 7, 6), (rnd() - 0.5) * r, s * 0.75, (rnd() - 0.5) * r));
+  }
+  for (let i = 0; i < 14; i++) {
+    const a = rnd() * Math.PI * 2;
+    const rr = r * (0.5 + rnd() * 0.55);
+    buds.push(place(sph(0.055 + rnd() * 0.03, 5, 4), Math.cos(a) * rr, r * (0.6 + rnd() * 0.7), Math.sin(a) * rr));
+  }
+  return [
+    { geo: merge(leaves), mat: lib.painted(0x3f7a45, 0.8) },
+    { geo: merge(buds), mat: lib.painted(bloom, 0.62) },
+  ];
+}
+
+/**
+ * A striped awning over a kiosk or a shopfront. Cloth at head height is what
+ * turns a row of façades into a street; stone alone reads as a monument.
+ */
+export function awning(lib: MatLib, w = 2.6, drop = 0.9, tint = 0xc2542f): Prop {
+  const slope = place(box(w, 0.06, drop * 1.25), 0, 0.30, drop * 0.5, -0.42, 0, 0);
+  boxUV(slope, 0.6);
+  const valance = place(box(w, 0.22, 0.05), 0, -0.02, drop * 0.92);
+  const bars = merge([
+    place(cyl(0.03, 0.03, w, 8).rotateZ(Math.PI / 2), 0, 0.52, 0),
+    place(cyl(0.022, 0.022, 0.9, 6), -w / 2 + 0.1, 0.25, drop * 0.45, 0.5, 0, 0),
+    place(cyl(0.022, 0.022, 0.9, 6), w / 2 - 0.1, 0.25, drop * 0.45, 0.5, 0, 0),
+  ]);
+  return [
+    { geo: merge([slope, valance]), mat: lib.painted(tint, 0.86) },
+    { geo: bars, mat: lib.metal('#9aa0a8', 0.45) },
+  ];
+}

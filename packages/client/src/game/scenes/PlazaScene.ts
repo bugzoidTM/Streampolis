@@ -10,8 +10,9 @@ import {
 import { facadeBuilding } from '../props/Buildings.js';
 import { VideoWall } from '../props/Screen.js';
 import {
-  banner, bench, bollard, fountain, kiosk, lampPost, litterBin, planter, shrub, stairRing, tree,
+  awning, banner, bench, bollard, flowerBush, fountain, kiosk, lampPost, litterBin, palm, planter, shrub, stairRing, tree,
 } from '../props/Urban.js';
+import { AmbientCrowd } from '../AmbientCrowd.js';
 import { SceneBase } from './GameScene.js';
 
 /**
@@ -38,6 +39,7 @@ export class PlazaScene extends SceneBase {
   private wall: VideoWall | null = null;
   /** Stamps used only as instancing sources; freed once the scene is built. */
   private stamps: Prop[] = [];
+  private crowd: AmbientCrowd | null = null;
 
   async build(renderer: THREE.WebGLRenderer): Promise<void> {
     const env = this.makeEnvironment(renderer, {
@@ -74,6 +76,17 @@ export class PlazaScene extends SceneBase {
     this.stamps = [];
   }
 
+  /**
+   * Figurantes. Chamado pelo World DEPOIS do build, porque quantos cabem é
+   * decisão do governador de qualidade e não da cena: num tier baixo o certo é
+   * nenhum, e não uma praça cheia a 12 fps.
+   */
+  override populate(budget: number): void {
+    if (budget <= 0 || this.crowd) return;
+    this.crowd = new AmbientCrowd(this.scene, PLAZA.crowd, budget);
+    this.own(this.crowd);
+  }
+
   /** Instances one prop family at the placements the layout dictates. */
   private scatter(stamp: Prop, spots: readonly Placement[], y = 0): void {
     if (spots.length === 0) return;
@@ -94,7 +107,7 @@ export class PlazaScene extends SceneBase {
 
     const paving = new THREE.CircleGeometry(PLAZA.radius + 2.5, 96);
     boxUV(paving, 1.6);
-    const floor = new THREE.Mesh(paving, this.mats.paving('#9d968b', '#5d5952'));
+  const floor = new THREE.Mesh(paving, this.mats.paving('#b3a189', '#7d6a54'));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.add(floor);
@@ -104,7 +117,8 @@ export class PlazaScene extends SceneBase {
     // a change of paving.
     const inner = new THREE.CircleGeometry(PLAZA.apron, 72);
     boxUV(inner, 1.05);
-    const rosette = new THREE.Mesh(inner, this.mats.paving('#948d83', '#5a564f'));
+    // Rosácea em terracota: o miolo da praça é o ponto quente do chão.
+    const rosette = new THREE.Mesh(inner, this.mats.paving('#bf8a63', '#8a5f45'));
     rosette.rotation.x = -Math.PI / 2;
     rosette.position.y = 0.012;
     rosette.receiveShadow = true;
@@ -112,7 +126,7 @@ export class PlazaScene extends SceneBase {
 
     const kerb = ringSlab(PLAZA.apron, PLAZA.apron + 0.36, 0.06, 96);
     boxUV(kerb, 0.8);
-    const kerbMesh = new THREE.Mesh(kerb, this.mats.concrete('#8a847b'));
+    const kerbMesh = new THREE.Mesh(kerb, this.mats.concrete('#a3937f'));
     kerbMesh.receiveShadow = true;
     kerbMesh.castShadow = true;
     this.add(kerbMesh);
@@ -136,21 +150,49 @@ export class PlazaScene extends SceneBase {
     this.scatter(bollard(this.mats), PLAZA.bollards);
     this.scatter(litterBin(this.mats), PLAZA.bins);
     this.scatter(planter(this.mats, 1.6, 1.6, 0.55), PLAZA.planters);
-    this.scatter(banner(this.mats, 0.62, 1.9, '#2f6fb8'), PLAZA.banners, 3.0);
+    // Bandeiras em três cores, não uma: uma praça inteira do mesmo azul lê
+    // como decoração de estoque.
+    const flags = ['#c2542f', '#2f6fb8', '#c89a3c'];
+    flags.forEach((tint, i) => {
+      this.scatter(
+        banner(this.mats, 0.62, 1.9, tint),
+        PLAZA.banners.filter((_, j) => j % flags.length === i),
+        3.0,
+      );
+    });
 
     const first = PLAZA.kiosks[0];
     this.scatter(
       kiosk(this.mats, first.width, first.depth),
       PLAZA.kiosks.map((k) => ({ x: k.x, z: k.z, ry: k.ry })),
     );
+    // Toldo em cada quiosque: pano na altura da cabeça é o que transforma
+    // uma fileira de fachadas em rua.
+    this.scatter(
+      awning(this.mats, first.width * 0.92, 1.0, 0xc2542f),
+      PLAZA.kiosks.map((k) => ({
+        x: k.x + Math.sin(k.ry) * (first.depth / 2),
+        z: k.z + Math.cos(k.ry) * (first.depth / 2),
+        ry: k.ry,
+      })),
+      2.35,
+    );
   }
 
   private buildGreenery(): void {
     // One instanced draw per canopy variant: three calls for thirty trees.
+    // Variant 2 is a palm — three identical round canopies was a skyline of
+    // lollipops however good the light was.
     for (let variant = 0; variant < 3; variant++) {
-      this.scatter(tree(this.mats, variant), PLAZA.trees.filter((t) => t.variant === variant));
+      const spots = PLAZA.trees.filter((t) => t.variant === variant);
+      if (!spots.length) continue;
+      this.scatter(variant === 2 ? palm(this.mats, variant) : tree(this.mats, variant), spots);
     }
-    this.scatter(shrub(this.mats, 0.6), PLAZA.shrubs);
+    // Half the shrubs are in bloom. The flowers are the only saturated thing
+    // in the greenery, and they are what the eye reads as "somebody tends it".
+    this.scatter(shrub(this.mats, 0.6), PLAZA.shrubs.filter((_, i) => i % 2 === 0));
+    this.scatter(flowerBush(this.mats, 0.6, 0xd8567a), PLAZA.shrubs.filter((_, i) => i % 4 === 1));
+    this.scatter(flowerBush(this.mats, 0.55, 0xe8b23c), PLAZA.shrubs.filter((_, i) => i % 4 === 3));
   }
 
   /**
@@ -161,7 +203,9 @@ export class PlazaScene extends SceneBase {
     const items: Array<{ prop: Prop; matrix: THREE.Matrix4 }> = [];
     const stamps: Prop[] = [];
     const signs = [0xff3d7f, 0x2f7bff, 0xffcc33, 0x39d98a];
-    const tints = ['#c9c1b4', '#b6bcc4', '#cfa98d', '#a9b2ad'];
+    // Fachadas em família quente, ainda dessaturadas: a saturação alta é
+    // reservada ao que é interativo (LED, presente, PK, AO VIVO).
+    const tints = ['#c9a184', '#d8bc94', '#b4a894', '#a8b3a2', '#c98f70', '#bcae9c'];
 
     PLAZA.buildings.forEach((b, i) => {
       const prop = facadeBuilding(this.mats, {
@@ -198,6 +242,7 @@ export class PlazaScene extends SceneBase {
   }
 
   override update(dt: number, camera: THREE.Camera): void {
+    this.crowd?.update(dt);
     super.update(dt, camera);
     this.wall?.update(dt);
   }
