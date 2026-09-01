@@ -33,3 +33,22 @@ if (view === 'assets') {
     />,
   );
 }
+
+/**
+ * Apaga a tela de arranque do `index.html`.
+ *
+ * Ela cobriu a espera pelo bundle; daqui em diante quem informa é a tela de
+ * carregamento do jogo, que mede coisa real. A saída espera DOIS quadros: o
+ * React 18 pinta depois do `render()`, e remover no mesmo instante devolve um
+ * lampejo de página vazia entre as duas telas — o piscado que a tela de
+ * arranque existe para não haver.
+ */
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  const boot = document.getElementById('boot');
+  if (!boot) return;
+  boot.classList.add('boot--out');
+  boot.addEventListener('transitionend', () => boot.remove(), { once: true });
+  // Rede de segurança: uma aba em segundo plano não roda transição, e a tela
+  // de arranque ficaria por cima do jogo para sempre.
+  window.setTimeout(() => boot.remove(), 1200);
+}));

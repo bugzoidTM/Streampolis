@@ -4,9 +4,75 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Streampolis</title>
+    <!--
+      A PRIMEIRA tela, e a única que não pode depender de nada.
+
+      A tela de carregamento do jogo é um componente React: ela só existe
+      depois que o bundle baixa, e o bundle tem three.js dentro. Numa conexão
+      ruim isso são vários segundos olhando para uma página BRANCA e vazia —
+      exatamente a impressão de travamento que a outra tela veio consertar,
+      acontecendo antes de ela poder aparecer.
+
+      Por isso este bloco é inline, sem fonte externa, sem CSS externo e sem
+      script: ele pinta com o primeiro byte do HTML. As cores estão escritas à
+      mão de propósito — os tokens do tema também chegam no bundle.
+
+      A barra aqui NÃO tem porcentagem: ninguém sabe quanto falta para um
+      bundle que o navegador está baixando, e uma barra que inventa número é
+      pior do que uma que só diz "estou trabalhando".
+    -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #08090f; }
+      #boot {
+        position: fixed; inset: 0; z-index: 90;
+        display: flex; align-items: center; justify-content: center;
+        font: 13px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: #9aa0ad;
+        background:
+          radial-gradient(90% 55% at 50% 0%, rgba(124, 92, 255, 0.22), transparent 70%),
+          radial-gradient(70% 45% at 20% 100%, rgba(255, 45, 111, 0.14), transparent 70%),
+          #08090f;
+        opacity: 1; transition: opacity 260ms ease;
+      }
+      #boot.boot--out { opacity: 0; pointer-events: none; }
+      #boot .b { width: min(460px, 82vw); text-align: center; }
+      #boot .e {
+        margin: 0 0 12px; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.34em; color: #6f7686;
+      }
+      #boot .t {
+        margin: 0 0 26px; font-size: clamp(26px, 5vw, 40px); font-weight: 800;
+        letter-spacing: 0.14em; color: #f2eefc;
+      }
+      #boot .r { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.09); overflow: hidden; }
+      #boot .f {
+        height: 100%; width: 38%; border-radius: inherit;
+        background: linear-gradient(90deg, #7c5cff, #ff2d6f);
+        box-shadow: 0 0 18px rgba(124, 92, 255, 0.55);
+        animation: boot-slide 1.25s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+      }
+      #boot .l { margin: 14px 0 0; font-size: 13px; }
+      @keyframes boot-slide {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(263%); }
+      }
+      /* Movimento reduzido: a barra para de correr e vira uma marca fixa. */
+      @media (prefers-reduced-motion: reduce) {
+        #boot .f { animation: none; width: 100%; opacity: 0.5; }
+        #boot { transition: none; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot">
+      <div class="b">
+        <p class="e">STREAMPOLIS</p>
+        <p class="t">Entrando</p>
+        <div class="r"><div class="f"></div></div>
+        <p class="l">Carregando o jogo…</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

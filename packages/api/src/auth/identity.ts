@@ -28,6 +28,12 @@ export interface AvatarConfigDTO {
   shoes: string;
   accessory: string;
   height: number;
+  /**
+   * Corpo que desenha o avatar. `'v2'` está reservado e só é aceito de quem
+   * POSSUI o item correspondente — a mesma regra de qualquer peça, escrita
+   * antes de existir o item, para o dia da venda ser um dia de catálogo.
+   */
+  body: 'v1' | 'v2';
 }
 
 export interface SessionIdentity {
@@ -96,6 +102,7 @@ export const DEFAULT_AVATAR_DTO: AvatarConfigDTO = {
   shoes: 'shoes_sneaker_01',
   accessory: '',
   height: 1.0,
+  body: 'v1',
 };
 
 export interface SessionToken {

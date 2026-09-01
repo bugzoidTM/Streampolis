@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { assetManager } from './loading.js';
 import type { Prop } from '../props/Geometry.js';
 
 /**
@@ -40,7 +41,9 @@ export class AssetLibrary {
    */
   static async load(names: string[], base = 'assets/'): Promise<AssetLibrary> {
     const lib = new AssetLibrary();
-    const loader = new GLTFLoader();
+    // O manager compartilhado é o que faz a barra de carregamento contar
+    // arquivo de verdade em vez de animar por tempo.
+    const loader = new GLTFLoader(assetManager);
 
     const catalogUrl = new URL(`${base}catalog.json`, document.baseURI).href;
     await fetch(catalogUrl)

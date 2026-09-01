@@ -12,9 +12,11 @@ import {
   type SceneId,
 } from '@streampolis/shared';
 import { Renderer } from './Renderer.js';
+import { LoadTracker, type LoadReport } from './assets/loading.js';
 import { CameraManager } from './CameraManager.js';
 import { InputManager } from './InputManager.js';
-import { Avatar } from './avatar/Avatar.js';
+import type { AvatarLike } from './avatar/AvatarLike.js';
+import { createAvatar, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
 import { createScene } from './scenes/index.js';
 import type { GameScene } from './scenes/GameScene.js';
@@ -23,6 +25,15 @@ import { GiftEffectManager } from './fx/GiftEffects.js';
 import type { AnyWorldConnection } from '../network/WorldConnection.js';
 import type { RenderPose } from '../network/types.js';
 import { attachStores } from '../network/bridge.js';
+
+/**
+ * Em que quadro a tela de carregamento pode sair.
+ *
+ * Não é o primeiro: `warmUp()` compila os materiais da cena, mas os passes de
+ * pós-processamento têm shaders próprios e só compilam quando desenham —
+ * revelar no quadro 1 mostra a praça sem grade nem bloom por um instante.
+ */
+const REVEAL_FRAME = 4;
 
 export interface WorldOptions {
   canvas: HTMLCanvasElement;
@@ -43,7 +54,12 @@ export interface WorldOptions {
 interface Actor {
   /** Id do jogador (o da API), não o da sessão: é por ele que o presente chega. */
   userId: string;
-  avatar: Avatar;
+  /**
+   * Tipado pela INTERFACE, não pela classe. É o que faz a troca por um corpo
+   * comprado ser uma linha em `createAvatar()` e não uma cirurgia aqui — o
+   * laço de jogo só precisa de `root`, `eyeHeight`, `setAnim` e `animate`.
+   */
+  avatar: AvatarLike;
   /** Nulo no avatar local: ninguém precisa de uma placa com o próprio nome. */
   tag: NameTag | null;
   /** Smoothed yaw, so a remote turning in place does not snap. */
@@ -103,7 +119,11 @@ export class World {
     return this.connection !== null;
   }
 
-  async start(): Promise<void> {
+  /** Disparado uma vez, quando o primeiro quadro chega à tela. */
+  private onFirstFrame: (() => void) | null = null;
+
+  async start(onProgress?: (report: LoadReport) => void): Promise<void> {
+    const track = new LoadTracker(onProgress ?? (() => {}));
     // A sala chega pronta. O mundo não escolhe onde entrar — ele pergunta ao
     // estado da sala onde ELE está. Era esse o elo que faltava: com o World
     // abrindo a conexão sozinho, toda sala virava uma CityRoom e uma live
@@ -116,7 +136,22 @@ export class World {
     }
 
     const scene = createScene(this.sceneId);
-    await scene.build(this.renderer.webgl, this.renderer.quality.settings.tier);
+    // Os arquivos primeiro: é a parte que depende da rede e a única com
+    // contagem honesta. A cena chama os carregadores lá dentro, e todos eles
+    // passam pelo manager compartilhado.
+    track.followAssets('Carregando o cenário');
+    try {
+      // Cenário e corpos na MESMA fase: os dois são arquivo, os dois contam no
+      // mesmo denominador, e um corpo que chega depois da barra sumir faz a
+      // praça abrir vazia e ir se povoando — que parece defeito.
+      await Promise.all([
+        scene.build(this.renderer.webgl, this.renderer.quality.settings.tier),
+        preloadAvatarBodies(),
+      ]);
+    } finally {
+      track.stopFollowingAssets();
+    }
+    track.begin('scene', 'Montando a cena');
     this.scene = scene;
     this.renderer.attach(scene.scene, this.camera.camera, scene.look);
     // Snapshot of the static world, taken before any avatar exists. Handing
@@ -144,6 +179,23 @@ export class World {
     }
 
     this.resize();
+
+    // Compilar ANTES de mostrar. O primeiro quadro de uma cena nova compila
+    // todo shader que ela usa, e isso trava a aba por segundos — com a tela já
+    // revelada, o jogador vê o jogo congelar assim que aparece, que é pior do
+    // que esperar mais um pouco na tela de carregamento.
+    track.begin('compile', 'Preparando os materiais');
+    await this.renderer.warmUp();
+
+    // "Pronto" é o PRIMEIRO QUADRO DESENHADO, não o fim do `start()`. Anunciar
+    // aqui tirava a tela de carregamento antes de existir imagem, e o jogador
+    // voltava a olhar para o preto — o defeito que esta tela veio consertar,
+    // reintroduzido três linhas antes do fim.
+    this.onFirstFrame = () => {
+      track.begin('ready', 'Pronto');
+      track.step(1, 'Pronto');
+    };
+
     this.loop();
   }
 
@@ -194,7 +246,14 @@ export class World {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(0.05, this.clock.getDelta());
-    if (this.paused) return;
+    // Pausado só DEPOIS de existir imagem. O mundo entra pausado sempre que o
+    // jogador abre outra aba da casca enquanto ele carrega, e um laço que sai
+    // aqui no primeiro quadro nunca desenha, nunca chega ao quarto quadro e
+    // nunca anuncia "pronto" — a tela de carregamento ficava para sempre por
+    // cima da Loja. Os quatro primeiros quadros correm de qualquer jeito;
+    // além de destravarem o anúncio, são eles que deixam a cena PINTADA
+    // embaixo da pausa, em vez de um retângulo preto.
+    if (this.paused && this.frames >= REVEAL_FRAME) return;
     const input = this.input.poll();
 
     this.camera.applyInput(input.lookYaw, input.lookPitch, input.zoom * 0.01);
@@ -233,6 +292,15 @@ export class World {
     this.renderer.render(dt);
 
     this.frames++;
+    // Quatro quadros antes de revelar. `warmUp()` compila os materiais da
+    // cena, mas os passes de pós-processamento têm shaders próprios e só
+    // compilam quando desenham — revelar no primeiro quadro mostra a cena sem
+    // grade nem bloom por um instante.
+    if (this.frames === REVEAL_FRAME && this.onFirstFrame) {
+      const fire = this.onFirstFrame;
+      this.onFirstFrame = null;
+      fire();
+    }
     // The screenshot tool waits on this: post-processing shaders compile on
     // the first frames and an early capture catches an unshaded scene.
     if (this.frames === 12) (window as unknown as { __ready?: boolean }).__ready = true;
@@ -295,7 +363,7 @@ export class World {
       seen.add(pose.sessionId);
       let actor = this.actors.get(pose.sessionId);
       if (!actor) {
-        const avatar = new Avatar(pose.avatar ?? DEFAULT_AVATAR);
+        const avatar = createAvatar(pose.avatar ?? DEFAULT_AVATAR);
         // O próprio jogador não ganha placa: em terceira pessoa ela fica entre
         // a câmera e a cabeça dele, e numa live tapa exatamente o que está
         // sendo transmitido.
@@ -345,7 +413,7 @@ export class World {
 
       // The state travels on the wire; here is where it becomes movement.
       actor.avatar.setAnim(pose.anim ?? 'idle');
-      actor.avatar.animator.pin(this.forcedAnim);
+      if (isProcedural(actor.avatar)) actor.avatar.animator.pin(this.forcedAnim);
       actor.avatar.animate(dt, actor.speed);
     }
 
@@ -371,7 +439,9 @@ export class World {
   animReport(): ClipReport[] {
     const any = this.actors.values().next().value;
     if (!any) return [];
-    return clipReport(any.avatar.rig);
+    // Relatório de clipe é ferramenta de revisão do corpo PROCEDURAL: um
+    // corpo de pacote traz os clipes do autor e não este catálogo.
+    return isProcedural(any.avatar) ? clipReport(any.avatar.rig) : [];
   }
 
   /** A PNG data URL of the current frame (see Renderer.capture). */
@@ -413,7 +483,7 @@ export class World {
       scene: this.sceneId,
       actors: this.actors.size,
       anim: [...this.actors.values()].map((a) => ({
-        state: a.avatar.animator.current,
+        state: isProcedural(a.avatar) ? a.avatar.animator.current : 'idle',
         speed: Math.round(a.speed * 100) / 100,
       })),
       renderer: this.renderer.stats(),

@@ -1,0 +1,93 @@
+/*
+ * Tela de carregamento. Mesma família visual da tela de entrada: é a segunda
+ * coisa que o jogador vê, e não pode parecer de outro produto.
+ */
+
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-s6) var(--sp-s4);
+  background:
+    radial-gradient(90% 55% at 50% 0%, rgba(124, 92, 255, 0.22), transparent 70%),
+    radial-gradient(70% 45% at 20% 100%, rgba(255, 45, 111, 0.14), transparent 70%),
+    var(--sp-void);
+  opacity: 1;
+  transition: opacity 420ms ease;
+}
+
+/* Some por fade: um corte seco para a cena 3D pisca. */
+.loading--out { opacity: 0; pointer-events: none; }
+
+.loading__glow {
+  position: absolute;
+  inset: -20% -10% auto -10%;
+  height: 60%;
+  background: radial-gradient(50% 60% at 50% 40%, rgba(79, 216, 255, 0.12), transparent 70%);
+  pointer-events: none;
+}
+
+.loading__body {
+  position: relative;
+  width: min(460px, 100%);
+  text-align: center;
+}
+
+.loading__eyebrow { letter-spacing: 0.34em; margin: 0 0 var(--sp-s3); }
+
+.loading__title {
+  margin: 0 0 var(--sp-s5);
+  font-size: clamp(26px, 5vw, 40px);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  background: linear-gradient(120deg, #fff, #ffb3d1 45%, #a98bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.loading__bar {
+  height: 6px;
+  border-radius: var(--sp-r-pill);
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.loading__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--sp-violet), var(--sp-live));
+  /* Sem transição de largura: quem amortece é o componente, e duas
+     suavizações somadas fazem a barra arrastar atrás do valor real. */
+  box-shadow: 0 0 18px rgba(124, 92, 255, 0.55);
+}
+
+.loading__label {
+  display: flex;
+  justify-content: center;
+  gap: var(--sp-s2);
+  margin: var(--sp-s3) 0 0;
+  font-size: 13px;
+  color: var(--sp-text-2);
+}
+
+.loading__pct { color: var(--sp-text-3); }
+
+.loading__hint {
+  margin: var(--sp-s5) 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--sp-text-3);
+}
+
+.loading--error .loading__title {
+  background: none;
+  color: var(--sp-live);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading { transition: none; }
+}

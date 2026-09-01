@@ -29,6 +29,16 @@ export interface AvatarConfig {
   shoes: string;
   accessory: string;
   height: number;          // 0.92..1.08 multiplier
+  /**
+   * Qual CORPO desenha este avatar. Ausente ou `'v1'` é o corpo procedural.
+   *
+   * `'v2'` está reservado para o corpo base importado e **não é jogável**: o
+   * guarda-roupa inteiro é lofteado das estações do corpo v1, e um jogador de
+   * corpo v2 ficaria sem roupa nenhuma. O campo existe agora, e é validado
+   * contra POSSE DE ITEM no servidor como qualquer peça, para que vendê-lo um
+   * dia seja uma mudança de catálogo e não de arquitetura.
+   */
+  body?: 'v1' | 'v2';
 }
 
 export const DEFAULT_AVATAR: AvatarConfig = {
@@ -42,6 +52,7 @@ export const DEFAULT_AVATAR: AvatarConfig = {
   shoes: 'shoes_sneaker_01',
   accessory: '',
   height: 1.0,
+  body: 'v1',
 };
 
 /** Character needs (PRD §9). Range 0..100. Never hard-blocks play. */

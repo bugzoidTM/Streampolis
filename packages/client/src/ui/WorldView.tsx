@@ -7,6 +7,8 @@ import { describeIntent, isLiveIntent, openWorld, type WorldIntent } from '../ne
 import type { AnyWorldConnection } from '../network/WorldConnection.js';
 import { useSessionStore } from '../state/useSessionStore.js';
 import { LiveView } from './LiveView.js';
+import { LoadingScreen } from './LoadingScreen.js';
+import type { LoadReport } from '../game/assets/loading.js';
 
 export interface WorldViewProps {
   /** O que o jogador quer fazer. Quem decide a sala é isto, não o World. */
@@ -40,6 +42,7 @@ export function WorldView(props: WorldViewProps) {
   const [status, setStatus] = useState<'loading' | 'online' | 'offline' | 'failed'>('loading');
   const [message, setMessage] = useState<string>(describeIntent(props.intent));
   const [inLive, setInLive] = useState(false);
+  const [progress, setProgress] = useState<LoadReport | null>(null);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -50,6 +53,7 @@ export function WorldView(props: WorldViewProps) {
     let connection: AnyWorldConnection | null = null;
 
     const run = async () => {
+      setProgress({ phase: 'connect', label: describeIntent(props.intent), value: 0.02 });
       if (props.token && props.intent.kind !== 'offline') {
         try {
           // Só o token viaja: identidade e aparência são lidas dele no servidor
@@ -95,9 +99,14 @@ export function WorldView(props: WorldViewProps) {
 
       worldRef.current = world;
       world.setPaused(props.paused === true);
-      await world.start();
+      await world.start((report) => { if (!cancelled) setProgress(report); });
       if (cancelled) return;
       setReady(world);
+      // Sem servidor a pílula do canto precisa DIZER isso. Ela mostrava a
+      // descrição da intenção ("Praça Central"), que não é aviso nenhum —
+      // sobra do tempo em que esta mesma pílula também anunciava o
+      // carregamento.
+      if (!world.online) setMessage('Modo offline — sem servidor de jogo');
       setStatus(world.online ? 'online' : 'offline');
       setInLive(isLiveIntent(props.intent.kind) && world.online);
     };
@@ -137,6 +146,14 @@ export function WorldView(props: WorldViewProps) {
         ref={ref}
         style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', display: 'block', background: '#0b0d12' }}
       />
+      {/* Sai quando existe IMAGEM, não quando `start()` retorna: o mundo fica
+          "pronto" alguns quadros antes de desenhar o primeiro deles, e sumir
+          nesse intervalo devolve o jogador à tela preta. */}
+      <LoadingScreen
+        report={progress}
+        done={progress?.phase === 'ready'}
+        error={status === 'failed' ? 'Não foi possível carregar a cena' : null}
+      />
       {inLive && <LiveView />}
       {/* A barra decide sozinha se a casa é do jogador; visitante vê a
           mobília do anfitrião e nenhuma alça. */}
@@ -144,12 +161,11 @@ export function WorldView(props: WorldViewProps) {
         world={ready}
         apartmentId={props.intent.kind === 'apartment' && !inLive ? props.intent.apartmentId : null}
       />
-      {status !== 'online' && (
-        <div className="world-status" role="status">
-          {status === 'loading' && message}
-          {status === 'offline' && 'Modo offline — sem servidor de jogo'}
-          {status === 'failed' && 'Não foi possível carregar a cena'}
-        </div>
+      {/* A pílula do canto não fala mais de carregamento: quem faz isso é a
+          tela cheia. Ela volta a ser só o que sempre deveria ter sido — o
+          aviso de que a partida está sem servidor. */}
+      {status === 'offline' && (
+        <div className="world-status" role="status">{message}</div>
       )}
     </>
   );

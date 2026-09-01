@@ -11,6 +11,7 @@ packages/shared/src/      tipos, catálogos (gifts/items), protocolo de rede
 packages/client/src/
   game/                   engine Three.js (Renderer, Environment, QualityManager)
   game/avatar/            Skeleton, Loft, BodyBuilder, Wardrobe, Materials, Avatar
+  game/avatar/v2/         corpo de pacote (Kit, AvatarV2) — ver "Corpo do avatar"
   game/materials/         Noise.ts, Textures.ts (PBR procedural)
   game/scenes/            cenas do mundo
   game/anim/              clipes e máquina de estados de animação
@@ -61,6 +62,7 @@ token de desenvolvimento É o id do usuário enquanto a API não emite os reais)
 | Aparência do avatar | **API** (validada contra o inventário) | Viaja assinada dentro do token |
 | Dono/decoração/privacidade do apartamento | **API** | Sala recebe só o `apartmentId` |
 | Posição e colisão | **Game Server** | Cliente prevê com a mesma função |
+| Qual CORPO desenha o avatar | **API** (`body` validado contra posse) | Cliente cai para `v1` se duvidar |
 
 O que o navegador PODE dizer: seu token, para onde quer andar, o que quer
 falar, qual presente quer mandar, e o título da própria live. Só isso. Se você
@@ -351,3 +353,68 @@ Alvo: simulador de vida estilizado semi-cartoon (SPECs §4), 60 FPS no desktop e
 Você trabalha em paralelo com outros agentes. **Só edite os arquivos listados na
 sua tarefa.** Se precisar de algo fora do seu escopo, defina a interface no seu
 lado e deixe um TODO nomeando o dono — não edite o arquivo alheio.
+
+## Corpo do avatar: v1, v2, e por que a troca não é uma refatoração
+
+Há dois corpos possíveis e **um só lugar onde um corpo nasce**:
+`game/avatar/createAvatar.ts`. O `World` não conhece classe de avatar nenhuma;
+ele depende de `AvatarLike` — `root`, `eyeHeight`, `setAnim`, `animate`,
+`dispose`, e nada mais. Se você está escrevendo `new Avatar(` fora do
+laboratório ou do `PosterStudio`, pare: é por aí que a troca vira cirurgia.
+
+- **v1, procedural.** O corpo é gerado, o guarda-roupa é lofteado das estações
+  dele e `npm run gate:avatar` mede 176 combinações contra ele. É o corpo do
+  jogo.
+- **v2, de pacote** (`game/avatar/v2/`). Desenha melhor, traz esqueleto com
+  dedos e toca a biblioteca de animação do autor sem retarget — e **não veste
+  nada**: as 45 peças são do corpo v1. Por isso ele é um ITEM (`body_v2_01`,
+  hoje `active: false`), não um botão de aparência.
+
+O caminho inteiro já existe e é exercitado: `PUT /me/avatar` com `body: 'v2'`
+de quem não possui o item responde **403 ITEM_NOT_OWNED**; com o item inativo,
+cai para `v1` com o motivo em `rejected`; com o item ativo e possuído, devolve
+`body: 'v2'` e a aparência viaja assinada no token como qualquer roupa. O dia
+de vender é `active: true` mais o guarda-roupa dele.
+
+Para OLHAR o v2 dentro do jogo: `?body=v2` na URL do cliente. É interruptor de
+campo — ele não passa por cima da posse quando o item for para a loja, e o
+laboratório continua tendo `?view=lab&v2=1` para a comparação lado a lado.
+
+Duas coisas do v2 que valem para qualquer corpo comprado:
+
+- **O kit carrega uma vez; cada avatar leva um clone** (`SkeletonUtils.clone`,
+  não `Object3D.clone` — só ele refaz o vínculo do esqueleto). Geometria,
+  material e textura são do KIT: um avatar que sai da cena **não** os descarta,
+  ou apaga os outros da tela.
+- **O corpo nasce síncrono e chega depois.** O laço que lê o estado da sala não
+  pode virar assíncrono porque um corpo agora vem de um arquivo; o construtor
+  devolve um nó vazio e adota o kit quando ele chega, guardando a animação
+  pedida no meio do caminho.
+
+## Entrar no jogo: duas telas, porque são duas esperas
+
+Tela preta que demora não parece que está carregando; parece que travou. São
+duas esperas diferentes e cada uma tem a sua tela:
+
+1. **O bundle** (three.js dentro). A tela de carregamento do jogo é React —
+   ela só existe depois que o bundle baixa. Por isso `index.html` traz uma tela
+   de arranque **inline**, sem CSS nem fonte externa, que pinta com o primeiro
+   byte; `main.tsx` a apaga dois quadros depois do primeiro `render()`.
+2. **A cena** (`ui/LoadingScreen.tsx` + `game/assets/loading.ts`). A barra mede
+   coisa real: o `LoadingManager` compartilhado por TODO carregador de arquivo
+   conta itens carregados sobre pedidos, e as fases (`connect`, `assets`,
+   `scene`, `compile`, `ready`) são anunciadas pelo `World`. Barra animada por
+   tempo é pior que barra nenhuma.
+
+Regras que já custaram defeito:
+
+- **"Pronto" é o primeiro quadro DESENHADO**, não o fim de `start()` — e são
+  quatro (`REVEAL_FRAME`), porque os passes de pós-processamento só compilam
+  quando desenham. Anunciar antes devolve o jogador à tela preta.
+- **Esses quatro quadros correm mesmo com o mundo pausado.** Trocar de aba
+  durante o carregamento pausa o laço; sem essa exceção nada é desenhado,
+  ninguém anuncia "pronto" e a tela de carregamento fica para sempre por cima
+  da Loja.
+- **Carregador novo passa pelo `assetManager`** de `game/assets/loading.ts`.
+  Um `new GLTFLoader()` sem ele é um arquivo que a barra não conta e que faz a
+  cena aparecer depois dela sumir.

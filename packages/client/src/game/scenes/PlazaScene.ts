@@ -15,6 +15,7 @@ import {
 import { AmbientCrowd } from '../AmbientCrowd.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { AssetLibrary } from '../assets/AssetLibrary.js';
+import { assetManager } from '../assets/loading.js';
 import { assetPassEnabled } from '../assets/pass.js';
 import { SceneBase } from './GameScene.js';
 import type { QualityTier } from '../QualityManager.js';
@@ -81,7 +82,7 @@ export class PlazaScene extends SceneBase {
     // O IBL medido entra depois do rig existir, e a falha dele é silenciosa:
     // sem HDRI a praça acende com o céu procedural, que é pior e não quebrado.
     if (this.lib) {
-      await new RGBELoader()
+      await new RGBELoader(assetManager)
         .loadAsync(new URL('assets/env/kloofendal_48d_partly_cloudy_puresky.hdr', document.baseURI).href)
         .then((tex) => env.useHdri(tex))
         .catch((err) => console.warn('[assets] HDRI não carregou:', err));

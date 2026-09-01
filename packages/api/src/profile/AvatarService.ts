@@ -2,6 +2,7 @@ import { pool } from '../db/pool.ts';
 import { withTransaction } from '../db/tx.ts';
 import { EconomyError } from '../economy/errors.ts';
 import { DEFAULT_AVATAR_DTO, type AvatarConfigDTO } from '../auth/identity.ts';
+import { BODY_ITEM } from '../shared.ts';
 
 /**
  * Aparência do jogador (PRD §7).
@@ -48,7 +49,7 @@ function isFree(item: ItemRow): boolean {
 export interface AvatarValidation {
   config: AvatarConfigDTO;
   /** Itens recusados e o motivo, para a UI explicar em vez de sumir com a peça. */
-  rejected: Array<{ slot: Slot; itemId: string; reason: 'unknown' | 'inactive' | 'wrong_slot' | 'not_owned' }>;
+  rejected: Array<{ slot: Slot | 'body'; itemId: string; reason: 'unknown' | 'inactive' | 'wrong_slot' | 'not_owned' }>;
 }
 
 /**
@@ -66,7 +67,21 @@ export async function validateAvatar(userId: string, raw: unknown): Promise<Avat
     accessory: asId(input.accessory),
   };
 
+  /**
+   * O corpo é tratado como PEÇA: `'v2'` só passa para quem possui o item.
+   *
+   * Escrito antes de o item existir de propósito. Enquanto ele não estiver no
+   * catálogo, todo pedido de `'v2'` é recusado por `unknown` — que é a recusa
+   * certa — e no dia em que ele for para a loja nada aqui muda. A alternativa
+   * era aceitar o campo sem conferir posse, e um campo de aparência aceito sem
+   * conferência já foi bug neste projeto: dava para vestir peça premium pelo
+   * console.
+   */
+  const wantedBody: 'v1' | 'v2' = input.body === 'v2' ? 'v2' : 'v1';
+  const bodyItem = BODY_ITEM[wantedBody];
+
   const ids = Object.values(wanted).filter(Boolean);
+  if (bodyItem) ids.push(bodyItem);
   const catalog = new Map<string, ItemRow>();
   const owned = new Set<string>();
 
@@ -85,6 +100,15 @@ export async function validateAvatar(userId: string, raw: unknown): Promise<Avat
   }
 
   const rejected: AvatarValidation['rejected'] = [];
+  let body: 'v1' | 'v2' = 'v1';
+  if (bodyItem) {
+    const item = catalog.get(bodyItem);
+    if (!item) rejected.push({ slot: 'body', itemId: bodyItem, reason: 'unknown' });
+    else if (!item.active) rejected.push({ slot: 'body', itemId: bodyItem, reason: 'inactive' });
+    else if (!isFree(item) && !owned.has(bodyItem)) {
+      rejected.push({ slot: 'body', itemId: bodyItem, reason: 'not_owned' });
+    } else body = wantedBody;
+  }
   const accepted: Record<Slot, string> = { hair: '', top: '', bottom: '', shoes: '', accessory: '' };
 
   for (const slot of Object.keys(wanted) as Slot[]) {
@@ -115,6 +139,7 @@ export async function validateAvatar(userId: string, raw: unknown): Promise<Avat
       // Altura é cosmética mas entra na física de câmera; fora da faixa vira
       // vantagem visual, então é presa no intervalo do PRD §7.
       height: Math.min(Math.max(typeof input.height === 'number' ? input.height : 1, 0.92), 1.08),
+      body,
     },
     rejected,
   };

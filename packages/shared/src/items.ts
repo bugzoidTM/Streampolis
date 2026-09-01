@@ -2,6 +2,7 @@ import type { Rarity } from './types.js';
 
 export type ItemType =
   | 'hair' | 'top' | 'bottom' | 'shoes' | 'accessory'
+  | 'body'
   | 'furniture' | 'floor' | 'wall' | 'decor' | 'stream_gear';
 
 export interface ItemDef {
@@ -28,7 +29,31 @@ const furn = (
   coins: number | null, footprint: [number, number],
 ): ItemDef => ({ id, type: 'furniture', name, rarity, creditsPrice: credits, coinsPrice: coins, assetId: id, footprint, active: true });
 
+/**
+ * O item que libera cada corpo.
+ *
+ * O corpo é uma PEÇA, não uma preferência: quem valida posse no servidor
+ * (`AvatarService`) e quem fabrica o corpo no cliente (`createAvatar`)
+ * consultam esta mesma tabela, para que ninguém precise repetir o id em dois
+ * lugares — repetir o catálogo em dois lugares já custou um dia neste projeto
+ * (a loja mostrava o que a economia não conhecia).
+ */
+export const BODY_ITEM: Record<'v1' | 'v2', string | null> = {
+  v1: null,
+  v2: 'body_v2_01',
+};
+
 export const ITEM_CATALOG: ItemDef[] = [
+  // --- Corpos ---
+  // INATIVO de propósito, e não é rascunho: o corpo v2 desenha melhor e não
+  // veste NADA da loja (o guarda-roupa é lofteado das estações do corpo v1).
+  // Vendê-lo hoje seria vender um avatar que perde as 45 peças que a pessoa
+  // comprou. Ele fica aqui, com preço, para o caminho inteiro — catálogo,
+  // posse, validação — já existir e ser exercitado; o dia da venda é
+  // `active: true` mais o guarda-roupa dele, e nada de arquitetura.
+  { id: 'body_v2_01', type: 'body', name: 'Corpo Studio', rarity: 'epic',
+    creditsPrice: null, coinsPrice: 1200, assetId: 'body_v2_01', active: false },
+
   // --- Hair ---
   wear('hair_bob_01',    'hair', 'Bob Curto',      'common', 0,    null),
   wear('hair_ponytail_01','hair','Rabo de Cavalo', 'common', 240,  null),

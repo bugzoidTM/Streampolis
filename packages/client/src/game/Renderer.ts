@@ -196,6 +196,30 @@ export class Renderer {
     this.buildComposer();
   }
 
+  /**
+   * Compila todo shader da cena antes do primeiro quadro.
+   *
+   * Sem isto, o primeiro quadro de uma cena nova compila dezenas de programas
+   * de uma vez e trava a aba por segundos — e trava DEPOIS de a tela de
+   * carregamento sair, que é quando o jogador conclui que o jogo travou. Aqui
+   * a espera acontece onde ela é esperada.
+   *
+   * `compileAsync` não existe em todo navegador; onde faltar, o caminho velho
+   * é um `compile` síncrono, que ainda é melhor do que compilar no laço.
+   */
+  async warmUp(): Promise<void> {
+    if (!this.scene || !this.camera) return;
+    const gl = this.webgl as THREE.WebGLRenderer & {
+      compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<unknown>;
+    };
+    try {
+      if (typeof gl.compileAsync === 'function') await gl.compileAsync(this.scene, this.camera);
+      else this.webgl.compile(this.scene, this.camera);
+    } catch (err) {
+      console.warn('[render] warm-up falhou, seguindo mesmo assim:', err);
+    }
+  }
+
   resize(width: number, height: number) {
     this.size.set(Math.max(1, width), Math.max(1, height));
     this.webgl.setSize(this.size.x, this.size.y, false);
