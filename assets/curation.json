@@ -1,0 +1,189 @@
+{
+  "$comment": "A curadoria: QUAIS modelos entram e com que alvo. O passe (tools/assets/pass.mjs) lê isto. Regra de estilo: a praça é Quaternius e só. Misturar sete pacotes numa cena é como o dono descreveu — colagem.",
+  "families": {
+    "tree": {
+      "pack": "Quaternius Stylized Nature MegaKit",
+      "license": "CC0-1.0",
+      "height": 6.4,
+      "tint": "#7ea04a",
+      "tintAmount": 0.22,
+      "roughnessMin": 0.72,
+      "metalnessMax": 0.0,
+      "doubleSided": true,
+      "texture": 512,
+      "collider": "cylinder",
+      "colliderScale": 0.12,
+      "models": [
+        {
+          "id": "common_1",
+          "file": "quaternius-nature/extracted/glTF/CommonTree_1.gltf",
+          "weight": 3
+        },
+        {
+          "id": "common_2",
+          "file": "quaternius-nature/extracted/glTF/CommonTree_2.gltf",
+          "weight": 3
+        },
+        {
+          "id": "common_3",
+          "file": "quaternius-nature/extracted/glTF/CommonTree_3.gltf",
+          "height": 7.4,
+          "weight": 3
+        },
+        {
+          "id": "common_4",
+          "file": "quaternius-nature/extracted/glTF/CommonTree_4.gltf",
+          "height": 7.1,
+          "weight": 2
+        },
+        {
+          "id": "common_5",
+          "file": "quaternius-nature/extracted/glTF/CommonTree_5.gltf",
+          "height": 5.6,
+          "weight": 3
+        },
+        {
+          "id": "pine_1",
+          "file": "quaternius-nature/extracted/glTF/Pine_1.gltf",
+          "height": 8.6,
+          "weight": 1
+        },
+        {
+          "id": "pine_2",
+          "file": "quaternius-nature/extracted/glTF/Pine_2.gltf",
+          "height": 8.2,
+          "weight": 1
+        },
+        {
+          "id": "pine_4",
+          "file": "quaternius-nature/extracted/glTF/Pine_4.gltf",
+          "height": 7.0,
+          "weight": 1
+        },
+        {
+          "id": "dead_3",
+          "file": "quaternius-nature/extracted/glTF/DeadTree_3.gltf",
+          "height": 6.2,
+          "weight": 1
+        }
+      ],
+      "$comment": "Sem TwistedTree: a copa dele é de outono, e vermelho vivo é a cor mais saturada da praça inteira — a regra da paleta reserva saturação alta ao que é interativo (LED, presente, PK, AO VIVO). Uma árvore não é interativa."
+    },
+    "bush": {
+      "pack": "Quaternius Stylized Nature MegaKit",
+      "license": "CC0-1.0",
+      "height": 0.95,
+      "tint": "#7ea04a",
+      "tintAmount": 0.2,
+      "roughnessMin": 0.78,
+      "doubleSided": true,
+      "texture": 256,
+      "collider": "none",
+      "models": [
+        {
+          "id": "common",
+          "file": "quaternius-nature/extracted/glTF/Bush_Common.gltf"
+        },
+        {
+          "id": "flowers",
+          "file": "quaternius-nature/extracted/glTF/Bush_Common_Flowers.gltf"
+        },
+        {
+          "id": "plant_big",
+          "file": "quaternius-nature/extracted/glTF/Plant_1_Big.gltf",
+          "height": 1.15
+        },
+        {
+          "id": "plant_7",
+          "file": "quaternius-nature/extracted/glTF/Plant_7_Big.gltf",
+          "height": 0.26
+        },
+        {
+          "id": "fern",
+          "file": "quaternius-nature/extracted/glTF/Fern_1.gltf",
+          "height": 0.5
+        },
+        {
+          "id": "grass_tall",
+          "file": "quaternius-nature/extracted/glTF/Grass_Common_Tall.gltf",
+          "height": 0.45
+        },
+        {
+          "id": "grass_wispy",
+          "file": "quaternius-nature/extracted/glTF/Grass_Wispy_Tall.gltf",
+          "height": 0.5
+        },
+        {
+          "id": "flowers_group",
+          "file": "quaternius-nature/extracted/glTF/Flower_4_Group.gltf",
+          "height": 0.4
+        }
+      ]
+    },
+    "rock": {
+      "pack": "Quaternius Stylized Nature MegaKit",
+      "license": "CC0-1.0",
+      "height": 0.55,
+      "tint": "#c9c1b4",
+      "tintAmount": 0.3,
+      "roughnessMin": 0.85,
+      "texture": 256,
+      "collider": "none",
+      "models": [
+        {
+          "id": "medium_1",
+          "file": "quaternius-nature/extracted/glTF/Rock_Medium_1.gltf"
+        },
+        {
+          "id": "medium_2",
+          "file": "quaternius-nature/extracted/glTF/Rock_Medium_2.gltf",
+          "height": 0.4
+        },
+        {
+          "id": "medium_3",
+          "file": "quaternius-nature/extracted/glTF/Rock_Medium_3.gltf",
+          "height": 0.7
+        },
+        {
+          "id": "pebble_1",
+          "file": "quaternius-nature/extracted/glTF/Pebble_Round_2.gltf",
+          "height": 0.22
+        },
+        {
+          "id": "pebble_2",
+          "file": "quaternius-nature/extracted/glTF/Pebble_Square_3.gltf",
+          "height": 0.18
+        }
+      ]
+    },
+    "building": {
+      "pack": "Quaternius Downtown City MegaKit",
+      "license": "CC0-1.0",
+      "tint": "#d8cec0",
+      "tintAmount": 0.14,
+      "roughnessMin": 0.62,
+      "metalnessMax": 0.08,
+      "texture": 1024,
+      "collider": "box",
+      "models": [
+        {
+          "id": "large",
+          "file": "quaternius-city/extracted/Exports/glTF (Godot)/Building_Large_2.gltf",
+          "height": 27
+        },
+        {
+          "id": "medium",
+          "file": "quaternius-city/extracted/Exports/glTF (Godot)/Building_Medium_2_001.gltf",
+          "height": 17
+        },
+        {
+          "id": "small",
+          "file": "quaternius-city/extracted/Exports/glTF (Godot)/Building_Small_1.gltf",
+          "height": 11.5
+        }
+      ],
+      "vertexColor": false,
+      "$comment": "vertexColor falso: o kit de cidade guarda uma máscara de desgaste no COLOR_0, quase preta. Multiplicada no albedo, pinta o prédio inteiro de preto."
+    }
+  }
+}

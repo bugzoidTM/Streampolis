@@ -150,6 +150,84 @@ O que já está certo e não deve ser mexido: proporção (1,67 m), presets de c
 que mudam silhueta de verdade, e o pipeline de vestir — que valida posse antes
 de deixar usar (SPECs §68).
 
+### Assets de terceiros — o passe, e a experiência da praça
+
+A vegetação era volumosa e repetitiva, os prédios eram blocos com fachada
+pintada, o piso quadriculado dominava o quadro e o personagem era pequeno
+demais na composição. Nada disso é problema de tecnologia: é **qualidade e
+coerência de asset**. O que faltava não era reconstruir o visual — era parar de
+gerar quase tudo proceduralmente e usar assets profissionais bem escolhidos
+dentro do pipeline Three.js que já existe.
+
+**A regra: nenhum asset entra no jogo sem passar pelo passe.**
+`tools/assets/pass.mjs` faz sete coisas, e é o conjunto delas que impede a
+colagem — ninguém deve conseguir dizer "esse prédio é Quaternius e esse banco é
+Kenney":
+
+1. **escala** medida e reescalada para metros, a unidade do resto do jogo;
+2. **origem** apoiada no chão e centrada na planta;
+3. **paleta** puxada para a cor da família por `baseColorFactor`, o que
+   preserva a variação interna da textura e move só o matiz;
+4. **material** trazido para a faixa do jogo (nada aqui é espelho) e emissivo
+   de terceiro zerado;
+5. **otimização** — dedup, weld, join, prune, textura no teto da família;
+6. **empacotamento** — um GLB **por família**, cada variante um nó nomeado.
+   Treze árvores em treze arquivos são treze requisições e treze cópias do
+   mesmo atlas de casca;
+7. **colisão** simplificada por variante, escrita no catálogo. A malha nunca
+   entra na física.
+
+`assets/curation.json` é onde as decisões de arte moram — quais modelos, que
+altura, que tinte, que peso no sorteio. O cliente (`game/assets/AssetLibrary`)
+só assa cada variante nos mesmos `Prop` que o resto do mundo usa, e daí em
+diante um modelo baixado custa o mesmo que um prop procedural: um draw call
+instanciado por material.
+
+**Origem e licença.** Vegetação e prédios da praça são Quaternius (a versão
+gratuita dos dois MegaKits declara CC0 1.0 no próprio `.txt` do pacote); o HDRI
+é Poly Haven (CC0). O **download não fica no git**: a QAL da Quaternius e a
+licença padrão do Fab permitem incorporar o asset num jogo e proíbem
+redistribuí-lo como asset solto, e um repositório público cheio de `.glb`
+avulsos é exatamente isso. O git guarda `assets/manifest.json`, a curadoria, a
+cópia da licença e o passe; `npm run assets` baixa e reconstrói. `LICENSES.txt`
+é gerado junto do build, para a procedência viajar com o jogo.
+
+**A experiência (`npm run plaza:ab`).** A mesma praça — mesmo layout, mesma
+colisão, mesmo gameplay — capturada com `?assets=0` e `?assets=1`. Sete
+mudanças, todas do relatório do dono:
+
+| O que mudou | Como |
+|---|---|
+| Vegetação repetitiva | 9 copas modeladas com peso de curadoria + arbustos + pedras, no lugar de 3 carimbos girados 30 vezes |
+| Prédios de bloco | 5 das 14 fatias do anel viraram modelos de verdade |
+| Piso dominando | ladrilho de 1,6 m → 4,0 m e relevo da junta a 26%: chão é fundo, não assunto |
+| Personagem pequeno | câmera 17% mais perto (3,4 m → 2,82 m) |
+| Céu e luz lavados | IBL medido do Poly Haven no lugar do céu analítico, menos preenchimento, mais contraste |
+| Névoa sem profundidade | perspectiva aérea começando antes (55 m → 40 m) |
+| Interface | **não mexida.** Ela já é o alvo |
+
+**O que custa:** 498 → 613 chamadas de desenho e 1,23 → 2,36 milhões de
+triângulos no tier alto. No tier **baixo** a praça continua procedural e no
+**médio** entra só a vegetação — onde o governador de qualidade já cortou
+figurante e sombra, a resposta certa não é uma praça bonita a 12 fps.
+
+**O que ficou de fora, e por quê:**
+
+- **Mixamo** é o próximo salto e é um projeto à parte, não um download: as
+  animações são royalty-free com Adobe ID, mas o esqueleto do Streampolis tem
+  vinte ossos e nenhuma junta de dedo, e o trabalho é o retarget, não o
+  arquivo. Uma praça com gente conversando, olhando o celular e sentando muda a
+  percepção do jogo mais do que qualquer prédio — por isso merece a sua própria
+  leva.
+- **Kenney** (props pequenos, ruas, mobiliário urbano) e **KayKit**
+  (interiores) já estão baixados e catalogados, e entram na segunda leva. Uma
+  cena de cada vez é o que permite julgar se o ganho veio do asset ou do
+  enquadramento.
+- **Fab, Sketchfab, itch geral e OpenGameArt** ficam para hero assets pontuais.
+  A ordem é deliberada: primeiro as bibliotecas onde a licença é sabida de
+  antemão (CC0 ou comercial simples), e só depois as que exigem conferir asset
+  por asset.
+
 ### Praça Central — cor e vida entraram
 - ~~**paleta quente**~~ — calçamento em terracota, rosácea quente no miolo,
   fachadas em família quente e bandeiras em três cores. A saturação alta
@@ -249,6 +327,9 @@ catálogo já tem `floor_*` e `wall_*`, e nada os aplica ainda.
 | `node tools/face-sheet.mjs` | cada preset de rosto, em cada expressão, em vários giros |
 | `node tools/face-sheet.mjs --styles=a,b,c --zoom=1.7` | os estilos de cabelo, de frente, de lado e de costas |
 | `node tools/hand-shot.mjs` | a mão de perto, em três vistas |
+| `npm run assets` | baixa os pacotes e reconstrói `public/assets` pelo passe |
+| `node tools/assets/pass.mjs --inspect` | mede um pacote novo sem transformar nada — é assim que se descobre a altura natural antes de escrever o alvo na curadoria |
+| `npm run plaza:ab` | HOJE × PRAÇA ASSET PASS, mesmo enquadramento, duas capturas |
 
 Uma terceira armadilha entrou na lista com a folha de figura: **`--count=0` na
 URL do laboratório.** Com `count=1` o laboratório já montou um avatar em cena e

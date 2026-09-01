@@ -13,12 +13,19 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "shot": "node tools/shoot.mjs",
-    "gate:avatar": "node tools/avatar-matrix.mjs"
+    "gate:avatar": "node tools/avatar-matrix.mjs",
+    "assets:fetch": "node tools/assets/fetch.mjs",
+    "assets": "node tools/assets/fetch.mjs && node tools/assets/pass.mjs",
+    "plaza:ab": "node tools/plaza-ab.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
-    "playwright": "^1.62.1"
+    "@gltf-transform/core": "^4.5.0",
+    "@gltf-transform/extensions": "^4.5.0",
+    "@gltf-transform/functions": "^4.5.0",
+    "playwright": "^1.62.1",
+    "sharp": "^0.35.4"
   }
 }

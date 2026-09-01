@@ -115,6 +115,77 @@
     Cada uma dessas vontades é uma linha de receita.
   </p>
 
+  <h2><span class="num">00b</span>Praça Asset Pass — a experiência</h2>
+  <p class="lead">
+    A crítica: o jogo estava mais perto de um MMO social low-poly indie do que
+    de um concorrente estilizado de simulador de vida, e o problema não era
+    tecnologia — era <b>qualidade e coerência de asset</b>. Quatro coisas na
+    captura: vegetação volumosa e repetitiva, prédios que eram blocos com
+    fachada pintada, piso quadriculado dominando o quadro, e o personagem
+    pequeno demais na composição.
+  </p>
+  <p class="lead">
+    A experiência responde com a MESMA praça: mesmo layout, mesma colisão,
+    mesmo gameplay. O que muda é o que está desenhado nela.
+    <code>?assets=0</code> desenha a praça procedural; <code>?assets=1</code>
+    desenha a que passou pelo passe. As duas capturas abaixo saem do mesmo
+    comando, no mesmo enquadramento, com um recarregamento entre elas.
+  </p>
+  <div class="pair">
+    <figure>
+      <img src="ab-praca-hoje.jpg" alt="Praça procedural, antes do passe de assets">
+      <figcaption><b><span class="tag tag--hoje">Procedural</span></b>
+        Três carimbos de copa girados trinta vezes, catorze fachadas de caixa
+        com janela pintada, e um ladrilho de 1,6 m com junta funda cobrindo
+        metade do quadro.</figcaption>
+    </figure>
+    <figure>
+      <img src="ab-praca-pass.jpg" alt="Praça com os assets que passaram pelo passe">
+      <figcaption><b><span class="tag tag--alvo">Asset Pass</span></b>
+        Nove copas modeladas com peso de curadoria, cinco prédios de verdade no
+        anel, IBL medido no lugar do céu analítico, ladrilho de 4 m com relevo a
+        26% e a câmera 17% mais perto do personagem.</figcaption>
+    </figure>
+  </div>
+  <div class="pair" style="margin-top:16px">
+    <figure>
+      <img src="ab-horizonte-hoje.jpg" alt="Rua da praça, procedural">
+      <figcaption><b><span class="tag tag--hoje">Procedural</span></b>
+        O horizonte lava: fachada clara, céu claro, sombra rasa. Sem
+        profundidade, tudo cai no mesmo plano.</figcaption>
+    </figure>
+    <figure>
+      <img src="ab-horizonte-pass.jpg" alt="Rua da praça, com o passe de assets">
+      <figcaption><b><span class="tag tag--alvo">Asset Pass</span></b>
+        Tijolo, cornija, vitrine e toldo dão escala ao quarteirão; a luz medida
+        separa o que está perto do que está longe.</figcaption>
+    </figure>
+  </div>
+  <ul class="gap">
+    <li><b>Nenhum asset entra sem passar pelo passe.</b> Escala em metros,
+      origem apoiada no chão e centrada, paleta puxada para a da família,
+      rugosidade trazida para a faixa do jogo, textura reduzida ao teto, um GLB
+      por família com cada variante como nó nomeado, e um colisor simplificado
+      no catálogo. É o que faz sete pacotes com sete escalas e sete paletas
+      pararem de parecer uma colagem.</li>
+    <li><b>Origem e licença viajam com o build.</b> Vegetação e prédios são
+      Quaternius (CC0 na versão gratuita, declarado no .txt de cada pacote), o
+      HDRI é Poly Haven (CC0). O download NÃO fica no git — a QAL da Quaternius
+      e a licença padrão do Fab permitem incorporar num jogo e proíbem
+      redistribuir o asset solto, e um repositório público de .glb avulsos é
+      exatamente isso. O git guarda a lista, a curadoria, a licença e o passe;
+      <code>npm run assets</code> busca e reconstrói.</li>
+    <li><b>O que custa.</b> 498 → 613 chamadas de desenho e 1,23 → 2,36 milhões
+      de triângulos no tier alto. No tier baixo a praça continua procedural, e
+      no médio entram só a vegetação: onde o governador de qualidade já cortou
+      figurante e sombra, a resposta certa não é uma praça bonita a 12 fps.</li>
+    <li><b>O que ainda não entrou.</b> Animação de Mixamo para os figurantes —
+      é o próximo salto e é um projeto à parte: o esqueleto do Streampolis tem
+      vinte ossos e nenhuma junta de dedo, e retargetar sem isso é o trabalho,
+      não o download. Props pequenos (Kenney) e interiores (KayKit) ficam para
+      a segunda leva, pela mesma razão de coerência: uma cena de cada vez.</li>
+  </ul>
+
   <h2><span class="num">01</span>Personagem</h2>
   <p class="lead">
     Era aqui a maior distância. Quatro entregas depois — costura do corpo,

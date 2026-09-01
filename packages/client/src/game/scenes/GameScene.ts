@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { resolveCollision, type Area, type Collider, type SceneId } from '@streampolis/shared';
 import type { Framing } from '../CameraManager.js';
 import type { GradeLook } from '../Renderer.js';
+import type { QualityTier } from '../QualityManager.js';
 import {
   Environment, InteriorRig, ROOM_DAY,
   type InteriorParams, type LightRig, type SkyParams,
@@ -22,7 +23,7 @@ export interface GameScene {
   readonly framing: Framing;
   /** Longest the camera boom may get here; a small flat cannot afford 9 m. */
   readonly maxBoom: number;
-  build(renderer: THREE.WebGLRenderer): Promise<void>;
+  build(renderer: THREE.WebGLRenderer, tier?: QualityTier): Promise<void>;
   update(dt: number, camera: THREE.Camera): void;
   /**
    * Enche a cena de figurantes, com o orçamento que o governador de qualidade
@@ -65,7 +66,13 @@ export abstract class SceneBase implements GameScene {
   private geometries = new Set<THREE.BufferGeometry>();
   private extraDisposables: Array<{ dispose(): void }> = [];
 
-  abstract build(renderer: THREE.WebGLRenderer): Promise<void>;
+  /**
+   * `tier` chega aqui porque o custo de um asset importado é decisão do
+   * governador de qualidade, do mesmo jeito que o número de figurantes é: uma
+   * praça com dez copas modeladas é bonita num desktop e é 12 fps num celular
+   * antigo, e a resposta certa lá é a geometria procedural, não menos praça.
+   */
+  abstract build(renderer: THREE.WebGLRenderer, tier?: QualityTier): Promise<void>;
 
   /** Adds a mesh to the scene and takes ownership of its geometry. */
   protected add<T extends THREE.Object3D>(obj: T, parent: THREE.Object3D = this.scene): T {

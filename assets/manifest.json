@@ -1,0 +1,93 @@
+{
+  "$comment": "Onde cada pacote de asset vem, e sob que licença. O download fica FORA do git (assets/vendor/ é ignorado): a QAL da Quaternius e a licença padrão do Fab permitem incorporar o asset num jogo mas proíbem redistribuí-lo como asset solto, e um repositório público de .glb soltos é exatamente isso. O que entra no git é esta lista, a cópia da licença e o passe que transforma o asset em Streampolis.",
+  "packs": [
+    {
+      "id": "kenney-nature",
+      "name": "Kenney Nature Kit",
+      "source": "kenney",
+      "page": "https://kenney.nl/assets/nature-kit",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "árvores, arbustos, pedras e plantas de complemento"
+    },
+    {
+      "id": "kenney-city",
+      "name": "Kenney City Kit (Commercial)",
+      "source": "kenney",
+      "page": "https://kenney.nl/assets/city-kit-commercial",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "fachadas comerciais e blocos de rua"
+    },
+    {
+      "id": "kenney-city-roads",
+      "name": "Kenney City Kit (Roads)",
+      "source": "kenney",
+      "page": "https://kenney.nl/assets/city-kit-roads",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "ruas, calçadas e faixas"
+    },
+    {
+      "id": "kenney-furniture",
+      "name": "Kenney Furniture Kit",
+      "source": "kenney",
+      "page": "https://kenney.nl/assets/furniture-kit",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "mobiliário do apartamento"
+    },
+    {
+      "id": "quaternius-nature",
+      "name": "Quaternius Stylized Nature MegaKit",
+      "source": "itch",
+      "itchUser": "quaternius",
+      "itchGame": "stylized-nature-megakit",
+      "page": "https://quaternius.com/packs/stylizednaturemegakit.html",
+      "license": "CC0-1.0 (declarada na página do pacote)",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "identidade da vegetação da praça"
+    },
+    {
+      "id": "quaternius-city",
+      "name": "Quaternius Downtown City MegaKit",
+      "source": "itch",
+      "itchUser": "quaternius",
+      "itchGame": "downtown-city-megakit",
+      "page": "https://quaternius.com/packs/downtowncitymegakit.html",
+      "license": "verificar na página do pacote (QAL de 28/08/2026 ou CC0)",
+      "licenseUrl": "https://quaternius.com/license.html",
+      "use": "identidade principal dos prédios"
+    },
+    {
+      "id": "kaykit-city",
+      "name": "KayKit City Builder Bits",
+      "source": "itch",
+      "itchUser": "kaylousberg",
+      "itchGame": "city-builder-bits",
+      "page": "https://kaylousberg.itch.io/city-builder-bits",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "props urbanos de apoio"
+    },
+    {
+      "id": "kaykit-furniture",
+      "name": "KayKit Furniture Bits",
+      "source": "itch",
+      "itchUser": "kaylousberg",
+      "itchGame": "furniture-bits",
+      "page": "https://kaylousberg.itch.io/furniture-bits",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "interiores do apartamento"
+    }
+  ],
+  "hdris": [
+    {
+      "id": "kloofendal_48d_partly_cloudy_puresky",
+      "res": "1k",
+      "license": "CC0-1.0",
+      "use": "IBL de dia da praça"
+    }
+  ]
+}

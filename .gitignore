@@ -5,3 +5,6 @@ dist/
 *.log
 shots/
 .vite/
+
+assets/vendor/
+packages/client/public/assets/

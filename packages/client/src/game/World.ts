@@ -116,7 +116,7 @@ export class World {
     }
 
     const scene = createScene(this.sceneId);
-    await scene.build(this.renderer.webgl);
+    await scene.build(this.renderer.webgl, this.renderer.quality.settings.tier);
     this.scene = scene;
     this.renderer.attach(scene.scene, this.camera.camera, scene.look);
     // Snapshot of the static world, taken before any avatar exists. Handing

@@ -17,7 +17,10 @@ export interface FramingDef {
 
 export const FRAMINGS: Record<Framing, FramingDef> = {
   // 50 mm equivalent: natural, no perspective distortion on the face.
-  default:   { fov: 39, distance: 3.4, targetY: 1.15, pitch: 0.16, offsetX: 0.18 },
+  // 17% mais perto do que era. O personagem é o produto — é nele que o
+  // jogador gasta dinheiro — e a 3,4 m ele ocupava um décimo da altura do
+  // quadro numa praça de 26 m de raio: o cenário ganhava a composição.
+  default:   { fov: 39, distance: 2.82, targetY: 1.12, pitch: 0.14, offsetX: 0.16 },
   // 85 mm portrait lens pulled in tight.
   close:     { fov: 26, distance: 1.9, targetY: 1.46, pitch: 0.06, offsetX: 0.10 },
   full_body: { fov: 36, distance: 4.6, targetY: 0.94, pitch: 0.12, offsetX: 0.14 },
@@ -63,7 +66,7 @@ export class CameraManager {
 
   yaw = 0;
   pitch = 0.18;
-  distance = 3.4;
+  distance = 2.82;
 
   /** Objects the camera must not pass through; usually the scene's colliders. */
   obstacles: THREE.Object3D[] = [];

@@ -44,8 +44,8 @@ export class MatLib {
 
   // --- Ground -------------------------------------------------------------
 
-  paving(tint = '#b9b3aa', grout = '#5f5b55') {
-    return this.surface(`paving-${tint}-${grout}`, pavingTile(512, 1, tint, grout), { roughness: 1 });
+  paving(tint = '#b9b3aa', grout = '#5f5b55', relief = 1) {
+    return this.surface(`paving-${tint}-${grout}-${relief}`, pavingTile(512, 1, tint, grout, relief), { roughness: 1 });
   }
 
   concrete(tint = '#9a9a9b') {

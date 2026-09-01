@@ -227,12 +227,19 @@ export function concrete(size = 512, repeat = 8, tint = '#9a9a9b'): SurfaceMaps 
   });
 }
 
-export function pavingTile(size = 512, repeat = 10, tint = '#b9b3aa', grout = '#5f5b55'): SurfaceMaps {
+/**
+ * `relief` escala o quanto a junta afunda — normal e oclusão juntos.
+ *
+ * A 1.0 o ladrilho tem uma junta profunda, o que é ótimo num corredor e
+ * péssimo numa praça: a grade passa a ter mais contraste que qualquer coisa em
+ * pé sobre ela e domina o quadro. Chão é fundo, não assunto.
+ */
+export function pavingTile(size = 512, repeat = 10, tint = '#b9b3aa', grout = '#5f5b55', relief = 1): SurfaceMaps {
   const base = hexRgb(tint);
   const groutC = hexRgb(grout);
   const n = 4; // tiles per texture side
-  return bake(`paving-${tint}-${repeat}`, size, repeat, {
-    normalStrength: 46, aoStrength: 3.0,
+  return bake(`paving-${tint}-${grout}-${repeat}-${relief}`, size, repeat, {
+    normalStrength: 46 * relief, aoStrength: 3.0 * relief,
     height: (u, v) => {
       const fu = (u * n) % 1;
       const fv = (v * n) % 1;
@@ -249,7 +256,9 @@ export function pavingTile(size = 512, repeat = 10, tint = '#b9b3aa', grout = '#
       const speck = fbm(u * 260, v * 260, 3, 64) * 0.5 + 0.5;
       const stone = mix(base, [speck * 0.9, speck * 0.88, speck * 0.84], 0.22);
       const c: Rgb = [stone[0] * tone, stone[1] * tone, stone[2] * tone];
-      return mix(groutC, c, Math.min(1, h * 1.4));
+      // A junta também clareia com o relevo baixo: uma linha escura desenhada
+      // no albedo continua desenhada, por mais raso que fique o sulco.
+      return mix(groutC, c, Math.min(1, h * (1.4 + (1 - relief) * 1.6)));
     },
     roughness: (_u, _v, h) => 0.62 + (1 - h) * 0.3,
   });

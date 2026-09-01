@@ -73,6 +73,8 @@ export class Environment implements LightRig {
   private envRT: THREE.WebGLRenderTarget | null = null;
   private csm: CSM | null = null;
   private params: SkyParams;
+  /** IBL medido, quando a cena tem um; senão o céu procedural faz o papel. */
+  private hdri: THREE.DataTexture | null = null;
 
   constructor(
     private scene: THREE.Scene,
@@ -184,9 +186,34 @@ export class Environment implements LightRig {
     this.refreshEnvironment();
   }
 
+  /**
+   * Troca a fonte do IBL por um HDRI medido (Poly Haven, CC0).
+   *
+   * O céu procedural é um gradiente analítico: acerta a direção do sol e a cor
+   * do horizonte, mas devolve luz de rebote quase neutra, e é daí que vem a
+   * sensação de "lavado" — tudo recebe a mesma luz cinza de todos os lados. Um
+   * HDRI de verdade traz céu frio em cima, chão quente embaixo e nuvem de um
+   * lado só, e é essa DIFERENÇA entre as direções que reaparece como
+   * profundidade em cada superfície da cena.
+   *
+   * O céu visível continua sendo o procedural: ele acompanha o horário e o sol
+   * que projeta a sombra. O HDRI entra só como luz.
+   */
+  useHdri(tex: THREE.DataTexture | null) {
+    this.hdri?.dispose();
+    this.hdri = tex;
+    if (tex) tex.mapping = THREE.EquirectangularReflectionMapping;
+    this.refreshEnvironment();
+  }
+
   /** Re-bakes the IBL. Costly, so only called when the sky itself changes. */
   refreshEnvironment() {
     this.envRT?.dispose();
+    if (this.hdri) {
+      this.envRT = this.pmrem.fromEquirectangular(this.hdri);
+      this.scene.environment = this.envRT.texture;
+      return;
+    }
     // PMREM must see only the sky, not the populated world.
     const capture = new THREE.Scene();
     const skyClone = this.sky.clone() as Sky;
@@ -212,6 +239,8 @@ export class Environment implements LightRig {
   dispose() {
     this.disableCascades();
     this.envRT?.dispose();
+    this.hdri?.dispose();
+    this.hdri = null;
     this.pmrem.dispose();
     this.scene.remove(this.sky, this.sun, this.sun.target, this.hemi);
     this.sky.geometry.dispose();
