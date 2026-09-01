@@ -178,6 +178,55 @@ export class AssetLibrary {
     return this.catalog.get(`${family}/${id}`);
   }
 
+  /**
+   * Uma cópia da variante, escalada para caber num alvo em metros.
+   *
+   * Sempre uma CÓPIA, nunca o `Prop` guardado: quem chama assa, instancia e
+   * depois chama `disposeProp` — e liberar a geometria compartilhada da
+   * biblioteca deixaria a próxima sala sem móvel nenhum. O material continua
+   * sendo o mesmo objeto, que é o ponto: dez móveis do mesmo pacote são um
+   * material só e, portanto, um draw call por peça e não por parte.
+   *
+   * `uniform` é o padrão porque escala não uniforme distorce: um sofá 30% mais
+   * estreito e não mais raso vira um sofá de brinquedo. Tapete é a exceção — é
+   * um retângulo, e um retângulo pode ser esticado.
+   */
+  fitted(
+    family: string,
+    id: string,
+    target: { w?: number; h?: number; d?: number },
+    mode: 'uniform' | 'stretch' = 'uniform',
+  ): Prop | null {
+    const source = this.prop(family, id);
+    const item = this.item(family, id);
+    if (!source || !item) return null;
+
+    const axis = [
+      target.w && item.size[0] > 1e-4 ? target.w / item.size[0] : null,
+      target.h && item.size[1] > 1e-4 ? target.h / item.size[1] : null,
+      target.d && item.size[2] > 1e-4 ? target.d / item.size[2] : null,
+    ];
+    let k: [number, number, number];
+    if (mode === 'stretch') {
+      const fallback = axis.find((v) => v != null) ?? 1;
+      k = axis.map((v) => v ?? fallback) as [number, number, number];
+    } else {
+      // O MENOR dos fatores pedidos: o modelo tem de caber no bloqueador que o
+      // servidor conhece, e nunca transbordar dele.
+      const declared = axis.filter((v): v is number => v != null);
+      const u = declared.length ? Math.min(...declared) : 1;
+      k = [u, u, u];
+    }
+
+    const m = new THREE.Matrix4().makeScale(k[0], k[1], k[2]);
+    return source.map((part) => {
+      const geo = part.geo.clone();
+      geo.applyMatrix4(m);
+      geo.computeBoundingSphere();
+      return { ...part, geo };
+    });
+  }
+
   /** Todo material carregado, para a cena registrá-los nas sombras em cascata. */
   materials(): THREE.Material[] {
     return this.disposables.filter((d): d is THREE.Material => (d as THREE.Material).isMaterial === true);

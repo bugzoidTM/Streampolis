@@ -16,7 +16,8 @@
     "gate:avatar": "node tools/avatar-matrix.mjs",
     "assets:fetch": "node tools/assets/fetch.mjs",
     "assets": "node tools/assets/fetch.mjs && node tools/assets/pass.mjs",
-    "plaza:ab": "node tools/plaza-ab.mjs"
+    "plaza:ab": "node tools/scene-ab.mjs --query=scene=central_plaza --out=shots/ab-praca",
+    "home:ab": "node tools/scene-ab.mjs --out=shots/ab-apto"
   },
   "engines": {
     "node": ">=22"

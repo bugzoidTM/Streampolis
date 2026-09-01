@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 /** Named framings the viewer can pick during a live (PRD §12). */
-export type Framing = 'default' | 'close' | 'full_body' | 'room';
+export type Framing = 'default' | 'close' | 'full_body' | 'room' | 'interior';
 
 export interface FramingDef {
   /** Vertical field of view in degrees. A long lens flatters faces. */
@@ -26,6 +26,12 @@ export const FRAMINGS: Record<Framing, FramingDef> = {
   full_body: { fov: 36, distance: 4.6, targetY: 0.94, pitch: 0.12, offsetX: 0.14 },
   // Wider, but kept off 60+ so the room does not bow at the edges.
   room:      { fov: 52, distance: 7.2, targetY: 1.05, pitch: 0.22, offsetX: 0.0 },
+  // Um quarto não é uma praça. Aproximar a câmera resolveu a composição ao ar
+  // livre — o personagem ocupava um décimo do quadro num raio de 26 m — e
+  // estragou a de dentro, onde ele já é grande e o que falta ver é a MOBÍLIA
+  // que a pessoa comprou. Mais campo e um pouco mais de recuo, dentro do que o
+  // braço curto de um interior admite.
+  interior:  { fov: 46, distance: 3.9, targetY: 1.06, pitch: 0.17, offsetX: 0.10 },
 };
 
 export interface CameraLimits {

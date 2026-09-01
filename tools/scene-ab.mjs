@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * HOJE × PRAÇA ASSET PASS: a mesma praça, o mesmo layout e a mesma colisão,
+ * HOJE × ASSET PASS: a mesma cena, o mesmo layout e a mesma colisão,
  * capturados duas vezes — `?assets=0` procedural e `?assets=1` com os modelos
  * que passaram pelo passe.
  *
@@ -8,7 +8,8 @@
  * captura de antes e outra de depois, no MESMO enquadramento, é a única forma
  * de responder se o pipeline de assets vale a manutenção que cobra.
  *
- *   node tools/plaza-ab.mjs [--out=shots/ab] [--tier=high]
+ *   node tools/scene-ab.mjs [--query=scene=central_plaza] [--out=shots/ab]
+ *                           [--walk=2600] [--look=yaw,pitch,dist] [--tier=high]
  */
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -26,6 +27,7 @@ const TIER = args.tier ?? 'high';
 const W = Number(args.w ?? 1100);
 const H = Number(args.h ?? 619);
 const SETTLE = Number(args.settle ?? 13000);
+const QUERY = args.query ?? 'scene=central_plaza';
 
 const res = await fetch(`${API}/auth/dev-login`, {
   method: 'POST',
@@ -49,7 +51,7 @@ for (const [name, assets] of [['hoje', '0'], ['pass', '1']]) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
-  const url = `${CLIENT}/?scene=central_plaza&token=${token}&tier=${TIER}&assets=${assets}`;
+  const url = `${CLIENT}/?${QUERY}&token=${token}&tier=${TIER}&assets=${assets}`;
   await page.goto(url, { waitUntil: 'networkidle', timeout: 90_000 });
   try {
     await page.waitForFunction(() => window.__ready === true, { timeout: 120_000 });
@@ -64,6 +66,23 @@ for (const [name, assets] of [['hoje', '0'], ['pass', '1']]) {
     await page.waitForTimeout(Number(args.walk));
     await page.keyboard.up('KeyW');
     await page.waitForTimeout(2500);
+  }
+
+  if (args.framing) {
+    await page.evaluate((f) => window.__world?.camera?.setFraming(f, true), args.framing);
+    await page.waitForTimeout(2500);
+  }
+
+  // Afastar pela RODA, não escrevendo `distance`: o braço da câmera tem
+  // colisão, e num quarto de 8×7 m escrever a distância à mão põe a câmera do
+  // lado de fora da parede. A roda respeita o limite; escrever, não.
+  if (args.zoom) {
+    for (let i = 0; i < Number(args.zoom); i++) {
+      await page.mouse.move(W / 2, H / 2);
+      await page.mouse.wheel(0, 120);
+      await page.waitForTimeout(60);
+    }
+    await page.waitForTimeout(1800);
   }
 
   // Uma segunda vista, olhando para o anel de prédios: o enquadramento padrão

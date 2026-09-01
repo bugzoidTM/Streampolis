@@ -184,6 +184,229 @@
       ],
       "vertexColor": false,
       "$comment": "vertexColor falso: o kit de cidade guarda uma máscara de desgaste no COLOR_0, quase preta. Multiplicada no albedo, pinta o prédio inteiro de preto."
+    },
+    "furniture": {
+      "pack": "KayKit Furniture Bits",
+      "license": "CC0-1.0",
+      "roughnessMin": 0.6,
+      "metalnessMax": 0.05,
+      "texture": 512,
+      "collider": "box",
+      "vertexColor": false,
+      "models": [
+        {
+          "id": "sofa",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/couch_pillows.gltf",
+          "size": [
+            1.92,
+            0.8,
+            0.9
+          ]
+        },
+        {
+          "id": "sofa_plain",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/couch.gltf",
+          "size": [
+            1.92,
+            0.8,
+            0.9
+          ]
+        },
+        {
+          "id": "armchair",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/armchair_pillows.gltf",
+          "size": [
+            0.96,
+            0.82,
+            0.9
+          ]
+        },
+        {
+          "id": "chair",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/chair_A_wood.gltf",
+          "size": [
+            0.5,
+            0.92,
+            0.55
+          ]
+        },
+        {
+          "id": "coffee_table",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/table_low.gltf",
+          "size": [
+            1.1,
+            0.42,
+            0.6
+          ]
+        },
+        {
+          "id": "desk",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/table_medium_long.gltf",
+          "size": [
+            1.4,
+            0.75,
+            0.7
+          ]
+        },
+        {
+          "id": "table",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/table_medium.gltf",
+          "size": [
+            1.6,
+            0.75,
+            0.95
+          ]
+        },
+        {
+          "id": "shelf",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/shelf_B_large_decorated.gltf",
+          "size": [
+            1.2,
+            1.9,
+            0.34
+          ]
+        },
+        {
+          "id": "shelf_small",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/shelf_B_small.gltf",
+          "size": [
+            0.9,
+            0.95,
+            0.3
+          ]
+        },
+        {
+          "id": "cabinet",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/cabinet_medium_decorated.gltf",
+          "size": [
+            1.1,
+            0.85,
+            0.45
+          ]
+        },
+        {
+          "id": "bed",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/bed_double_A.gltf",
+          "size": [
+            1.45,
+            0.85,
+            2.05
+          ]
+        },
+        {
+          "id": "bed_plain",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/bed_double_B.gltf",
+          "size": [
+            1.45,
+            0.85,
+            2.05
+          ]
+        },
+        {
+          "id": "rug",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/rug_rectangle_A.gltf",
+          "size": [
+            1.8,
+            0.02,
+            1.2
+          ]
+        },
+        {
+          "id": "rug_stripes",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/rug_rectangle_stripes_A.gltf",
+          "size": [
+            1.8,
+            0.02,
+            1.2
+          ]
+        },
+        {
+          "id": "rug_oval",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/rug_oval_A.gltf",
+          "size": [
+            1.8,
+            0.02,
+            1.2
+          ]
+        },
+        {
+          "id": "pot_plant",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/cactus_small_A.gltf",
+          "size": [
+            0.34,
+            0.46,
+            0.34
+          ]
+        },
+        {
+          "id": "plant_tall",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/cactus_medium_A.gltf",
+          "size": [
+            0.52,
+            1.15,
+            0.52
+          ]
+        },
+        {
+          "id": "floor_lamp",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/lamp_standing.gltf",
+          "size": [
+            0.4,
+            1.58,
+            0.4
+          ]
+        },
+        {
+          "id": "table_lamp",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/lamp_table.gltf",
+          "size": [
+            0.3,
+            0.48,
+            0.3
+          ]
+        },
+        {
+          "id": "wall_art",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/pictureframe_large_A.gltf",
+          "size": [
+            0.7,
+            0.9,
+            0.05
+          ]
+        },
+        {
+          "id": "wall_art_wide",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/pictureframe_medium.gltf",
+          "size": [
+            0.55,
+            0.7,
+            0.05
+          ]
+        },
+        {
+          "id": "books",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/book_set.gltf",
+          "size": [
+            0.3,
+            0.19,
+            0.14
+          ]
+        },
+        {
+          "id": "pillow",
+          "file": "kaykit-furniture/extracted/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/pillow_A.gltf",
+          "size": [
+            0.48,
+            0.14,
+            0.34
+          ]
+        }
+      ],
+      "$comment": "KayKit é autorado grosso de propósito e numa escala própria: o sofá tem 3 m e a luminária 2,5 m. Cada modelo declara aqui o tamanho REAL em metros, com escala não uniforme onde a proporção do pacote não bate — esticar 15% em Y numa mesa baixa é invisível, e escalar tudo pela largura entrega uma mesa de 23 cm de altura. O `modulate` puxa o atlas inteiro para a paleta: a cor mora na textura, não no material, então um tinte por `baseColorFactor` sobre um sofá amarelo devolveria marrom.",
+      "modulate": {
+        "saturation": 0.9,
+        "brightness": 0.93
+      }
     }
   }
 }

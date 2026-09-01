@@ -182,13 +182,29 @@ async function buildFamily(name, spec) {
     // Scale to the declared metre size, then stand it on the floor with its
     // footprint centred: placement code should never have to know that one
     // exporter wrote its origin at the roof.
-    const target = entry.height ?? spec.height;
-    const k = target ? target / Math.max(1e-4, size[1]) : (entry.scale ?? 1);
-    wrapper.setScale([k, k, k]);
+    //
+    // `size: [w, h, d]` permite escala NÃO uniforme, com `null` em qualquer
+    // eixo para ele seguir os outros. Mobília precisa disso: o KayKit é
+    // autorado grosso de propósito — o sofá dele tem a proporção certa e a mesa
+    // de jantar tem 1 m de altura para 3 m de largura. Esticar 15% em Y numa
+    // mesa baixa é invisível; escalar tudo pela largura entrega uma mesa de
+    // 23 cm, e pela altura, uma de 2 m de largura.
+    const per = entry.size ?? spec.size ?? null;
+    let k = [1, 1, 1];
+    if (per) {
+      const uniform = per.map((v, i) => (v == null ? null : v / Math.max(1e-4, size[i])));
+      const fallback = uniform.find((v) => v != null) ?? 1;
+      k = uniform.map((v) => v ?? fallback);
+    } else {
+      const target = entry.height ?? spec.height;
+      const u = target ? target / Math.max(1e-4, size[1]) : (entry.scale ?? 1);
+      k = [u, u, u];
+    }
+    wrapper.setScale(k);
     wrapper.setTranslation([
-      -((b.min[0] + b.max[0]) / 2) * k,
-      -b.min[1] * k,
-      -((b.min[2] + b.max[2]) / 2) * k,
+      -((b.min[0] + b.max[0]) / 2) * k[0],
+      -b.min[1] * k[1],
+      -((b.min[2] + b.max[2]) / 2) * k[2],
     ]);
 
     doc.getRoot().listScenes().forEach((s) => s.dispose());
@@ -210,13 +226,13 @@ async function buildFamily(name, spec) {
       weight: entry.weight ?? 1,
       pack: entry.pack ?? spec.pack,
       license: entry.license ?? spec.license,
-      size: [size[0] * k, size[1] * k, size[2] * k].map((v) => +v.toFixed(3)),
+      size: [size[0] * k[0], size[1] * k[1], size[2] * k[2]].map((v) => +v.toFixed(3)),
       // Colisão simplificada: um cilindro pela pegada, que é tudo que um
       // jogador precisa não atravessar. A malha não entra na física.
       collider: entry.collider ?? {
         kind: spec.collider ?? 'none',
-        radius: +(Math.max(size[0], size[2]) * k * 0.5 * (spec.colliderScale ?? 1)).toFixed(3),
-        height: +(size[1] * k).toFixed(3),
+        radius: +(Math.max(size[0] * k[0], size[2] * k[2]) * 0.5 * (spec.colliderScale ?? 1)).toFixed(3),
+        height: +(size[1] * k[1]).toFixed(3),
       },
     });
   }
@@ -231,6 +247,23 @@ async function buildFamily(name, spec) {
     textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [spec.texture ?? 512, spec.texture ?? 512] }),
   );
 
+  // Recolorir o atlas, quando a família pede. É a única forma de puxar um
+  // pacote inteiro para a paleta: o KayKit pinta a cor no atlas, não no
+  // material, e um `baseColorFactor` azul sobre um sofá amarelo devolve
+  // marrom. Modular saturação e matiz preserva o desenho e move o pacote todo
+  // junto — que é o que "recolorido para manter a identidade" quer dizer.
+  if (spec.modulate) {
+    for (const tex of family.getRoot().listTextures()) {
+      const image = tex.getImage();
+      if (!image) continue;
+      const out = await sharp(Buffer.from(image))
+        .modulate(spec.modulate)
+        .webp({ quality: 90 })
+        .toBuffer();
+      tex.setImage(new Uint8Array(out)).setMimeType('image/webp');
+    }
+  }
+
   await mkdir(OUT, { recursive: true });
   const glb = await io.writeBinary(family);
   await writeFile(path.join(OUT, `${name}.glb`), glb);
@@ -239,11 +272,21 @@ async function buildFamily(name, spec) {
 }
 
 const curation = JSON.parse(await readFile(path.join(ROOT, 'assets/curation.json'), 'utf8'));
-if (!inspect) await rm(OUT, { recursive: true, force: true });
+// `--only` NÃO limpa a pasta: limpar apagava as outras famílias e o catálogo
+// saía com um item só, o que só se descobre quando a praça fica sem árvore.
+if (!inspect && !only) await rm(OUT, { recursive: true, force: true });
 
 const catalog = [];
 for (const [name, spec] of Object.entries(curation.families)) {
-  if (only && !only.has(name)) continue;
+  if (only && !only.has(name)) {
+    // Uma família que não foi reconstruída ainda precisa constar do catálogo,
+    // senão o `--only` publica um catálogo que esquece o resto do mundo.
+    try {
+      const old = JSON.parse(await readFile(path.join(OUT, 'catalog.json'), 'utf8'));
+      catalog.push(...old.items.filter((i) => i.family === name));
+    } catch { /* primeira execução */ }
+    continue;
+  }
   const rows = await buildFamily(name, spec);
   if (rows) catalog.push(...rows);
 }

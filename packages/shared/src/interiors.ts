@@ -63,6 +63,13 @@ export interface Fixture extends Omit<Placement, 'ry'> {
   d?: number;
   tint?: string;
   color?: number;
+  /**
+   * Item da loja que gerou esta peça, quando ela veio de um `PLACEABLE`.
+   * Serve para o cliente escolher a VARIANTE do modelo: dois sofás do
+   * catálogo com o mesmo `kind` precisam continuar sendo dois sofás
+   * diferentes, e o pacote já traz a variedade que a cor por item dava.
+   */
+  item?: string;
   /** Aim point for spotlights, in world coordinates. */
   aim?: [number, number, number];
 }
@@ -123,6 +130,19 @@ export const APARTMENT: SceneLayout = {
     { kind: 'ceiling_lamp', x: 1.6, z: 3.0, y: 2.85 },
     { kind: 'wall_art', x: -3.49, z: 0.4, ry: PI / 2, y: 1.6, w: 0.7, h: 0.9, color: 0x8ea9c4 },
     { kind: 'wall_art', x: -3.49, z: -0.9, ry: PI / 2, y: 1.55, w: 0.55, h: 0.7, color: 0xc48ea0 },
+
+    // Miudezas. Uma sala com sofá, mesa e estante está MOBILIADA; o que a faz
+    // parecer HABITADA é o que ninguém arruma — uma almofada torta, livros
+    // largados na mesa de centro, um abajur ao lado da cama. Só desenham com o
+    // passe de assets ligado: são exatamente o tipo de peça que não vale
+    // modelar à mão e que um pacote entrega às dúzias.
+    { kind: 'cabinet', x: -3.16, z: -1.65, ry: PI / 2, hw: 0.23, hd: 0.55, w: 1.1, h: 0.85, d: 0.45 },
+    { kind: 'table_lamp', x: -3.16, z: -1.65, ry: 0.5, y: 0.85 },
+    { kind: 'pillow', x: -3.0, z: 2.02, ry: PI / 2 + 0.3, y: 0.46 },
+    { kind: 'pillow', x: -3.0, z: 0.98, ry: PI / 2 - 0.4, y: 0.46 },
+    { kind: 'books', x: -1.46, z: 1.62, ry: 0.35, y: 0.42, s: 0.85 },
+    { kind: 'pot_plant', x: 1.32, z: -3.82, y: 0.75, s: 0.8 },
+    { kind: 'frame', x: 3.32, z: 0.15, ry: -PI / 2, y: 1.42 },
   ],
   spawns: [
     { x: -1.9, z: 2.9 }, { x: -0.7, z: 3.0 }, { x: 0.5, z: 1.6 },

@@ -4,6 +4,7 @@ import { LOOK_INTERIOR } from '../Renderer.js';
 import { ROOM_DAY } from '../Environment.js';
 import { makeCameraTransparent } from '../CameraManager.js';
 import { InteriorScene, type InteriorStyle } from './InteriorScene.js';
+import { assetPassEnabled } from '../assets/pass.js';
 
 /**
  * The studio flat every player starts with (PRD §14).
@@ -13,7 +14,14 @@ import { InteriorScene, type InteriorStyle } from './InteriorScene.js';
  * it evenly — an evenly lit room has no depth and reads as a menu background.
  */
 const STYLE: InteriorStyle = {
-  look: { ...LOOK_INTERIOR, exposure: 0.92, contrast: 1.04, vignette: 0.3, bloomStrength: 0.22 },
+  framing: 'interior',
+  // Exposição meio ponto abaixo com o passe ligado. A mobília do pacote é mais
+  // clara que a procedural — creme e madeira clara onde havia azul e cinza —,
+  // e a mesma exposição que estava certa antes estoura a parede e o sofá
+  // juntos. Quarto claro é escolha; branco recortado é engano.
+  look: assetPassEnabled()
+    ? { ...LOOK_INTERIOR, exposure: 0.82, contrast: 1.1, vignette: 0.34, bloomStrength: 0.18 }
+    : { ...LOOK_INTERIOR, exposure: 0.92, contrast: 1.04, vignette: 0.3, bloomStrength: 0.22 },
   lighting: {
     ...ROOM_DAY,
     // Straight down the window's axis, low enough to throw a long shadow

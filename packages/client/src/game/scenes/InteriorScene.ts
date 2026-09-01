@@ -21,6 +21,10 @@ import {
   trussTower,
 } from '../props/Stage.js';
 import { SceneBase } from './GameScene.js';
+import { AssetLibrary } from '../assets/AssetLibrary.js';
+import { FURNITURE_ITEM, FURNITURE_KIND } from '../assets/furnitureKit.js';
+import { assetPassEnabled } from '../assets/pass.js';
+import type { QualityTier } from '../QualityManager.js';
 
 /**
  * A room, built from its layout.
@@ -77,6 +81,8 @@ export class InteriorScene extends SceneBase {
   private placedRoot = new THREE.Group();
   private placedProps: Prop[] = [];
   private placedNodes: THREE.Object3D[] = [];
+  /** Modelos do passe; nulo quando o quarto roda procedural. */
+  protected lib: AssetLibrary | null = null;
 
   constructor(id: SceneId, layout: SceneLayout, style: InteriorStyle) {
     super();
@@ -88,7 +94,16 @@ export class InteriorScene extends SceneBase {
     this.maxBoom = style.maxBoom ?? 5.4;
   }
 
-  async build(renderer: THREE.WebGLRenderer): Promise<void> {
+  async build(renderer: THREE.WebGLRenderer, tier: QualityTier = 'high'): Promise<void> {
+    // Mesma regra da praça: no tier baixo o quarto continua procedural. A
+    // diferença é que aqui a conta é barata — um quarto tem duas dúzias de
+    // móveis, não trinta árvores — então o corte é só no tier mais baixo.
+    if (assetPassEnabled() && tier !== 'low') {
+      const lib = await AssetLibrary.load(['furniture']);
+      this.lib = lib.has('furniture') ? lib : null;
+      if (this.lib) this.own(lib); else lib.dispose();
+    }
+
     this.makeInterior(renderer, this.style.lighting);
 
     // Collision comes from the shared table, which is built from the same
@@ -110,6 +125,7 @@ export class InteriorScene extends SceneBase {
       this.spawnPoints.push(new THREE.Vector3(s.x, 0, s.z));
     }
     this.registerMaterials();
+    for (const mat of this.lib?.materials() ?? []) this.env?.registerMaterial(mat);
   }
 
   /** Hook for the bespoke touches a specific room needs. */
@@ -133,7 +149,7 @@ export class InteriorScene extends SceneBase {
       const def = PLACEABLES[p.itemId];
       if (!def) continue;
       const f: Fixture = {
-        kind: def.kind, x: p.x, z: p.z, ry: (p.turn * Math.PI) / 2, y: def.y ?? 0,
+        kind: def.kind, item: p.itemId, x: p.x, z: p.z, ry: (p.turn * Math.PI) / 2, y: def.y ?? 0,
         w: def.w, h: def.h, d: def.d, tint: def.tint, color: def.color,
         hw: def.hw, hd: def.hd,
       };
@@ -209,6 +225,29 @@ export class InteriorScene extends SceneBase {
   private staticProp(f: Fixture, stamp: (k: string, m: () => Prop) => Prop): Prop | null {
     const lib = this.mats;
     const key = `${f.kind}|${f.w ?? ''}|${f.h ?? ''}|${f.d ?? ''}|${f.tint ?? ''}|${f.color ?? ''}`;
+
+    // Um `kind` da tabela do passe é desenhado pelo modelo; o resto continua
+    // procedural. O alvo em metros vem do PRÓPRIO fixture, que é o mesmo
+    // número que o servidor usa como bloqueador — o móvel não pode ser maior
+    // do que aquilo em que se esbarra.
+    // Por ITEM primeiro, por `kind` depois. O pacote traz duas poltronas, dois
+    // sofás e três tapetes; usá-los é o que devolve, sem cor por item, a
+    // diferença entre `fur_sofa_01` e `fur_sofa_02` — os dois modelos do
+    // KayKit compartilham um atlas único, então tingir um deles tingiria os
+    // dois e mais vinte móveis junto.
+    const modelled = this.lib
+      ? (f.item ? FURNITURE_ITEM[f.item] : undefined) ?? FURNITURE_KIND[f.kind]
+      : null;
+    if (modelled) {
+      const target = {
+        w: f.w ?? (f.hw !== undefined ? f.hw * 2 : undefined),
+        h: f.h,
+        d: f.d ?? (f.hd !== undefined ? f.hd * 2 : undefined),
+      };
+      const prop = this.lib!.fitted('furniture', modelled.id, target, modelled.fit);
+      if (prop) return prop;
+    }
+
     switch (f.kind) {
       case 'sofa': return stamp(key, () => sofa(lib, f.w ?? 1.92, f.tint ?? '#4a5a78'));
       case 'armchair': return stamp(key, () => armchair(lib, f.tint ?? '#7a5c8a'));

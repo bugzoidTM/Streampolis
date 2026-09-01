@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { AvatarLab } from './lab/AvatarLab.js';
+import { AssetLab } from './lab/AssetLab.js';
 import { AppShell } from './ui/AppShell.js';
 import { intentFromQuery } from './network/session.js';
 import { savedToken } from './ui/EnterScreen.js';
@@ -11,7 +12,9 @@ const view = params.get('view') ?? 'world';
 
 const root = createRoot(document.getElementById('root')!);
 
-if (view === 'lab') {
+if (view === 'assets') {
+  root.render(<AssetLab />);
+} else if (view === 'lab') {
   root.render(<AvatarLab />);
 } else {
   // A URL diz a INTENÇÃO, não a sala: `?watch=<roomId>` assiste, `?golive=1`

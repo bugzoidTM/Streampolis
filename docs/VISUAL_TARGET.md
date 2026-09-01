@@ -228,6 +228,55 @@ figurante e sombra, a resposta certa não é uma praça bonita a 12 fps.
   antemão (CC0 ou comercial simples), e só depois as que exigem conferir asset
   por asset.
 
+### Apartamento — a segunda cena do passe (KayKit)
+
+Mesmo método, cena diferente. **KayKit Furniture Bits** (CC0) atravessa o mesmo
+`tools/assets/pass.mjs`, e o ponto de troca no cliente é UM: `staticProp()`, o
+único lugar em `InteriorScene` que decide o que desenhar para um `kind`. Layout,
+colisão, loja e modo de construção não sabem que o passe existe.
+
+**A divisão é identidade, não preguiça.** Sofá, poltrona, cama, mesa, tapete,
+planta e as miudezas vêm do pacote; **a ring light, o microfone, o monitor, o
+LED da parede, a bancada e a estante continuam autorais**. O jogador reconhece
+um sofá em qualquer estilo e um pacote bem desenhado faz isso melhor que um
+prop nosso — mas o equipamento de live é o que diferencia o quarto de um
+streamer do quarto de qualquer um, e ninguém vende isso pronto na cara do
+Streampolis.
+
+`packages/client/src/game/assets/furnitureKit.ts` é a tabela inteira: `kind` →
+modelo, e `item` → modelo quando o pacote oferece variante. `kind` que não está
+lá continua procedural, e é por isso que a troca é segura.
+
+Três coisas que este passe ensinou e que valem para o próximo pacote:
+
+- **Escala não uniforme é obrigatória em mobília.** O KayKit é autorado grosso
+  de propósito: o sofá tem 3 m e a luminária 2,5 m, e a mesa de jantar tem 1 m
+  de altura para 3 m de largura. Escalar tudo pela largura entrega uma mesa de
+  centro de 23 cm; pela altura, uma de 2 m de largura. Cada modelo declara em
+  `assets/curation.json` o tamanho REAL em metros, eixo a eixo.
+- **Um mapeamento errado é pior que nenhum.** A estante alta ficou procedural:
+  o pacote gratuito não tem uma, e o aparador baixo esticado para 1,90 m vira
+  um móvel que não existe. Tirar a linha da tabela foi todo o conserto.
+- **Um atlas só é a conta e o preço.** Os 23 móveis compartilham uma textura e,
+  portanto, um material: o quarto passou de **346 para 260 chamadas de desenho
+  e de 205 para 182 mil triângulos** — o passe saiu mais barato que o
+  procedural. Em troca, a cor por item de `PLACEABLES` não se aplica: tingir o
+  sofá tingiria os 23 móveis junto. A diferença entre `fur_sofa_01` e
+  `fur_sofa_02` voltou pela variedade do pacote, com um modelo para cada.
+
+**Miudezas.** Livros na mesa de centro, almofada torta no sofá, abajur na
+cabeceira, cacto no canto da mesa, moldura no aparador. Nada disso existia, e é
+onde um pacote se paga sozinho: ninguém vai modelar à mão uma pilha de livros.
+Com `?assets=0` essas peças simplesmente não desenham — o quarto fica mais
+vazio, e é a verdade.
+
+**A câmera de dentro voltou atrás.** Aproximar 17% resolveu a composição da
+praça e estragou a do quarto, onde o personagem já é grande e o que falta ver é
+a mobília que a pessoa comprou. Interiores ganharam o enquadramento `interior`
+— mais campo, mais recuo, dentro do que um braço de câmera com colisão admite
+num quarto de 7×8 m. Forçar `room` (7,2 m) põe a câmera do lado de fora da
+parede; afastar pela roda respeita o limite, escrever a distância não.
+
 ### Praça Central — cor e vida entraram
 - ~~**paleta quente**~~ — calçamento em terracota, rosácea quente no miolo,
   fachadas em família quente e bandeiras em três cores. A saturação alta
@@ -329,7 +378,9 @@ catálogo já tem `floor_*` e `wall_*`, e nada os aplica ainda.
 | `node tools/hand-shot.mjs` | a mão de perto, em três vistas |
 | `npm run assets` | baixa os pacotes e reconstrói `public/assets` pelo passe |
 | `node tools/assets/pass.mjs --inspect` | mede um pacote novo sem transformar nada — é assim que se descobre a altura natural antes de escrever o alvo na curadoria |
-| `npm run plaza:ab` | HOJE × PRAÇA ASSET PASS, mesmo enquadramento, duas capturas |
+| `npm run plaza:ab` | HOJE × ASSET PASS na praça, mesmo enquadramento, duas capturas |
+| `npm run home:ab -- --query=apartment=<id>` | o mesmo par, no apartamento |
+| `node tools/shoot.mjs --url='…?view=assets&family=furniture'` | folha de contato de uma família, cada modelo ao lado de uma régua de 1,67 m |
 
 Uma terceira armadilha entrou na lista com a folha de figura: **`--count=0` na
 URL do laboratório.** Com `count=1` o laboratório já montou um avatar em cena e

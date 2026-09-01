@@ -186,6 +186,69 @@
       a segunda leva, pela mesma razão de coerência: uma cena de cada vez.</li>
   </ul>
 
+  <h2><span class="num">00c</span>Apartamento Asset Pass — a segunda cena</h2>
+  <p class="lead">
+    Mesmo método, cena diferente: <b>KayKit Furniture Bits</b> (CC0) para a
+    mobília, atravessando o mesmo passe. O layout, a colisão e o modo de
+    construção não sabem que ele existe — o que mudou foi uma tabela de
+    <code>kind</code> → modelo, e o que ela não cobre continua procedural.
+  </p>
+  <div class="pair">
+    <figure>
+      <img src="ab-apto-hoje.jpg" alt="Apartamento procedural, antes do passe">
+      <figcaption><b><span class="tag tag--hoje">Procedural</span></b>
+        Sofá de caixas, mesa de centro de tampo e pernas, e nada em cima de
+        nada: um quarto mobiliado, não um quarto habitado.</figcaption>
+    </figure>
+    <figure>
+      <img src="ab-apto-pass.jpg" alt="Apartamento com a mobília do passe">
+      <figcaption><b><span class="tag tag--alvo">Asset Pass</span></b>
+        Sofá com braço e almofada, tapete, aparador com moldura — e as
+        miudezas que ninguém modelaria à mão: livros largados na mesa de
+        centro, abajur na cabeceira, cacto no canto da mesa.</figcaption>
+    </figure>
+  </div>
+  <div class="pair" style="margin-top:16px">
+    <figure>
+      <img src="ab-apto2-hoje.jpg" alt="Canto do sofá, procedural">
+      <figcaption><b><span class="tag tag--hoje">Procedural</span></b>
+        A silhueta é a de uma caixa estofada.</figcaption>
+    </figure>
+    <figure>
+      <img src="ab-apto2-pass.jpg" alt="Canto do sofá, com o passe">
+      <figcaption><b><span class="tag tag--alvo">Asset Pass</span></b>
+        Braço arredondado, assento fundo, almofada torta. É a forma que faz o
+        móvel, não a textura.</figcaption>
+    </figure>
+  </div>
+  <ul class="gap">
+    <li><b>A divisão é identidade, não preguiça.</b> Sofá, cama, mesa, tapete e
+      planta vêm do pacote: o jogador reconhece um sofá em qualquer estilo, e
+      um pacote bem desenhado faz isso melhor que um prop nosso. Já a ring
+      light, o microfone, o monitor, o LED da parede e a bancada continuam
+      autorais — é o que diferencia o quarto de um streamer do quarto de
+      qualquer um, e é o produto.</li>
+    <li><b>Um mapeamento errado é pior que nenhum.</b> A estante alta ficou
+      procedural: o pacote gratuito não tem uma, e o aparador baixo esticado
+      para 1,90 m vira um móvel que não existe. A tabela é a única coisa que
+      decide, então tirar uma linha dela é todo o conserto.</li>
+    <li><b>Custa MENOS que o procedural.</b> 346 → 260 chamadas de desenho e
+      205 → 182 mil triângulos. O KayKit inteiro compartilha um atlas, então
+      vinte e três móveis são um material — e um material é um draw call por
+      peça, não por parte.</li>
+    <li><b>O preço disso é a cor.</b> Um atlas só significa que tingir o sofá
+      tingiria os vinte e três móveis junto, então a cor declarada por item em
+      <code>PLACEABLES</code> não se aplica aqui. A variedade volta pela
+      variedade do próprio pacote: <code>fur_sofa_01</code> e
+      <code>fur_sofa_02</code> viraram dois modelos diferentes, e os dois
+      tapetes, duas camas e duas poltronas seguem a mesma regra.</li>
+    <li><b>A câmera de dentro voltou atrás.</b> Aproximar 17% resolveu a
+      composição da praça e estragou a do quarto, onde o personagem já é grande
+      e o que falta ver é a mobília que a pessoa comprou. Interior ganhou
+      enquadramento próprio — mais campo, mais recuo, dentro do que um braço de
+      câmera com colisão admite num quarto de 7×8 m.</li>
+  </ul>
+
   <h2><span class="num">01</span>Personagem</h2>
   <p class="lead">
     Era aqui a maior distância. Quatro entregas depois — costura do corpo,
