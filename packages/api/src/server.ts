@@ -224,6 +224,28 @@ const visibilitySchema = z.object({ visibility: z.enum(['open', 'friends', 'priv
  * substituir a planta inteira é mais simples de validar do que aceitar um
  * diff, e o modo de construção já tem a lista toda na mão.
  */
+/**
+ * A casa de OUTRA pessoa. Sem isto, visitar alguém mostrava a sala vazia (ou,
+ * pior, a sua própria mobília), e "amigo veio ver meu setup" não fecha.
+ *
+ * A privacidade é a mesma do resto (PRD §20): `canEnter` decide, e quem não
+ * pode entrar recebe 403 em vez da lista de móveis.
+ */
+app.get('/homes/:apartmentId', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const home = await getHome(param(req.params.apartmentId));
+    if (!home) {
+      res.status(404).json({ error: 'home_not_found' });
+      return;
+    }
+    if (!(await canEnter(home, req.userId as string))) {
+      res.status(403).json({ error: 'home_closed' });
+      return;
+    }
+    res.json({ home });
+  } catch (err) { next(err); }
+});
+
 app.put('/me/home/layout', requireUser, async (req: AuthedRequest, res, next) => {
   try {
     const body = req.body as { placements?: unknown };

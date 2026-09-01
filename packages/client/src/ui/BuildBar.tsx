@@ -19,17 +19,19 @@ import './build.css';
 
 export interface BuildBarProps {
   world: World | null;
-  /** Only the owner may rearrange; a visitor sees the room, not the handles. */
-  canEdit: boolean;
+  /** Which apartment is open. Null when the scene is not an apartment. */
+  apartmentId: string | null;
 }
 
 interface Draft { list: HomePlacement[]; selected: number }
 
-export function BuildBar({ world, canEdit }: BuildBarProps) {
+export function BuildBar({ world, apartmentId }: BuildBarProps) {
   const api = useAccountStore((s) => s.api);
   const owned = useAccountStore((s) => s.owned);
 
   const [open, setOpen] = useState(false);
+  /** Só o dono redecora. Visitante vê a mobília DELE, não a sua. */
+  const [mine, setMine] = useState(false);
   const [draft, setDraft] = useState<Draft>({ list: [], selected: -1 });
   const [saved, setSaved] = useState<HomePlacement[]>([]);
   const [status, setStatus] = useState<string>('');
@@ -46,16 +48,22 @@ export function BuildBar({ world, canEdit }: BuildBarProps) {
   // Load the saved layout and show it, whether or not build mode is on: a
   // visitor has to see the furniture too.
   useEffect(() => {
-    if (!world || !api?.authenticated) return;
+    if (!world || !api?.authenticated || !apartmentId) return;
     let alive = true;
-    api.home().then(({ home }) => {
-      if (!alive) return;
-      setSaved(home.decor);
-      setDraft({ list: home.decor.map((p) => ({ ...p })), selected: -1 });
-      world.applyHomeLayout(home.decor);
-    }).catch(() => { /* offline: the room keeps its own fixtures */ });
+    // A casa ABERTA, não a minha. Carregar `/me/home` numa visita mostrava a
+    // mobília do visitante na sala do anfitrião.
+    Promise.all([api.home(), api.homeOf(apartmentId)])
+      .then(([own, here]) => {
+        if (!alive) return;
+        const owner = own.home.apartmentId === apartmentId;
+        setMine(owner);
+        setSaved(here.home.decor);
+        setDraft({ list: here.home.decor.map((p) => ({ ...p })), selected: -1 });
+        world.applyHomeLayout(here.home.decor);
+      })
+      .catch(() => { /* offline ou casa fechada: a sala fica com os fixos */ });
     return () => { alive = false; };
-  }, [world, api]);
+  }, [world, api, apartmentId]);
 
   useEffect(() => {
     if (!open || !world) return;
@@ -77,7 +85,7 @@ export function BuildBar({ world, canEdit }: BuildBarProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, world]);
 
-  if (!canEdit) return null;
+  if (!mine) return null;
 
   const dirty = JSON.stringify(draft.list) !== JSON.stringify(saved);
 

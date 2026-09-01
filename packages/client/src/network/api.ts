@@ -217,6 +217,11 @@ export class ApiClient {
     return this.call('/me/home');
   }
 
+  /** A casa de outra pessoa. 403 quando ela não está aberta para você. */
+  homeOf(apartmentId: string): Promise<{ home: ApiHome }> {
+    return this.call(`/homes/${encodeURIComponent(apartmentId)}`);
+  }
+
   /**
    * Manda a planta INTEIRA. A API confere posse, limites e sobreposição e
    * devolve a casa como ficou — quem decide onde o sofá cabe é ela.

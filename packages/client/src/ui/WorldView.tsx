@@ -138,8 +138,12 @@ export function WorldView(props: WorldViewProps) {
         style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', display: 'block', background: '#0b0d12' }}
       />
       {inLive && <LiveView />}
-      {/* Só o dono redecora. Visitante vê a mobília, não as alças. */}
-      <BuildBar world={ready} canEdit={props.intent.kind === 'apartment' && !inLive} />
+      {/* A barra decide sozinha se a casa é do jogador; visitante vê a
+          mobília do anfitrião e nenhuma alça. */}
+      <BuildBar
+        world={ready}
+        apartmentId={props.intent.kind === 'apartment' && !inLive ? props.intent.apartmentId : null}
+      />
       {status !== 'online' && (
         <div className="world-status" role="status">
           {status === 'loading' && message}
