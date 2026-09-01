@@ -235,6 +235,12 @@ export const MSG = {
   leaveStage: 'leaveStage',
   mute: 'mute',
   block: 'block',
+  /**
+   * "Troquei de roupa": o cliente reapresenta o TOKEN NOVO que a API assinou
+   * depois de validar a peça contra o inventário. A aparência continua vindo
+   * assinada, como no join — o navegador nunca manda `avatar`.
+   */
+  restyle: 'restyle',
   // server -> client
   correction: 'correction',
   chatMessage: 'chatMessage',

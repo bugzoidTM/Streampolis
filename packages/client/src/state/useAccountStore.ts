@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AvatarConfig, Currency } from '@streampolis/shared';
 import { ApiClient, ApiError, type ApiLive, type PublicProfile, type Wallet } from '../network/api.js';
+import { activeConnection } from './useSessionStore.js';
 
 /**
  * A conta do jogador, como o servidor a conhece.
@@ -140,6 +141,10 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       // e é ele que entra nas salas.
       api.setToken(result.token);
       set({ avatar: result.avatar, token: result.token });
+      // E a sala repinta na hora. Sem isto o visual só aparecia para os outros
+      // depois de reconectar — o jogador salvava a roupa e o mundo continuava
+      // com a antiga, que lê como "não salvou".
+      activeConnection()?.restyle(result.token);
       return { ok: true, message: 'Look salvo.' };
     } catch (err) {
       return { ok: false, message: mensagem(err) };

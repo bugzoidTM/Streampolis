@@ -9,6 +9,7 @@ import { EnterScreen, clearToken, saveToken, savedToken } from './EnterScreen.js
 import { FeedView } from './FeedView.js';
 import { ProfileView } from './ProfileView.js';
 import { StoreView } from './StoreView.js';
+import { AvatarView } from './AvatarView.js';
 import { IconBag, IconClose, IconFlame, IconPlus, IconUser } from './Icons.js';
 import { Button } from './primitives/Controls.js';
 import './screens.css';
@@ -25,7 +26,7 @@ import './screens.css';
  * viagem. Um card do feed navega; a aba Loja não.
  */
 
-type Tab = 'world' | 'feed' | 'store' | 'profile';
+type Tab = 'world' | 'feed' | 'store' | 'profile' | 'look';
 
 export interface AppShellProps {
   intent: WorldIntent;
@@ -113,12 +114,16 @@ export function AppShell(props: AppShellProps) {
 
       {tab === 'store' && <StoreView />}
 
+      {/* O criador não é uma aba do rodapé: chega-se a ele pelo perfil, que é
+          onde alguém vai procurar o próprio visual. */}
+      {tab === 'look' && <AvatarView onClose={() => setTab('profile')} />}
+
       {tab === 'profile' && (
         <ProfileView
           userId={profileTarget}
           onVisitApartment={(apartmentId) => navigate({ kind: 'apartment', apartmentId })}
           onWatchLive={(roomId) => navigate({ kind: 'watch', roomId })}
-          onEditLook={() => { location.search = '?view=lab'; }}
+          onEditLook={() => setTab('look')}
           onLeave={() => {
             clearToken();
             setToken(undefined);

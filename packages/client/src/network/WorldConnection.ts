@@ -231,6 +231,17 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
 
   // ---- intents the UI sends -------------------------------------------------
 
+  /**
+   * Reapresenta o token recém-assinado para a sala repintar o avatar.
+   *
+   * A aparência entrava na sala uma vez, no join: quem trocava de roupa
+   * continuava com a antiga para todo mundo até reconectar. Aqui vai o TOKEN,
+   * não a roupa — quem valida posse é a API, e o servidor confere a assinatura.
+   */
+  restyle(token: string): void {
+    this.room.send(MSG.restyle, { token });
+  }
+
   chat(text: string): void {
     this.room.send(MSG.chat, { text });
   }

@@ -258,6 +258,41 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
       if (message.on === false) this.chat.unblock(session.identity.userId, message.userId);
       else this.chat.block(session.identity.userId, message.userId);
     });
+
+    /**
+     * Trocar de roupa SEM sair da sala.
+     *
+     * A aparência entra na sala pelo token assinado, e antes disto só entrava
+     * uma vez, no join: quem comprava um moletom continuava de camiseta para
+     * todo mundo até reconectar. O criador de avatar tornou isso gritante —
+     * salvar o visual não mudava nada no mundo.
+     *
+     * O cliente não manda a roupa: manda o TOKEN NOVO, que a API assinou
+     * depois de validar cada peça contra o inventário. Aqui ele é verificado
+     * como qualquer outro e só vale para o próprio dono — `sub` tem de ser o
+     * mesmo usuário da sessão, senão é gente vestindo o avatar dos outros, que
+     * é literalmente um bug que este projeto já teve.
+     */
+    this.onMessage(MSG.restyle, (client, message: { token?: unknown }) => {
+      const session = this.sessions.get(client.sessionId);
+      if (!session || typeof message?.token !== 'string') return;
+      void this.auth.authenticate(message.token)
+        .then((identity) => {
+          if (identity.userId !== session.identity.userId) {
+            this.notify(client, 'restyle_denied', 'Este token não é seu.');
+            return;
+          }
+          const player = this.state.players.get(client.sessionId);
+          if (!player) return;
+          player.avatar.apply(identity.avatar);
+          player.gifterLevel = identity.gifterLevel;
+          // A sessão guarda a identidade para o resto da sala (presente, PK,
+          // live). Deixá-la velha faria o próximo evento reescrever a roupa
+          // antiga por cima da nova.
+          session.identity = identity;
+        })
+        .catch(() => this.notify(client, 'restyle_failed', 'Não deu para aplicar o visual.'));
+    });
   }
 
   /** Per-recipient delivery, so a block list actually blocks (SPECs §31). */

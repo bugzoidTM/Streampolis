@@ -168,11 +168,15 @@ export function WorldView(props: WorldViewProps) {
       {/* Conversar é uma das cinco coisas que o PRD §6 pede da praça. Escondido
           dentro de uma live, que tem o chat dela: dois seria um dentro do
           outro, e os dois leem da mesma store. */}
-      <WorldChat world={ready} hidden={inLive || status === 'loading'} />
+      {/* `paused` é a casca dizendo que uma TELA cobre o mundo (feed, loja,
+          perfil, criador de avatar). O chat pertence ao mundo: deixá-lo por
+          cima da loja é uma barra de digitar flutuando sobre outra interface,
+          e ele ainda rouba o Enter de quem está preenchendo um formulário. */}
+      <WorldChat world={ready} hidden={inLive || props.paused === true || status === 'loading'} />
 
       {/* "Acessar outros locais" é outra delas. Numa live não: quem está
           transmitindo não atravessa uma porta sem querer. */}
-      {!inLive && props.onTravel && (
+      {!inLive && !props.paused && props.onTravel && (
         <PortalPrompt portal={portal} onEnter={props.onTravel} />
       )}
       {/* A barra decide sozinha se a casa é do jogador; visitante vê a
