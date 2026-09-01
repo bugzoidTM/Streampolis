@@ -88,7 +88,12 @@ check('o perfil mostra números do servidor', /\d/.test(fame), fame.replace(/\n/
 await page.screenshot({ path: `${dir}/perfil.png` });
 
 console.log('\n5) Loja');
-await page.getByRole('button', { name: 'Loja' }).click();
+// Prazo LARGO neste clique, e não é frouxidão: abrir a Loja monta um avatar
+// completo por peça no `PosterStudio`, em série, na thread principal — 45
+// retratos 3D. Numa GPU isso é rápido; neste ambiente headless, que rasteriza
+// por software, medimos 53 s. O padrão de 30 s do Playwright reprovava uma
+// tela que funciona.
+await page.getByRole('button', { name: 'Loja' }).click({ timeout: 180_000 });
 await page.waitForSelector('.store__grid .item', { timeout: 20_000 });
 await page.waitForFunction(() => document.querySelector('.item__art img') !== null, { timeout: 30_000 })
   .then(() => check('a peça aparece vestida no avatar de quem olha', true))

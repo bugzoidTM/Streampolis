@@ -105,10 +105,18 @@ function feature(
  * the sphere and vanished completely in profile.
  */
 function nose(R: number, face: FaceShape): THREE.BufferGeometry {
+  // Mais CURTO e menos projetado do que era.
+  //
+  // O nariz descia de 0,19 a −0,098 — quase um terço da altura da cabeça — e
+  // avançava 0,124 R na ponta: em três quartos lia como lâmina, e no frontal
+  // empurrava a boca para baixo do queixo. Num rosto estilizado agradável o
+  // nariz é o traço que menos deve chamar atenção; ele encurta em cima (a
+  // raiz começa mais baixa, entre os olhos, não na testa) e em baixo, e a
+  // ponta fica arredondada em vez de bicuda.
   const stations = feature(
-    [[0, 0.19, 0.94], [0, 0.10, 0.99], [0, 0.020, 1.00], [0, -0.042, 1.00], [0, -0.098, 0.96]],
-    [[0.030, 0.022], [0.038, 0.040], [0.052, 0.060], [0.060, 0.062], [0.040, 0.030]],
-    [-0.008, 0.038, 0.100, 0.124, 0.028],
+    [[0, 0.135, 0.95], [0, 0.062, 0.99], [0, 0.000, 1.00], [0, -0.048, 1.00], [0, -0.092, 0.96]],
+    [[0.026, 0.020], [0.034, 0.036], [0.049, 0.055], [0.058, 0.058], [0.042, 0.032]],
+    [-0.006, 0.028, 0.074, 0.092, 0.026],
     R, face,
   );
   const parts = [loft(stations, { segments: 14, capStart: true, capEnd: true, capRound: 0.5, subdivisions: 2 })];
@@ -117,9 +125,9 @@ function nose(R: number, face: FaceShape): THREE.BufferGeometry {
   // not as the end of a tube.
   for (const side of [-1, 1]) {
     const wing = feature(
-      [[side * 0.050, -0.047, 0.97], [side * 0.105, -0.072, 0.95], [side * 0.090, -0.102, 0.94]],
-      [[0.028, 0.028], [0.034, 0.030], [0.022, 0.022]],
-      [0.066, 0.040, 0.006],
+      [[side * 0.052, -0.044, 0.97], [side * 0.104, -0.066, 0.95], [side * 0.088, -0.092, 0.94]],
+      [[0.028, 0.028], [0.033, 0.030], [0.022, 0.022]],
+      [0.050, 0.032, 0.006],
       R, face,
     );
     parts.push(loft(wing, { segments: 10, capStart: true, capEnd: true, capRound: 0.7, subdivisions: 2 }));
@@ -270,8 +278,14 @@ function cap(r: number, frac: number, seg = 20): THREE.BufferGeometry {
  */
 function lidShell(r: number, open: number, up: boolean, seg = 20, rings = 4): THREE.BufferGeometry {
   /** Azimuth of the canthus, and how far past it the lid keeps covering. */
-  const A = 1.10;
-  const AMAX = 1.50;
+  // Azimute do canto e o quanto a pálpebra segue cobrindo além dele.
+  //
+  // Eram 1,10 e 1,50, e sobrava um ANEL de esclera em volta da abertura: o
+  // globo é uma esfera inteira e além desse azimute nada o cobria, então o
+  // olho aparecia contornado por um arco cinza-prata — a leitura de "olho de
+  // boneco colado no rosto". Agora as cascas dão a volta bem mais.
+  const A = 1.32;
+  const AMAX = 1.95;
   const dir = up ? 1 : -1;
   /**
    * Quanto a casca passa DO POLO do globo, em radianos.
@@ -385,7 +399,15 @@ export function buildFaceRig(
   const track = <T extends THREE.BufferGeometry>(g: T): T => { disposables.push(g); return g; };
 
   // ---- Eyes --------------------------------------------------------------
-  const eyeR = R * 0.132;
+  /**
+   * O olho, em raios de cabeça.
+   *
+   * Era 0,132 e o rosto não lia a três metros — num life sim estilizado o olho
+   * é o traço que carrega o personagem, e "anatomicamente correto" aqui
+   * significa "invisível". 0,158 é grande sem virar mangá: a abertura ainda
+   * cabe entre a raiz do nariz e a têmpora, que é o limite real.
+   */
+  const eyeR = R * 0.150;
   const lidUpper: THREE.Object3D[] = [];
   const lidLower: THREE.Object3D[] = [];
   const eyes: THREE.Object3D[] = [];
@@ -397,7 +419,11 @@ export function buildFaceRig(
     const eye = new THREE.Group();
     // Sunk into the socket by most of its radius, which is what stops the
     // eyeball reading as a marble stuck on the front of the face.
-    eye.position.copy(surface).addScaledVector(dir.clone().normalize(), -eyeR * 0.74);
+    // Mais fundo do que antes (0,74), porque o globo cresceu: no PERFIL ele
+    // saía da silhueta do rosto e o olho lia como lente colada na cara. A
+    // órbita do crânio também fundou, no `socketMask` do sculpt — as duas
+    // coisas juntas, ou o olho afunda e some atrás da bochecha.
+    eye.position.copy(surface).addScaledVector(dir.clone().normalize(), -eyeR * 0.88);
     eye.quaternion.setFromUnitVectors(V(0, 0, 1), dir.clone().normalize());
     group.add(eye);
     eyes.push(eye);
@@ -410,24 +436,32 @@ export function buildFaceRig(
     // specular response instead of one flat disc doing all three jobs. The
     // iris is deliberately large: a small iris in a wide sclera is how a doll
     // stares, and the aperture below is now almond enough to carry it.
-    const iris = new THREE.Mesh(track(cap(eyeR * 1.004, 0.74, 24)), irisMat);
-    const pupil = new THREE.Mesh(track(cap(eyeR * 1.010, 0.33, 20)), pupilMat);
-    const glint = new THREE.Mesh(track(cap(eyeR * 1.018, 0.11, 12)), glintMat);
+    const iris = new THREE.Mesh(track(cap(eyeR * 1.004, 0.82, 24)), irisMat);
+    const pupil = new THREE.Mesh(track(cap(eyeR * 1.010, 0.40, 20)), pupilMat);
+    // Dois brilhos: o grande da luz principal e um segundinho embaixo, do
+    // rebote do chão. É o par que faz o olho parecer ÚMIDO; um ponto só lê
+    // como furo branco.
+    const glint = new THREE.Mesh(track(cap(eyeR * 1.018, 0.15, 14)), glintMat);
+    const glint2 = new THREE.Mesh(track(cap(eyeR * 1.016, 0.07, 10)), glintMat);
+    glint2.position.set(side * eyeR * 0.34, -eyeR * 0.30, 0);
     // Up and inboard, where a key light above and in front of the face puts it.
     glint.position.set(-side * eyeR * 0.30, eyeR * 0.30, 0);
-    eye.add(iris, pupil, glint);
+    eye.add(iris, pupil, glint, glint2);
 
     // Lids are shells a hair wider than the ball, hinged at its centre.
     const upper = new THREE.Group();
-    const upperShell = new THREE.Mesh(track(lidShell(eyeR * 1.07, 0.46, true)), skinMat);
+    // Pálpebra superior mais BAIXA (0,46 → 0,40): a pálpebra é o que dá
+    // expressão a um olho parado, e uma que só encosta no topo do globo deixa
+    // o olho arregalado permanente — a cara de susto que o rosto tinha.
+    const upperShell = new THREE.Mesh(track(lidShell(eyeR * 1.07, 0.40, true)), skinMat);
     upper.add(upperShell);
     // The lash line is a solid form on the lid's rim, not a painted stripe.
-    upper.add(new THREE.Mesh(track(lashBand(eyeR * 1.09, 0.46, 0.125)), hairMat));
+    upper.add(new THREE.Mesh(track(lashBand(eyeR * 1.09, 0.40, 0.16)), hairMat));
     eye.add(upper);
     lidUpper.push(upper);
 
     const lower = new THREE.Group();
-    lower.add(new THREE.Mesh(track(lidShell(eyeR * 1.045, 0.40, false)), skinMat));
+    lower.add(new THREE.Mesh(track(lidShell(eyeR * 1.045, 0.34, false)), skinMat));
     eye.add(lower);
     lidLower.push(lower);
   }
@@ -435,13 +469,16 @@ export function buildFaceRig(
   // ---- Brows -------------------------------------------------------------
   const brows: THREE.Object3D[] = [];
   for (const side of [-1, 1]) {
+    // Sobe (o olho cresceu e encostava nela), encurta na ponta e DESCOLA
+    // menos: com lift alto a extremidade externa saía da silhueta e, de
+    // perfil, virava um gancho preto flutuando na frente da têmpora.
     const st = feature(
-      [[side * 0.17, 0.30, 0.95], [side * 0.36, 0.33, 0.90], [side * 0.54, 0.30, 0.80], [side * 0.66, 0.23, 0.71]],
+      [[side * 0.17, 0.345, 0.95], [side * 0.35, 0.375, 0.91], [side * 0.50, 0.345, 0.84], [side * 0.585, 0.285, 0.78]],
       // Mais grossa do que parece pouco. A 0,020 de raio (2,5 mm) a
       // sobrancelha some contra a franja num close e o rosto perde a única
       // linha que dá expressão a ele — vira um risco pintado.
-      [[0.026, 0.019], [0.032, 0.024], [0.026, 0.018], [0.013, 0.010]],
-      [0.010, 0.013, 0.013, 0.010],
+      [[0.026, 0.019], [0.032, 0.024], [0.025, 0.017], [0.011, 0.009]],
+      [0.006, 0.008, 0.006, 0.001],
       R, face,
     );
     // Pivot at the inner end: a brow tilts by lifting its OUTER end, and a
@@ -477,22 +514,29 @@ export function buildFaceRig(
       );
     };
 
+    // Lábios mais LARGOS, mais cheios e mais destacados da pele.
+    //
+    // No neutro a boca era um risco que se perdia: 0,18 de meia-largura contra
+    // 0,42 de meio-rosto, com 2 mm de volume. Uma boca que só aparece quando
+    // sorri deixa o rosto parado sem nada abaixo do nariz — que é metade da
+    // reclamação de "rosto chapado". Meia-largura 0,235, volume quase o dobro,
+    // e mais `lift` para o lábio pousar SOBRE a pele em vez de afundar nela.
     half.add(lip(
-      [[0, -0.335, 0.95], [side * 0.075, -0.345, 0.94], [side * 0.135, -0.365, 0.91], [side * 0.180, -0.382, 0.88]],
-      [[0.020, 0.016], [0.019, 0.015], [0.013, 0.011], [0.005, 0.005]],
-      [0.010, 0.009, 0.006, 0.001],
+      [[0, -0.330, 0.95], [side * 0.090, -0.340, 0.94], [side * 0.165, -0.358, 0.91], [side * 0.235, -0.374, 0.86]],
+      [[0.030, 0.023], [0.028, 0.021], [0.019, 0.015], [0.006, 0.006]],
+      [0.017, 0.015, 0.010, 0.002],
     ));
     half.add(lip(
-      [[0, -0.425, 0.93], [side * 0.075, -0.420, 0.92], [side * 0.135, -0.404, 0.90], [side * 0.178, -0.386, 0.88]],
-      [[0.026, 0.021], [0.023, 0.018], [0.015, 0.013], [0.005, 0.005]],
-      [0.012, 0.011, 0.007, 0.001],
+      [[0, -0.428, 0.93], [side * 0.090, -0.421, 0.92], [side * 0.165, -0.402, 0.90], [side * 0.232, -0.378, 0.86]],
+      [[0.038, 0.030], [0.033, 0.026], [0.021, 0.017], [0.006, 0.006]],
+      [0.020, 0.018, 0.011, 0.002],
     ));
     mouth.add(half);
     halves.push(half);
   }
 
   // The dark inside, revealed as the mouth opens.
-  const open = new THREE.Mesh(track(new THREE.SphereGeometry(R * 0.075, 16, 10)), pupilMat);
+  const open = new THREE.Mesh(track(new THREE.SphereGeometry(R * 0.098, 16, 10)), pupilMat);
   open.position.set(0, R * -0.01, -R * 0.03);
   open.scale.set(1, 0.12, 0.35);
   mouth.add(open);
@@ -563,6 +607,26 @@ export function buildFaceRig(
   let nextSaccade = 0.8 + Math.random() * 2.4;
   let pinnedBlink: number | null = null;
 
+  /**
+   * O rosto PARADO, que era a última coisa morta nele.
+   *
+   * Piscar e olhar já aconteciam, e mesmo assim a cara em repouso continuava
+   * congelada entre um evento e outro: sobrancelha na mesma altura, canto da
+   * boca no mesmo lugar, minuto após minuto. Um rosto vivo nunca está
+   * exatamente parado — ele deriva.
+   *
+   * Amplitudes MINÚSCULAS de propósito (uns poucos por cento do que uma
+   * expressão move): isto não pode ler como expressão, senão o avatar fica
+   * fazendo caretas sozinho. O que se procura é o contrário — que ninguém
+   * repare, e que a cara pare de parecer uma máscara.
+   *
+   * Fase aleatória por avatar, senão a praça inteira levanta a sobrancelha no
+   * mesmo quadro.
+   */
+  const microPhase = Math.random() * 100;
+  let clock = 0;
+  const micro: Pose = { ...EXPRESSIONS.neutral };
+
   const BLINK_TOTAL = BLINK_CLOSE + BLINK_HOLD + BLINK_OPEN;
 
   return {
@@ -582,16 +646,12 @@ export function buildFaceRig(
     update(dt: number) {
       // A face that snaps between poses reads as a puppet. 12 Hz is fast
       // enough to feel reactive and slow enough to look like muscle.
+      // (Não há mais atalho de "nada mudou": com a deriva de repouso abaixo,
+      // alguma coisa SEMPRE mudou — é esse o ponto dela.)
       const k = 1 - Math.exp(-12 * dt);
-      let moved = false;
-      for (const key of KEYS) {
-        const next = THREE.MathUtils.lerp(pose[key], target[key], k);
-        if (Math.abs(next - pose[key]) > 1e-5) moved = true;
-        pose[key] = next;
-      }
+      for (const key of KEYS) pose[key] = THREE.MathUtils.lerp(pose[key], target[key], k);
 
       // ---- Piscar -------------------------------------------------------
-      const before = blink;
       if (pinnedBlink !== null) {
         blink = pinnedBlink;
       } else {
@@ -614,7 +674,6 @@ export function buildFaceRig(
           blink = 1 - u * u;
         }
       }
-      if (Math.abs(blink - before) > 1e-4) moved = true;
 
       // ---- Olhar --------------------------------------------------------
       nextSaccade -= dt;
@@ -626,13 +685,21 @@ export function buildFaceRig(
         nextSaccade = 1.1 + Math.random() * 2.8;
       }
       const g = 1 - Math.exp(-22 * dt);
-      const gx = THREE.MathUtils.lerp(gaze.x, gazeTo.x, g);
-      const gy = THREE.MathUtils.lerp(gaze.y, gazeTo.y, g);
-      if (Math.abs(gx - gaze.x) > 1e-5 || Math.abs(gy - gaze.y) > 1e-5) moved = true;
-      gaze.x = gx;
-      gaze.y = gy;
+      gaze.x = THREE.MathUtils.lerp(gaze.x, gazeTo.x, g);
+      gaze.y = THREE.MathUtils.lerp(gaze.y, gazeTo.y, g);
 
-      if (moved) apply(pose, blink, gaze);
+      // Deriva lenta somada por cima da pose, nunca no lugar dela.
+      clock += dt;
+      const t1 = clock * 0.37 + microPhase;
+      const t2 = clock * 0.23 + microPhase * 1.7;
+      for (const key of KEYS) micro[key] = pose[key];
+      micro.browInner += Math.sin(t1) * 0.0035 + Math.sin(t2 * 2.3) * 0.0018;
+      micro.browOuter += Math.sin(t1 + 0.8) * 0.0040;
+      micro.mouthCorner += Math.sin(t2) * 0.010;
+      micro.mouthWidth += Math.sin(t1 * 0.7 + 1.9) * 0.006;
+      micro.lidUpper += Math.sin(t2 * 1.3 + 0.4) * 0.007;
+
+      apply(micro, blink, gaze);
     },
     dispose() {
       for (const d of disposables) d.dispose();

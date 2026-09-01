@@ -414,7 +414,10 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
   // the cranium filled the frame and the features had nowhere to be. Wider
   // than life on purpose, because the style asks for it, but nowhere near
   // round.
-  let sx = 0.69, sy = 0.99, sz = 0.86;
+  // 0,69 ainda era largo: no close frontal o rosto lia como panqueca, com as
+  // duas bochechas ocupando mais quadro do que os olhos. A cabeça também
+  // GANHOU altura relativa (sy), que é o que tira a leitura de bola.
+  let sx = 0.655, sy = 1.02, sz = 0.86;
 
   // Horizontal sections are SUPERELLIPTICAL, not circular. A skull is flat at
   // the temples and flat down the sides of the jaw, and round only at the
@@ -426,7 +429,7 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
   if (rho > 1e-4) {
     const cx = Math.abs(n.x) / rho;
     const cz = Math.abs(n.z) / rho;
-    const e = THREE.MathUtils.lerp(2, 2.45, Math.exp(-Math.pow((t - 0.14) / 0.60, 2)));
+    const e = THREE.MathUtils.lerp(2, 2.62, Math.exp(-Math.pow((t - 0.14) / 0.60, 2)));
     const k = 1 / Math.pow(Math.pow(cx, e) + Math.pow(cz, e), 1 / e);
     sx *= k;
     sz *= k;
@@ -435,7 +438,14 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
   // Cranium, flattened at the top. The crown used to rise ABOVE a full sphere,
   // which put the eye line at 58% of the head's height instead of the 50% a
   // face is read at — the whole face sat too low under too much forehead.
-  sy *= THREE.MathUtils.lerp(1.0, 0.93 * face.cranium, Math.max(0, t));
+  sy *= THREE.MathUtils.lerp(1.0, 0.895 * face.cranium, Math.max(0, t));
+
+  // A TESTA é um plano, não um gomo de esfera. Uma calota lisa da linha da
+  // sobrancelha para cima é literalmente a superfície de uma bola, e nenhuma
+  // quantidade de olho, nariz e boca desmente isso — foi o que sobrou de
+  // "capacete" depois de o crânio já ter sido achatado em cima.
+  const foreheadPlane = Math.exp(-Math.pow((t - 0.40) / 0.24, 2)) * Math.max(0, n.z);
+  sz *= THREE.MathUtils.lerp(1.0, 0.955, foreheadPlane);
 
   // Jaw taper: below the ear line the head narrows toward the chin. It holds
   // its width to the jaw angle and then goes, rather than tapering from the
@@ -454,8 +464,13 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
 
   // Chin projection.
   const chinMask = Math.pow(below, 1.8) * front;
-  out.z += chinMask * R * 0.16 * face.chin;
-  out.y -= chinMask * R * 0.06;
+  out.z += chinMask * R * 0.185 * face.chin;
+  out.y -= chinMask * R * 0.075;
+  // E o queixo AFINA. Um queixo tão largo quanto a mandíbula é uma pá: o
+  // rosto perde o vértice de baixo e a silhueta vira retângulo arredondado —
+  // "falta diferença entre bochecha, queixo e mandíbula", exatamente.
+  const chinNarrow = Math.exp(-Math.pow((t + 0.72) / 0.22, 2)) * Math.pow(Math.abs(n.x), 0.8);
+  out.x -= Math.sign(n.x) * chinNarrow * R * 0.075;
 
   // The mandible line: a ridge running from below the ear to the chin. It is
   // what gives a profile a jaw instead of a curve.
@@ -469,28 +484,28 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
   // the head goes back to reading as an oval seen from three quarters.
   const gonion = Math.exp(-Math.pow((t + 0.30) / 0.17, 2))
     * Math.exp(-Math.pow((n.z + 0.15) / 0.36, 2)) * Math.pow(Math.abs(n.x), 1.2);
-  out.x += Math.sign(n.x) * gonion * R * 0.040 * face.jaw;
-  out.y -= gonion * R * 0.016;
+  out.x += Math.sign(n.x) * gonion * R * 0.052 * face.jaw;
+  out.y -= gonion * R * 0.020;
 
   // Brow ridge just above the eye line.
   const browMask = Math.exp(-Math.pow((t - 0.16) / 0.11, 2)) * front;
   out.z += browMask * R * 0.05 * face.brow;
 
   // Cheekbones.
-  const cheekMask = Math.exp(-Math.pow((t + 0.02) / 0.16, 2)) * front * Math.abs(n.x);
-  out.z += cheekMask * R * 0.05 * face.cheeks;
-  out.x += Math.sign(n.x) * cheekMask * R * 0.055 * face.cheeks;
+  const cheekMask = Math.exp(-Math.pow((t + 0.01) / 0.13, 2)) * front * Math.abs(n.x);
+  out.z += cheekMask * R * 0.055 * face.cheeks;
+  out.x += Math.sign(n.x) * cheekMask * R * 0.040 * face.cheeks;
 
   // The hollow under the cheekbone. Without it the cheek is a ball, and the
   // whole face reads younger and blanker than any preset intends.
-  const hollowMask = Math.exp(-Math.pow((t + 0.22) / 0.1, 2))
+  const hollowMask = Math.exp(-Math.pow((t + 0.23) / 0.11, 2))
     * Math.exp(-Math.pow((Math.abs(n.x) - 0.5) / 0.22, 2)) * front;
-  out.z -= hollowMask * R * 0.03;
+  out.z -= hollowMask * R * 0.046;
 
   // Eye sockets: a shallow recess so the eyeballs sit inside the head.
-  const socketMask = Math.exp(-Math.pow((t - 0.06) / 0.075, 2))
-    * Math.exp(-Math.pow((Math.abs(n.x) - 0.36) / 0.2, 2)) * front;
-  out.z -= socketMask * R * 0.055;
+  const socketMask = Math.exp(-Math.pow((t - 0.06) / 0.095, 2))
+    * Math.exp(-Math.pow((Math.abs(n.x) - 0.38) / 0.23, 2)) * front;
+  out.z -= socketMask * R * 0.082;
 
   // The nose is modelled as its own geometry now; the skull keeps only the
   // bridge it grows from, which is what stops a seam at the glabella.
