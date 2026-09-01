@@ -46,6 +46,7 @@ const wanted = (key) => !ONLY || ONLY.has(key);
 const SIZE = {
   figure: { width: 600, height: 800 },
   face: { width: 600, height: 600 },
+  close: { width: 700, height: 700 },
   scene: { width: 1100, height: 619 },
   screen: { width: 1100, height: 764 },
 };
@@ -154,6 +155,45 @@ if (wanted('rosto')) {
     return c.toDataURL('image/jpeg', q);
   }, [data, QUALITY / 100]);
   await save('hoje-rosto.jpg', Buffer.from(jpeg.split(',')[1], 'base64'));
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
+// 3b. O rosto em CLOSE, nos três giros que se usa para julgá-lo
+// ---------------------------------------------------------------------------
+// Estas três eram feitas à mão, recortadas de uma folha de contato, e por isso
+// envelheceram sozinhas: o sprint seguinte mexeu no rosto e a página continuou
+// mostrando o rosto anterior — exatamente a mentira que esta ferramenta existe
+// para não deixar acontecer. Agora saem daqui, com a MESMA câmera e a MESMA luz
+// do retrato acima (o rig do laboratório, `exp=0.5`), e o mesmo personagem nos
+// três ângulos, que é o que torna a comparação legível.
+if (wanted('close')) {
+  const url = `${CLIENT}/?view=lab&matrix=1&count=0&spin=0&yaw=0&tier=${TIER}&exp=0.5&blink=0`;
+  const { page, errors } = await open(browser, url, SIZE.close, 1500);
+  if (errors.length) failed.push(`close: ${errors[0]}`);
+
+  const CLOSE = [
+    ['hoje-close-rosto.jpg', 0],
+    ['hoje-close-3quartos.jpg', 0.6],
+    ['hoje-close-perfil.jpg', 1.57],
+  ];
+  for (const [name, yaw] of CLOSE) {
+    await attempt(name, async () => {
+      const png = await page.evaluate(([y]) => window.__lab.portrait(
+        { facePreset: 0, bodyPreset: 0, skinTone: 1, hair: 'hair_bob_01', hairColor: 0, accessory: '' },
+        'neutral', y, 1.02,
+      ), [yaw]);
+      const jpeg = await page.evaluate(async ([data, q]) => {
+        const img = new Image();
+        await new Promise((r) => { img.onload = r; img.src = data; });
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        c.getContext('2d').drawImage(img, 0, 0);
+        return c.toDataURL('image/jpeg', q);
+      }, [png, QUALITY / 100]);
+      await save(name, Buffer.from(jpeg.split(',')[1], 'base64'));
+    });
+  }
   await page.close();
 }
 
@@ -271,13 +311,18 @@ await browser.close();
 // falta disto que deixou a comparação envelhecer sem ninguém notar: as imagens
 // não dizem de qual build são, e uma coluna "hoje" que mente é pior do que uma
 // coluna vazia.
-if (done.length && !ONLY) {
+// Vale TAMBÉM para uma regeração parcial. Pular o carimbo quando se usa
+// `--only` foi o que deixou a página anunciar um build e mostrar imagens de
+// outro: quem regera só o rosto continua regerando, e a data continua sendo a
+// data das imagens novas.
+if (done.length) {
   await attempt('carimbo', async () => {
     const page = path.join(OUT, 'index.html');
     const html = await readFile(page, 'utf8');
     const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
     const when = new Date().toISOString().slice(0, 10);
-    const stamp = `Capturas <b>Hoje</b>: build <code>${sha}</code>, ${when}.`;
+    const parte = ONLY ? ` (parcial: ${[...ONLY].join(', ')})` : '';
+    const stamp = `Capturas <b>Hoje</b>: build <code>${sha}</code>, ${when}${parte}.`;
     const next = html.replace(
       /(<span id="hoje-stamp">)[\s\S]*?(<\/span>)/,
       `$1${stamp}$2`,

@@ -45,7 +45,10 @@
   .lead { color: var(--text-2); margin: 0 0 22px; max-width: 70ch; }
 
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+  /* Três vistas do mesmo rosto lado a lado: frontal, três quartos e perfil só
+     respondem juntas a pergunta "isto é agradável?". */
+  .pair--trio { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 760px) { .pair, .pair--trio { grid-template-columns: 1fr; } }
 
   figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
   figure img { display: block; width: 100%; height: auto; background: #0d0f16; }
@@ -378,24 +381,38 @@
         dançar sorri, presente surpreende, perder um PK concentra.</figcaption>
     </figure>
   </div>
-  <div class="pair" style="margin-top:16px">
+  <div class="pair pair--trio" style="margin-top:16px">
     <figure>
       <img src="hoje-close-rosto.jpg" alt="Close frontal do avatar">
       <figcaption><b><span class="tag tag--hoje">Hoje, em close</span></b>
-        O cenário melhorou e o avatar passou a ser o que derrubava a percepção.
-        Seis coisas mudaram: cabelo em mechas finas e em camadas no lugar de
-        salsichas sobre uma touca, zoneamento de cor na pele (maçã do rosto e
-        orelha quentes, órbita e vinco do queixo escuros), lábio quase da cor
-        da pele, oclusão de contato mais forte, trama de tecido três vezes mais
-        fina e sobrancelha com espessura de verdade.</figcaption>
+        O olho foi de 0,132 para 0,150 raio de cabeça e ganhou íris grande,
+        pupila e DOIS brilhos — o da luz principal e o do rebote do chão, que é
+        o par que faz um olho parecer úmido. Sumiu o anel de esclera que
+        contornava a abertura: as pálpebras cobriam só até 1,50 rad de azimute e
+        o globo é uma esfera inteira, então sobrava um arco cinza em volta — a
+        leitura de olho colado no rosto. A boca existe no neutro (meia-largura
+        de 0,18 para 0,235, volume quase o dobro) e o nariz encurtou nas duas
+        pontas.</figcaption>
     </figure>
     <figure>
       <img src="hoje-close-3quartos.jpg" alt="Close em três quartos">
       <figcaption><b><span class="tag tag--hoje">Três quartos</span></b>
-        A borda da base deixou de ser uma linha cortada a faca: fiapos curtos
-        nascem NA linha do cabelo e a quebram. Mechas saindo do redemoinho dão
-        fio ao topo, que antes era a única superfície do penteado sem nenhum.
-      </figcaption>
+        O crânio afinou (0,69 → 0,655 de largura), a testa ganhou um plano no
+        lugar da calota de esfera, o queixo projeta mais e AFINA — um queixo tão
+        largo quanto a mandíbula é uma pá — e o ângulo da mandíbula ficou
+        legível. A ponta da sobrancelha parou de sair da silhueta: de perfil ela
+        virava um gancho preto na frente da têmpora.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-close-perfil.jpg" alt="Close de perfil">
+      <figcaption><b><span class="tag tag--hoje">Perfil</span></b>
+        A causa do “capacete” não era mecha nenhuma: era a LINHA DO CABELO. Nos
+        nove estilos o limiar frontal ficava entre 0,24 e 0,34, o que punha a
+        touca cobrindo a testa inteira, até a altura da sobrancelha. Subiu para
+        ~0,40 e ganhou bico central, entradas nas têmporas e irregularidade —
+        uma linha que só depende da altura recorta um paralelo da esfera, ou
+        seja, uma reta atravessando a testa de orelha a orelha. E mecha virou
+        FITA: tubo de 6 mm lê como arame.</figcaption>
     </figure>
   </div>
   <ul class="gap" style="margin-top:10px">
@@ -568,7 +585,7 @@
     pior do que nenhuma: ela convence a equipe a consertar o que já está
     consertado.
     <br>
-    <span id="hoje-stamp">Capturas <b>Hoje</b>: build <code>a993aac</code>, 2026-09-01.</span>
+    <span id="hoje-stamp">Capturas <b>Hoje</b>: build <code>5aeafd2</code>, 2026-09-01 (parcial: close).</span>
     <br>
     As regras completas estão em <code>docs/VISUAL_TARGET.md</code> e
     <code>docs/VISUAL_RUBRIC.md</code>.
