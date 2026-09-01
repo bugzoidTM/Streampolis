@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
 import { Animator } from '../anim/Animator.js';
 import { buildRig, PROPORTION_PRESETS, type BuiltRig, BONE_INDEX } from './Skeleton.js';
-import { buildBody, buildHead, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
+import { buildBody, buildHead, paintSkin, BODY_PRESETS, FACE_PRESETS } from './BodyBuilder.js';
 import { buildFaceStatic, buildFaceRig, type Expression, type FaceRig } from './Face.js';
 import { mergeGeometries } from './Loft.js';
 import { TOP_BUILDERS, BOTTOM_BUILDERS, SHOE_BUILDERS, ITEM_COLORS, type Builder, type GarmentBuild } from './Wardrobe.js';
@@ -97,7 +97,11 @@ export class Avatar {
     // no extra draw call, and no chance of a feature drifting off the skull.
     const geo = mergeGeometries([buildHead(this.rig, face, BONE_INDEX.Head), buildFaceStatic(this.rig, face)]);
     geo.computeVertexNormals();
+    paintSkin(geo, this.rig, face);
     const mat = makeSkinMaterial(this.config.skinTone);
+    // Só a CABEÇA usa cor por vértice: o corpo é uma malha à parte, com o seu
+    // próprio material, e não paga por um atributo que não usa.
+    mat.vertexColors = true;
     this.headMesh = new THREE.SkinnedMesh(geo, mat);
     this.headMesh.name = 'head';
     this.headMesh.bind(this.rig.skeleton);

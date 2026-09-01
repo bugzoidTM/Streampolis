@@ -162,7 +162,7 @@ export class Renderer {
       this.gtao.output = GTAOPass.OUTPUT.Default;
       this.gtao.updateGtaoMaterial({
         radius: 0.32, distanceExponent: 1.6, thickness: 1.0,
-        scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false,
+        scale: 2.2, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false,
       });
       this.composer.addPass(this.gtao);
     } else {

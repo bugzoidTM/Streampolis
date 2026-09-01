@@ -62,10 +62,14 @@ function lock(
   ctx: StyleContext,
   from: THREE.Vector3,
   sweep: THREE.Vector3,
-  opts: { length: number; thick: number; sag?: number; taper?: number; wave?: number; steps?: number },
+  opts: {
+    length: number; thick: number; sag?: number; taper?: number; wave?: number; steps?: number;
+    /** Afastamento do couro cabeludo, em raios de cabeça. */
+    lift?: number;
+  },
 ): Station[] {
   const { R, face } = ctx;
-  const root = skullPoint(from, R, face, 0.012);
+  const root = skullPoint(from, R, face, opts.lift ?? 0.012);
   const dir = sweep.clone().normalize();
   const steps = opts.steps ?? 5;
   const sag = opts.sag ?? 0.6;
@@ -99,7 +103,10 @@ function fan(
   count: number,
   arc: { fromX: number; toX: number; y: number; z: number },
   sweep: (u: number) => THREE.Vector3,
-  opts: { length: number; thick: number; sag?: number; wave?: number; jitter?: number },
+  opts: {
+    length: number; thick: number; sag?: number; wave?: number; jitter?: number;
+    taper?: number; lift?: number;
+  },
 ): Station[][] {
   const out: Station[][] = [];
   for (let i = 0; i < count; i++) {
@@ -107,11 +114,20 @@ function fan(
     const x = THREE.MathUtils.lerp(arc.fromX, arc.toX, u);
     // A little irregularity: perfectly even strands read as a wig stand.
     const j = opts.jitter ? Math.sin(i * 12.9898) * opts.jitter : 0;
-    out.push(lock(ctx, V(x, arc.y + j, arc.z), sweep(u), {
-      length: opts.length * (1 + j * 1.5),
+    // A raiz anda POUCO e o comprimento anda MUITO. Mexer na raiz sobe a linha
+    // do cabelo e abre testa; mexer no comprimento é o que faz duas mechas
+    // vizinhas terminarem em alturas diferentes, que é o efeito procurado.
+    out.push(lock(ctx, V(x, arc.y + j * 0.25, arc.z), sweep(u), {
+      length: opts.length * (1 + j * 2.2),
       thick: opts.thick,
       sag: opts.sag,
       wave: opts.wave,
+      taper: opts.taper,
+      // Camadas escalonadas. Mechas deitadas na mesma distância do crânio se
+      // fundem numa casca lisa — o capacete de novo, só que feito de trinta
+      // peças. Três alturas alternadas e cada ponta passa a se recortar contra
+      // a mecha de trás, que é o que faz a franja ler como cabelo.
+      lift: (opts.lift ?? 0.010) + (i % 3) * 0.013,
     }));
   }
   return out;
@@ -214,33 +230,125 @@ function drape(
 }
 
 /**
- * A curtain of hair down one side of the face. Three strands rather than one:
- * a single tube of the right volume is 8 cm across and reads as a headphone.
+ * A curtain of hair down one side of the face.
+ *
+ * MUITAS mechas finas, não três grossas. Uma mecha com o volume certo tem 3 cm
+ * de diâmetro, e três delas lado a lado leem como cabo de fone de ouvido — foi
+ * exatamente o que a revisão de close apontou. O volume é o mesmo; o que muda é
+ * em quantos fios ele está dividido, e é isso que separa cabelo de salsicha.
  */
-function curtain(ctx: StyleContext, side: number, opts: { length: number; thick: number; z: number }): Station[][] {
-  return [0.28, 0.0, -0.34].map((skew, i) => drape(ctx, {
-    dir: V(side * 0.94, 0, opts.z + skew),
-    startY: 0.46 - Math.abs(skew) * 0.1,
-    length: opts.length * (1 - Math.abs(skew) * 0.18),
-    thick: opts.thick * (i === 1 ? 1 : 0.86),
-    clear: 0.028 + i * 0.004,
-    sway: 0.06,
-  }));
+function curtain(
+  ctx: StyleContext,
+  side: number,
+  opts: { length: number; thick: number; z: number; count?: number },
+): Station[][] {
+  const n = opts.count ?? 8;
+  return Array.from({ length: n }, (_, i) => {
+    const u = n === 1 ? 0.5 : i / (n - 1);
+    const skew = THREE.MathUtils.lerp(0.34, -0.40, u);
+    // Espessura e comprimento variam por fio: uma cortina de mechas idênticas
+    // volta a ler como um bloco, por mais fina que cada uma seja.
+    const j = Math.sin(i * 12.9898 + side) * 0.5 + 0.5;
+    return drape(ctx, {
+      dir: V(side * 0.94, 0, opts.z + skew),
+      startY: 0.46 - Math.abs(skew) * 0.1,
+      length: opts.length * (1 - Math.abs(skew) * 0.16) * (0.9 + j * 0.2),
+      thick: opts.thick * (0.78 + j * 0.44),
+      // Camadas: cada fio um pouco mais afastado do crânio que o anterior, o
+      // que impede que oito tubos ocupem a mesma superfície e briguem por z.
+      clear: 0.022 + (i % 3) * 0.007,
+      sway: 0.06,
+    });
+  });
+}
+
+/**
+ * Fiapos curtos ao longo da linha do cabelo, varrendo para trás.
+ *
+ * Toda base termina numa curva de cobertura, e uma curva limpa em volta da
+ * testa é a borda de uma touca de natação. O que quebra a borda é o cabelo
+ * curto que nasce nela — poucos milímetros de fio deitados para trás, que
+ * ninguém enxerga como mecha e todo mundo enxerga como cabelo.
+ */
+function hairlineWisps(
+  ctx: StyleContext,
+  opts: { y: number; thick: number; length: number; count?: number; arc?: number },
+): Station[][] {
+  const n = opts.count ?? 30;
+  const arc = opts.arc ?? 2.5;
+  const out: Station[][] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / (n - 1) - 0.5) * arc;
+    const j = Math.sin(i * 9.7331) * 0.5 + 0.5;
+    const r = Math.sqrt(Math.max(0.02, 1 - opts.y * opts.y));
+    const from = V(Math.sin(a) * r, opts.y + (j - 0.5) * 0.06, Math.cos(a) * r);
+    out.push(lock(ctx, from, V(from.x * 0.4, 0.55, from.z * 0.4 - 0.5), {
+      length: opts.length * (0.6 + j * 0.8),
+      thick: opts.thick * (0.7 + j * 0.5),
+      sag: 0.25,
+      taper: 0.85,
+      steps: 3,
+      lift: 0.006 + (i % 3) * 0.008,
+    }));
+  }
+  return out;
+}
+
+/**
+ * Mechas nascendo do REDEMOINHO e descendo pela calota.
+ *
+ * Sem elas o topo da cabeça é a casca lisa da base, e a casca lisa é o
+ * "capacete" que denuncia cabelo procedural em qualquer close: por mais bem
+ * feitas que sejam a franja e a nuca, o meio continua sendo uma superfície sem
+ * fio nenhum. Cada mecha sai do polo por um meridiano diferente e segue o
+ * crânio, com a folga escalonada em três camadas para as pontas se recortarem
+ * umas contra as outras.
+ */
+function crown(
+  ctx: StyleContext,
+  opts: { count?: number; length: number; thick: number; hugTo?: number; spread?: number },
+): Station[][] {
+  const n = opts.count ?? 22;
+  const spread = opts.spread ?? 1.45;
+  return Array.from({ length: n }, (_, i) => {
+    const a = (i / (n - 1) - 0.5) * Math.PI * spread;
+    const j = Math.sin(i * 5.1713) * 0.5 + 0.5;
+    return drape(ctx, {
+      dir: V(Math.sin(a), 0, -Math.cos(a) * 0.65 - 0.35),
+      startY: 0.94,
+      length: opts.length * (0.84 + j * 0.32),
+      thick: opts.thick * (0.78 + j * 0.44),
+      // ACIMA da espessura da base, não dentro dela. A primeira versão usava
+      // 0,006 e a base do bob tem 0,030: as mechas da calota estavam todas
+      // enterradas na casca que deveriam quebrar.
+      clear: 0.034 + (i % 3) * 0.011,
+      sway: 0.03,
+      hugTo: opts.hugTo ?? 0.08,
+      taper: 0.62,
+      steps: 7,
+    });
+  });
 }
 
 /** The mass at the back of the head — usually most of the silhouette. */
-function backMass(ctx: StyleContext, opts: { length: number; thick: number; width: number }): Station[][] {
-  // Six strands, not four: from directly behind, four of the volume needed to
-  // read as hair are four tubes, and the avatar's back is exactly where the
-  // camera sits while you walk.
-  return [-0.78, -0.47, -0.16, 0.16, 0.47, 0.78].map((x) => drape(ctx, {
-    dir: V(x * opts.width, 0, -1),
-    startY: 0.40,
-    length: opts.length,
-    thick: opts.thick,
-    clear: 0.025,
-    sway: 0.08,
-  }));
+function backMass(
+  ctx: StyleContext,
+  opts: { length: number; thick: number; width: number; count?: number },
+): Station[][] {
+  const n = opts.count ?? 14;
+  return Array.from({ length: n }, (_, i) => {
+    const u = n === 1 ? 0.5 : i / (n - 1);
+    const x = THREE.MathUtils.lerp(-0.82, 0.82, u);
+    const j = Math.sin(i * 7.3311) * 0.5 + 0.5;
+    return drape(ctx, {
+      dir: V(x * opts.width, 0, -1),
+      startY: 0.40,
+      length: opts.length * (0.88 + j * 0.24),
+      thick: opts.thick * (0.8 + j * 0.4),
+      clear: 0.02 + (i % 3) * 0.008,
+      sway: 0.08,
+    });
+  });
 }
 
 /**
@@ -269,19 +377,26 @@ function tail(ctx: StyleContext, opts: { anchorY: number; length: number; thick:
 
 /** Two braids, with the bulge cycle that makes a tube read as plaited. */
 function braids(ctx: StyleContext, opts: { length: number; thick: number }): Station[][] {
-  return [-1, 1].map((side) => drape(ctx, {
-    dir: V(side * 0.55, 0, -0.9),
-    startY: 0.44,
-    length: opts.length,
-    thick: opts.thick,
-    clear: 0.03,
-    sway: 0.08,
-    hugTo: 0.18,
-    push: 0.34,
-    steps: 13,
-    taper: 0.28,
-    shape: (t) => 1 + Math.sin(t * 16) * 0.26,
-  }));
+  const out: Station[][] = [];
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const spread = (i - 1) * 0.22;
+      out.push(drape(ctx, {
+        dir: V(side * (0.55 + spread * 0.5), 0, -0.9 + spread * 0.3),
+        startY: 0.44 - Math.abs(spread) * 0.06,
+        length: opts.length * (1 - Math.abs(spread) * 0.2),
+        thick: opts.thick * (i === 1 ? 1 : 0.85),
+        clear: 0.026 + i * 0.008,
+        sway: 0.08,
+        hugTo: 0.18,
+        push: 0.34,
+        steps: 13,
+        taper: 0.28,
+        shape: (t) => 1 + Math.sin(t * 16 + i) * 0.26,
+      }));
+    }
+  }
+  return out;
 }
 
 // --------------------------------------------------------------------------
@@ -320,20 +435,26 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
   hair_crop_01: {
     thickness: 0.026,
     base: (n) => hairline(n, 0.30, 0.04, -0.26),
-    locks: (ctx) => fan(ctx, 7, { fromX: -0.52, toX: 0.52, y: 0.66, z: 0.58 },
-      (u) => V((u - 0.5) * 0.5, 0.30, 1), { length: 0.26, thick: 0.080, sag: 0.9, jitter: 0.02 }),
+    locks: (ctx) => [
+      ...crown(ctx, { count: 20, length: 0.55, thick: 0.020, hugTo: 0.30 }),
+      ...hairlineWisps(ctx, { y: 0.35, thick: 0.020, length: 0.17 }),
+      ...fan(ctx, 20, { fromX: -0.54, toX: 0.54, y: 0.66, z: 0.58 },
+        (u) => V((u - 0.5) * 0.5, 0.30, 1), { length: 0.26, thick: 0.030, sag: 0.9, jitter: 0.05, taper: 0.75 }),
+    ],
   },
 
   hair_wave_01: {
     thickness: 0.034,
     base: (n) => hairline(n, 0.28, 0.04, -0.26),
     locks: (ctx) => [
+      ...crown(ctx, { count: 22, length: 0.6, thick: 0.022, hugTo: 0.28 }),
+      ...hairlineWisps(ctx, { y: 0.33, thick: 0.020, length: 0.18 }),
       // Swept back off the forehead: the strands leave toward -Z, so the
       // silhouette gains a crest instead of a helmet.
-      ...fan(ctx, 9, { fromX: -0.58, toX: 0.58, y: 0.62, z: 0.62 },
-        (u) => V((u - 0.5) * 0.7, 0.55, -1), { length: 0.62, thick: 0.088, sag: 0.35, wave: 0.02, jitter: 0.03 }),
-      ...fan(ctx, 5, { fromX: -0.72, toX: 0.72, y: 0.18, z: 0.10 },
-        (u) => V(Math.sign(u - 0.5) * 0.6, 0.1, -1), { length: 0.34, thick: 0.072, sag: 0.7 }),
+      ...fan(ctx, 24, { fromX: -0.60, toX: 0.60, y: 0.62, z: 0.62 },
+        (u) => V((u - 0.5) * 0.7, 0.55, -1), { length: 0.62, thick: 0.032, sag: 0.35, wave: 0.02, jitter: 0.06, taper: 0.72 }),
+      ...fan(ctx, 14, { fromX: -0.74, toX: 0.74, y: 0.18, z: 0.10 },
+        (u) => V(Math.sign(u - 0.5) * 0.6, 0.1, -1), { length: 0.34, thick: 0.028, sag: 0.7, jitter: 0.03 }),
     ],
   },
 
@@ -345,13 +466,13 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
       // first pass rooted all nine at one point and offset them afterwards,
       // which produced antennae floating clear of the skull.
       const out: Station[][] = [];
-      const n = 11;
+      const n = 19;
       for (let i = 0; i < n; i++) {
         const u = i / (n - 1);
         const zDir = THREE.MathUtils.lerp(0.85, -0.85, u);
         const height = 0.16 + Math.sin(u * Math.PI) * 0.30;
         out.push(lock(ctx, V(0, Math.sqrt(Math.max(0.04, 1 - zDir * zDir)), zDir),
-          V(0, 1, zDir * 0.25), { length: height, thick: 0.075, sag: 0.06, taper: 0.55, steps: 3 }));
+          V(0, 1, zDir * 0.25), { length: height, thick: 0.042, sag: 0.06, taper: 0.55, steps: 3 }));
       }
       return out;
     },
@@ -363,12 +484,12 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
     locks: (ctx) => {
       // Clumps rather than one smooth ball: an afro reads by its broken edge.
       const out: Station[][] = [];
-      for (let i = 0; i < 22; i++) {
+      for (let i = 0; i < 54; i++) {
         const a = i * 2.39996;
-        const y = 0.85 - (i / 22) * 1.35;
+        const y = 0.85 - (i / 54) * 1.35;
         const r = Math.sqrt(Math.max(0, 1 - y * y));
         out.push(lock(ctx, V(Math.cos(a) * r, y, Math.sin(a) * r), V(Math.cos(a) * r, y * 0.6 + 0.4, Math.sin(a) * r),
-          { length: 0.05, thick: 0.115, sag: 0.05, taper: 0.05, steps: 2 }));
+          { length: 0.055, thick: 0.070, sag: 0.05, taper: 0.05, steps: 2 }));
       }
       return out;
     },
@@ -379,11 +500,24 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
     thickness: 0.030,
     base: (n) => hairline(n, 0.26, -0.05, -0.40),
     locks: (ctx) => [
-      ...curtain(ctx, -1, { length: 1.75, thick: 0.115, z: -0.10 }),
-      ...curtain(ctx, 1, { length: 1.75, thick: 0.115, z: -0.10 }),
-      ...backMass(ctx, { length: 1.85, thick: 0.092, width: 0.5 }),
-      ...fan(ctx, 6, { fromX: -0.46, toX: 0.46, y: 0.60, z: 0.66 },
-        (u) => V((u - 0.5) * 1.4, -0.35, 0.6), { length: 0.42, thick: 0.085, sag: 0.8, jitter: 0.02 }),
+      ...crown(ctx, { count: 24, length: 0.95, thick: 0.024 }),
+      ...curtain(ctx, -1, { length: 1.75, thick: 0.046, z: -0.10, count: 9 }),
+      ...curtain(ctx, 1, { length: 1.75, thick: 0.046, z: -0.10, count: 9 }),
+      ...backMass(ctx, { length: 1.85, thick: 0.038, width: 0.5, count: 15 }),
+      // DUAS camadas de franja, deslocadas meio passo uma da outra. Uma fileira
+      // só, por mais fina que seja, termina toda na mesma altura e lê como um
+      // pente — dentes paralelos com testa aparecendo entre eles. O que cobre
+      // o vão é a segunda camada, e o que quebra o pente é a variação de
+      // comprimento entre fios vizinhos.
+      // A varredura desce MAIS do que avança. Com a componente para a frente
+      // maior que a de baixo, cada mecha sai da testa em vez de deitar sobre
+      // ela, e a franja fica pairando com pele aparecendo entre os fios.
+      ...fan(ctx, 26, { fromX: -0.52, toX: 0.52, y: 0.60, z: 0.66 },
+        (u) => V((u - 0.5) * 0.9, -0.95, 0.42),
+        { length: 0.40, thick: 0.030, sag: 0.5, jitter: 0.10, wave: 0.006, taper: 0.8 }),
+      ...fan(ctx, 22, { fromX: -0.47, toX: 0.47, y: 0.645, z: 0.62 },
+        (u) => V((u - 0.5) * 1.1, -0.88, 0.5),
+        { length: 0.34, thick: 0.026, sag: 0.55, jitter: 0.13, wave: 0.008, taper: 0.82, lift: 0.016 }),
     ],
   },
 
@@ -391,11 +525,15 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
     thickness: 0.032,
     base: (n) => hairline(n, 0.24, -0.06, -0.45),
     locks: (ctx) => [
-      ...curtain(ctx, -1, { length: 3.3, thick: 0.125, z: -0.05 }),
-      ...curtain(ctx, 1, { length: 3.3, thick: 0.125, z: -0.05 }),
-      ...backMass(ctx, { length: 3.5, thick: 0.105, width: 0.7 }),
-      ...fan(ctx, 5, { fromX: -0.42, toX: 0.42, y: 0.62, z: 0.64 },
-        (u) => V((u - 0.5) * 1.8, -0.3, 0.5), { length: 0.5, thick: 0.080, sag: 0.9, jitter: 0.02 }),
+      ...crown(ctx, { count: 26, length: 1.0, thick: 0.024 }),
+      ...curtain(ctx, -1, { length: 3.3, thick: 0.048, z: -0.05, count: 10 }),
+      ...curtain(ctx, 1, { length: 3.3, thick: 0.048, z: -0.05, count: 10 }),
+      ...backMass(ctx, { length: 3.5, thick: 0.042, width: 0.7, count: 16 }),
+      ...fan(ctx, 24, { fromX: -0.48, toX: 0.48, y: 0.62, z: 0.64 },
+        (u) => V((u - 0.5) * 1.2, -0.9, 0.42),
+        { length: 0.46, thick: 0.028, sag: 0.55, jitter: 0.11, wave: 0.008, taper: 0.8 }),
+      ...fan(ctx, 18, { fromX: -0.42, toX: 0.42, y: 0.66, z: 0.60 },
+        (u) => V((u - 0.5) * 1.4, -0.8, 0.5), { length: 0.36, thick: 0.024, sag: 0.6, jitter: 0.14, taper: 0.82, lift: 0.016 }),
     ],
   },
 
@@ -403,16 +541,35 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
     thickness: 0.024,
     base: (n) => hairline(n, 0.28, 0.02, -0.32),
     locks: (ctx) => [
-      tail(ctx, { anchorY: 0.60, length: 2.9, thick: 0.20, kink: 0.10 }),
-      ...fan(ctx, 4, { fromX: -0.38, toX: 0.38, y: 0.66, z: 0.60 },
-        (u) => V((u - 0.5) * 1.2, 0.1, -0.9), { length: 0.34, thick: 0.075, sag: 0.5 }),
+      // O rabo é um FEIXE amarrado, então continua grosso — mas ganha três
+      // fios soltos por cima, porque um tubo liso é o que faz um rabo de
+      // cavalo parecer plástico.
+      // Puxado para trás: as mechas da calota vão quase todas para a nuca, que
+      // é onde o rabo é amarrado.
+      ...crown(ctx, { count: 22, length: 0.62, thick: 0.021, hugTo: 0.34, spread: 1.1 }),
+      tail(ctx, { anchorY: 0.60, length: 2.9, thick: 0.115, kink: 0.10 }),
+      tail(ctx, { anchorY: 0.585, length: 2.75, thick: 0.058, kink: 0.16 }),
+      tail(ctx, { anchorY: 0.615, length: 2.6, thick: 0.05, kink: 0.05 }),
+      ...fan(ctx, 22, { fromX: -0.62, toX: 0.62, y: 0.58, z: 0.42 },
+        (u) => V((u - 0.5) * 1.1, 0.16, -0.92), { length: 0.42, thick: 0.026, sag: 0.42, jitter: 0.06, taper: 0.78 }),
+      // Fiapos NA linha do cabelo. Sem eles a base termina numa curva limpa
+      // cortada a faca em volta da testa — a borda dura é o que faz um
+      // penteado preso ler como touca, e nenhuma quantidade de mecha no topo
+      // conserta uma borda.
+      ...hairlineWisps(ctx, { y: 0.33, thick: 0.020, length: 0.20 }),
     ],
   },
 
   hair_braids_01: {
     thickness: 0.028,
     base: (n) => hairline(n, 0.28, 0.02, -0.34) * (0.9 + 0.1 * Math.sin(Math.atan2(n.x, n.z) * 9)),
-    locks: (ctx) => braids(ctx, { length: 3.0, thick: 0.090 }),
+    locks: (ctx) => [
+      ...crown(ctx, { count: 20, length: 0.7, thick: 0.020, hugTo: 0.30, spread: 1.2 }),
+      ...hairlineWisps(ctx, { y: 0.33, thick: 0.019, length: 0.18 }),
+      ...braids(ctx, { length: 3.0, thick: 0.052 }),
+      ...fan(ctx, 16, { fromX: -0.58, toX: 0.58, y: 0.60, z: 0.48 },
+        (u) => V((u - 0.5) * 1.0, 0.14, -0.9), { length: 0.34, thick: 0.024, sag: 0.4, jitter: 0.03 }),
+    ],
   },
 };
 

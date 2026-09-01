@@ -372,7 +372,7 @@ export function buildFaceRig(
     const upperShell = new THREE.Mesh(track(lidShell(eyeR * 1.07, 0.46, true)), skinMat);
     upper.add(upperShell);
     // The lash line is a solid form on the lid's rim, not a painted stripe.
-    upper.add(new THREE.Mesh(track(lashBand(eyeR * 1.085, 0.46, 0.075)), hairMat));
+    upper.add(new THREE.Mesh(track(lashBand(eyeR * 1.09, 0.46, 0.125)), hairMat));
     eye.add(upper);
     lidUpper.push(upper);
 
@@ -387,8 +387,11 @@ export function buildFaceRig(
   for (const side of [-1, 1]) {
     const st = feature(
       [[side * 0.17, 0.30, 0.95], [side * 0.36, 0.33, 0.90], [side * 0.54, 0.30, 0.80], [side * 0.66, 0.23, 0.71]],
-      [[0.017, 0.012], [0.020, 0.014], [0.015, 0.011], [0.008, 0.007]],
-      [0.008, 0.010, 0.010, 0.008],
+      // Mais grossa do que parece pouco. A 0,020 de raio (2,5 mm) a
+      // sobrancelha some contra a franja num close e o rosto perde a única
+      // linha que dá expressão a ele — vira um risco pintado.
+      [[0.026, 0.019], [0.032, 0.024], [0.026, 0.018], [0.013, 0.010]],
+      [0.010, 0.013, 0.013, 0.010],
       R, face,
     );
     // Pivot at the inner end: a brow tilts by lifting its OUTER end, and a

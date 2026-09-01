@@ -150,6 +150,52 @@ O que já está certo e não deve ser mexido: proporção (1,67 m), presets de c
 que mudam silhueta de verdade, e o pipeline de vestir — que valida posse antes
 de deixar usar (SPECs §68).
 
+### O avatar em close — a rodada que o cenário cobrava
+
+Com a praça e o apartamento resolvidos, o avatar passou a ser o que derrubava a
+percepção: em close a imagem lia como protótipo low-poly, não como life sim
+estilizado. Seis frentes, e todas medidas contra um retrato de 900 px, porque a
+520 px metade dos defeitos não aparece e a outra metade parece resolvida.
+
+- ~~**Cabelo de salsicha**~~ — as mechas tinham 3 cm de diâmetro e três delas
+  lado a lado leem como cabo de fone de ouvido. **Cabelo não é volume, é em
+  quantos fios o volume está dividido**: o mesmo volume em mechas 3× mais
+  finas, com variação larga de comprimento e **três camadas de afastamento do
+  crânio**, para cada ponta se recortar contra a de trás em vez de fundir numa
+  casca lisa.
+- ~~**Topo sem fio nenhum**~~ — `crown()` faz mechas nascerem do redemoinho e
+  descerem pela calota. Sem elas o meio do penteado continua sendo a casca da
+  base, por melhor que estejam franja e nuca. Elas precisam nascer ACIMA da
+  espessura da base: a primeira versão usava folga 0,006 sobre uma base de
+  0,030 e estava toda enterrada.
+- ~~**Linha do cabelo cortada a faca**~~ — `hairlineWisps()` põe fiapos curtos
+  nascendo NA borda. É o que separa cabelo de touca de natação, e nenhuma
+  quantidade de mecha no topo conserta uma borda dura.
+- ~~**Pele de barro**~~ — `skinTint()` dá zoneamento: maçã do rosto e orelha
+  quentes (tecido fino e vascularizado), órbita e vinco do queixo escuros
+  (a luz não chega lá), testa mais clara e mais fria. Sai como **cor por
+  vértice**, não como textura: a cabeça é esférica em UV mas nariz e orelha
+  entram na mesma malha com UV de loft, e um mapa pintaria bochecha na ponta
+  do nariz.
+- ~~**Gloss laranja no lábio**~~ — 10% de saturação a mais sobre um tom de pele
+  já quente é lipstick. O lábio se lê pela forma e pela sombra abaixo dele.
+- ~~**Trama de cota de malha**~~ — a UV de uma peça vai de 0 a 1 sobre a peça
+  inteira, então a 6 repetições cada fio tinha um centímetro.
+- ~~**Oclusão invisível**~~ — o GTAO já estava ligado no tier alto, com
+  `scale: 1.0`, e não se via. A 2,2 aparece sombra sob a franja, na órbita, sob
+  o nariz e no encontro do queixo com o pescoço — é o que tira o "barro sem
+  luz" de qualquer personagem estilizado.
+
+**A armadilha que custou três rodadas:** quadrados brancos no topo de toda
+cabeça, que sobreviviam a rugosidade 0,68, ambiente 0,2 e especular 0,22. Era a
+**anisotropia**: ela reamostra o mapa de ambiente com rugosidade esticada, o
+que traz de volta um mip nítido e com ele o texel do sol; o bloom desmontava
+aquele ponto em blocos. Desligá-la apagou os quadrados de imediato. O brilho de
+fio ficou por conta do `sheen`, que não reamostra nada.
+
+`node tools/face-sheet.mjs --size=900 --hair=1` é a ferramenta desta rodada: o
+tamanho padrão de 420 px esconde exatamente os defeitos que um close cobra.
+
 ### Assets de terceiros — o passe, e a experiência da praça
 
 A vegetação era volumosa e repetitiva, os prédios eram blocos com fachada

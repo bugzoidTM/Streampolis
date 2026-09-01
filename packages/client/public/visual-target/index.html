@@ -317,6 +317,42 @@
         dançar sorri, presente surpreende, perder um PK concentra.</figcaption>
     </figure>
   </div>
+  <div class="pair" style="margin-top:16px">
+    <figure>
+      <img src="hoje-close-rosto.jpg" alt="Close frontal do avatar">
+      <figcaption><b><span class="tag tag--hoje">Hoje, em close</span></b>
+        O cenário melhorou e o avatar passou a ser o que derrubava a percepção.
+        Seis coisas mudaram: cabelo em mechas finas e em camadas no lugar de
+        salsichas sobre uma touca, zoneamento de cor na pele (maçã do rosto e
+        orelha quentes, órbita e vinco do queixo escuros), lábio quase da cor
+        da pele, oclusão de contato mais forte, trama de tecido três vezes mais
+        fina e sobrancelha com espessura de verdade.</figcaption>
+    </figure>
+    <figure>
+      <img src="hoje-close-3quartos.jpg" alt="Close em três quartos">
+      <figcaption><b><span class="tag tag--hoje">Três quartos</span></b>
+        A borda da base deixou de ser uma linha cortada a faca: fiapos curtos
+        nascem NA linha do cabelo e a quebram. Mechas saindo do redemoinho dão
+        fio ao topo, que antes era a única superfície do penteado sem nenhum.
+      </figcaption>
+    </figure>
+  </div>
+  <ul class="gap" style="margin-top:10px">
+    <li><b>Cabelo não é volume, é em quantos fios o volume está dividido.</b>
+      As mechas tinham 3 cm de diâmetro — três delas lado a lado leem como cabo
+      de fone. O volume é o mesmo; o que mudou foi a contagem, e com ela a
+      variação de comprimento e três camadas de afastamento do crânio, para que
+      cada ponta se recorte contra a de trás em vez de fundir numa casca.</li>
+    <li><b>Pele lisa de uma cor só é barro.</b> O rosto agora carrega
+      zoneamento como COR POR VÉRTICE — função analítica da posição, não
+      textura: a cabeça é esférica em UV mas o nariz e a orelha entram na mesma
+      malha com UV de loft, e um mapa pintaria bochecha na ponta do nariz.</li>
+    <li><b>Os quadrados brancos no topo da cabeça eram a anisotropia.</b> Ela
+      reamostra o mapa de ambiente com rugosidade esticada, o que traz de volta
+      um mip nítido e com ele o texel do sol. Nem rugosidade 0,68 nem ambiente
+      0,2 apagavam; desligá-la apagou. O brilho de fio ficou por conta do
+      sheen, que não reamostra nada.</li>
+  </ul>
   <ul class="gap">
     <li><b>Feições:</b> <s>nariz, boca, sobrancelha e orelha como geometria</s> — feito. Nariz e orelha entram fundidos na cabeça: nenhum draw call a mais e nenhuma chance de descolar do crânio.</li>
     <li><b>Olhos:</b> <s>íris com anel escuro e brilho pequeno; cílio como forma sólida</s> — feito, tudo como calota sobre o globo.</li>

@@ -97,16 +97,28 @@ export function makeHairMaterial(colorIndex: number): THREE.MeshPhysicalMaterial
   const base = new THREE.Color(HAIR_COLORS[colorIndex % HAIR_COLORS.length]).convertSRGBToLinear();
   const mat = new THREE.MeshPhysicalMaterial({
     color: base,
-    roughness: 0.38,
+    roughness: 0.68,
     metalness: 0.0,
-    anisotropy: 0.85,
-    anisotropyRotation: Math.PI * 0.5,
-    sheen: 0.55,
-    sheenRoughness: 0.35,
-    sheenColor: base.clone().lerp(new THREE.Color(1, 1, 1), 0.4),
-    clearcoat: 0.35,
-    clearcoatRoughness: 0.28,
-    envMapIntensity: 1.1,
+    // Anisotropia DESLIGADA, e não é uma escolha de estilo: a implementação
+    // reamostra o mapa de ambiente com rugosidade esticada, o que traz de
+    // volta um mip nítido e com ele o texel do sol — QUADRADOS brancos no topo
+    // de toda cabeça, que nem rugosidade 0,68 nem ambiente 0,2 apagavam. O
+    // brilho de fio fica por conta do sheen, que não reamostra nada.
+    anisotropy: 0,
+    sheen: 0.72,
+    sheenRoughness: 0.4,
+    sheenColor: base.clone().lerp(new THREE.Color(1, 1, 1), 0.28),
+    // Verniz e ambiente baixos. A 0,35 de clearcoat sobre 1,1 de ambiente, um
+    // cabelo PRETO devolvia o céu inteiro e lia como cinza-azulado de peruca —
+    // a cor da luz vencia a cor do cabelo. O brilho de cabelo é a faixa
+    // anisotrópica ao longo do fio, não um reflexo de espelho.
+    clearcoat: 0,
+    envMapIntensity: 0.2,
+    // O especular dielétrico do cabelo, quase desligado. A calota lisa pegava
+    // a luz-chave inteira num quadro só, o bloom desmontava aquele ponto em
+    // blocos e o resultado eram QUADRADOS brancos no topo da cabeça. Cabelo
+    // escuro reflete pouco; quem faz o brilho aqui é a faixa anisotrópica.
+    specularIntensity: 0.22,
     side: THREE.DoubleSide,
   });
   mat.name = 'hair';
@@ -167,7 +179,11 @@ function irisTexture(color: string): THREE.Texture {
 export function makeIrisMaterial(colorIndex: number): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
     map: irisTexture(EYE_COLORS[colorIndex % EYE_COLORS.length]),
-    roughness: 0.30,
+    // A íris é a única coisa colorida de um rosto neutro. A 0,30 de rugosidade
+    // e 0,22 de ambiente ela ficava escura demais para mostrar cor nenhuma, e
+    // o olho lia como um botão preto.
+    color: new THREE.Color(1.35, 1.35, 1.35),
+    roughness: 0.24,
     metalness: 0,
     // A full-strength clearcoat over the whole iris washed every eye colour
     // to the same grey. The wet look belongs on the cornea, and the catch
@@ -210,15 +226,19 @@ export function makeLipMaterial(toneIndex: number): THREE.MeshPhysicalMaterial {
   // A small nudge, not lipstick: pushed a third of the way toward red and a
   // quarter darker. The first pass multiplied saturation by 1.35 and every
   // avatar came out wearing orange gloss.
+  // Ainda menos que "um empurrãozinho". Num close, 10% de saturação a mais
+  // sobre um tom de pele já quente vira gloss laranja, e gloss laranja é a
+  // primeira coisa que denuncia um rosto de protótipo. O lábio se lê pela
+  // FORMA e pela sombra abaixo dele, não pela cor.
   const lip = new THREE.Color().setHSL(
-    hsl.h * 0.94,
-    Math.min(1, hsl.s * 1.10 + 0.03),
-    Math.max(0.08, hsl.l * 0.84),
+    hsl.h * 0.96,
+    Math.min(1, hsl.s * 1.04 + 0.01),
+    Math.max(0.08, hsl.l * 0.90),
   ).convertSRGBToLinear();
 
   return new THREE.MeshPhysicalMaterial({
     color: lip,
-    roughness: 0.36,
+    roughness: 0.52,
     metalness: 0,
     sheen: 0.5,
     sheenRoughness: 0.5,
@@ -312,7 +332,9 @@ function weaveNormal(): THREE.Texture {
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(6, 6);
+  // 16 repetições e não 6. A UV de uma peça vai de 0 a 1 sobre a peça INTEIRA,
+  // então a 6 cada fio da trama tem um centímetro e o close lê cota de malha.
+  tex.repeat.set(16, 16);
   tex.needsUpdate = true;
   weaveMap = tex;
   return tex;
@@ -328,7 +350,7 @@ export function makeClothMaterial(o: ClothOptions): THREE.MeshPhysicalMaterial {
     sheenColor: new THREE.Color(o.color).convertSRGBToLinear().lerp(new THREE.Color(1, 1, 1), 0.55),
     envMapIntensity: 0.85,
     normalMap: weaveNormal(),
-    normalScale: new THREE.Vector2(o.weave ?? 0.5, o.weave ?? 0.5),
+    normalScale: new THREE.Vector2(o.weave ?? 0.34, o.weave ?? 0.34),
   });
   if (o.iridescence) {
     mat.iridescence = o.iridescence;

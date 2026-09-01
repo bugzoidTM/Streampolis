@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { loft, assemble, type Station } from './Loft.js';
+import { fbm } from '../materials/Noise.js';
 import type { BoneName, BuiltRig } from './Skeleton.js';
 
 /**
@@ -466,7 +467,7 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
   // The jaw ANGLE, under and behind the ear, where the mandible turns up. A
   // mandible line that only exists at the front is a chin with no hinge, and
   // the head goes back to reading as an oval seen from three quarters.
-  const gonion = Math.exp(-Math.pow((t + 0.30) / 0.12, 2))
+  const gonion = Math.exp(-Math.pow((t + 0.30) / 0.17, 2))
     * Math.exp(-Math.pow((n.z + 0.15) / 0.36, 2)) * Math.pow(Math.abs(n.x), 1.2);
   out.x += Math.sign(n.x) * gonion * R * 0.040 * face.jaw;
   out.y -= gonion * R * 0.016;
@@ -503,6 +504,66 @@ export function sculptHead(n: THREE.Vector3, R: number, face: FaceShape, out = n
   out.z += lipMask * R * 0.035;
 
   return out;
+}
+
+/**
+ * A cor da pele numa direção do crânio, como MULTIPLICADOR do tom base.
+ *
+ * Pele lisa de uma cor só é barro, e barro é a leitura que derruba um close.
+ * O que um rosto tem, e este não tinha, é zoneamento: bochecha e orelha
+ * puxam para o vermelho porque são finas e vascularizadas, a órbita e o vinco
+ * do queixo escurecem porque a luz não chega lá, e a testa é a área mais
+ * clara e mais fria da face.
+ *
+ * Sai como COR POR VÉRTICE e não como textura de propósito. A cabeça é
+ * esférica em UV mas o nariz e a orelha entram na mesma malha com UV própria
+ * de loft, então um mapa pintaria bochecha na ponta do nariz. Uma função da
+ * posição não tem esse problema — e é a mesma regra que o sculpt já segue.
+ */
+export function skinTint(n: THREE.Vector3, out = new THREE.Color()): THREE.Color {
+  const t = n.y;
+  const front = Math.max(0, n.z);
+  const ax = Math.abs(n.x);
+  const g = (v: number, c: number, w: number) => Math.exp(-Math.pow((v - c) / w, 2));
+
+  let r = 1, gr = 1, b = 1;
+  // Amplitudes largas de propósito. Na primeira tentativa elas eram metade
+  // disto e o rosto continuou lendo como barro: num modelo estilizado o
+  // zoneamento precisa ser visível a olho nu, não "tecnicamente presente".
+  const warm = (m: number) => { r += m * 0.16; gr -= m * 0.07; b -= m * 0.11; };
+  const dark = (m: number) => { r -= m; gr -= m * 0.98; b -= m * 0.92; };
+
+  // Maçã do rosto: o ponto mais quente de qualquer rosto.
+  warm(g(ax, 0.54, 0.22) * g(t, -0.06, 0.20) * front * 1.0);
+  // Orelha, fina e atravessada pela luz.
+  warm(g(ax, 0.93, 0.13) * g(t, -0.02, 0.30) * 1.1);
+  // Ponta do nariz e narina.
+  warm(g(ax, 0.0, 0.16) * g(t, -0.05, 0.13) * Math.pow(front, 3) * 0.7);
+  // Queixo e lábio, um pouco.
+  warm(g(t, -0.42, 0.16) * g(ax, 0.0, 0.34) * front * 0.45);
+
+  // Órbita: a sombra que faz o olho AFUNDAR. Sem ela o globo lê como um
+  // adesivo, por melhor que a pálpebra esteja modelada.
+  dark(g(t, 0.05, 0.10) * g(ax, 0.40, 0.22) * front * 0.20);
+  // Sob a sobrancelha.
+  dark(g(t, 0.17, 0.06) * g(ax, 0.36, 0.26) * front * 0.09);
+  // Vinco do queixo com o pescoço, e a nuca sob o cabelo.
+  dark(g(t, -0.84, 0.22) * 0.22);
+  dark(Math.max(0, -n.z) * g(t, 0.10, 0.45) * 0.05);
+  // Têmpora, onde o crânio vira.
+  dark(g(ax, 0.80, 0.16) * g(t, 0.30, 0.24) * 0.07);
+
+  // Testa: a região mais clara e a única levemente fria.
+  const brow = g(t, 0.42, 0.20) * front;
+  r += brow * 0.01; gr += brow * 0.015; b += brow * 0.03;
+
+  // Grão fino, para a superfície não ser uma rampa perfeita.
+  const grain = (fbm(n.x * 9 + 3.1, n.y * 9 + 7.7, 3, 32) - 0.5) * 0.03;
+  return out.setRGB(
+    Math.max(0, r + grain),
+    Math.max(0, gr + grain),
+    Math.max(0, b + grain),
+  );
 }
 
 /**
@@ -552,6 +613,36 @@ export function buildHead(rig: BuiltRig, face: FaceShape, headBoneIndex: number)
   const c = headCentre(rig, face);
   geo.translate(0, rig.restWorld.Head.y + c.y, c.z);
   return geo;
+}
+
+/**
+ * Escreve {@link skinTint} como atributo `color` na malha da cabeça.
+ *
+ * Roda DEPOIS do merge com nariz e orelha de propósito: assim as duas partes
+ * recebem o mesmo zoneamento pela posição que ocupam, sem precisar saber que
+ * vieram de lofts diferentes.
+ */
+export function paintSkin(geo: THREE.BufferGeometry, rig: BuiltRig, face: FaceShape): void {
+  const R = headRadius(rig, face);
+  const c = headCentre(rig, face);
+  const origin = new THREE.Vector3(0, rig.restWorld.Head.y + c.y, c.z);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const colors = new Float32Array(pos.count * 3);
+  const dir = new THREE.Vector3();
+  const tint = new THREE.Color();
+
+  for (let i = 0; i < pos.count; i++) {
+    dir.set(pos.getX(i), pos.getY(i), pos.getZ(i)).sub(origin).divideScalar(R);
+    // A malha não é uma esfera, então a direção precisa ser normalizada antes
+    // de virar coordenada: um nariz que projeta 1,2 raios cairia fora de toda
+    // gaussiana e sairia da cor do resto do rosto.
+    if (dir.lengthSq() > 1e-8) dir.normalize();
+    skinTint(dir, tint);
+    colors[i * 3] = tint.r;
+    colors[i * 3 + 1] = tint.g;
+    colors[i * 3 + 2] = tint.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
 
 export function buildBody(rig: BuiltRig, shape: BodyShape, segments = 20): THREE.BufferGeometry {
