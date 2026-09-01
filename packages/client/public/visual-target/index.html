@@ -115,6 +115,67 @@
     Cada uma dessas vontades é uma linha de receita.
   </p>
 
+  <h2><span class="num">00a</span>AvatarV2 — o experimento Quaternius</h2>
+  <p class="lead">
+    Depois de três sprints consertando o avatar procedural, a pergunta virou:
+    vale continuar? O experimento responde com uma imagem. Corpo base do
+    <b>Quaternius Universal Base Characters</b> (CC0), importado em glTF com o
+    rig original preservado, renderizado no mesmo laboratório, com a mesma luz
+    e os materiais do Streampolis. <b>Nada foi substituído</b> — roupa, loja,
+    banco e multiplayer não foram tocados, e o avatar do jogo continua sendo o
+    procedural. Ao vivo em <code>?view=lab&amp;v2=1</code>.
+  </p>
+  <div class="pair">
+    <figure>
+      <img src="v2-close-atual.jpg" alt="Close do avatar procedural atual">
+      <figcaption><b><span class="tag tag--hoje">Procedural, hoje</span></b>
+        Três sprints de conserto: ombro costurado, crânio reproporcionado,
+        cabelo em mechas, pele com zonas. É o melhor que esta abordagem
+        entregou.</figcaption>
+    </figure>
+    <figure>
+      <img src="v2-close.jpg" alt="Close do corpo base Quaternius">
+      <figcaption><b><span class="tag tag--alvo">AvatarV2</span></b>
+        Pálpebra com espessura, cílio, maçã do rosto, lábio com volume,
+        clavícula, cabelo com repartido e mechas de verdade. 15 mil triângulos,
+        1 MB.</figcaption>
+    </figure>
+  </div>
+  <div class="pair" style="margin-top:16px">
+    <figure>
+      <img src="v2-comparacao.jpg" alt="Dois avatares procedurais ao lado de dois V2">
+      <figcaption><b>Lado a lado</b>
+        Mesma cena, mesma luz, mesma câmera. À esquerda o avatar do jogo; à
+        direita o corpo base.</figcaption>
+    </figure>
+    <figure>
+      <img src="v2-dance.jpg" alt="V2 tocando a animação de dança">
+      <figcaption><b>Sem retarget</b>
+        A Universal Animation Library do mesmo autor usa o MESMO esqueleto de
+        65 ossos, com os mesmos nomes. O <code>AnimationMixer</code> amarra as
+        faixas pelo nome do nó — as animações tocam direto. O plano previa
+        retargetar Idle, Walk e Dance; não foi preciso.</figcaption>
+    </figure>
+  </div>
+  <ul class="gap">
+    <li><b>O que o pacote gratuito realmente traz.</b> Não são seis corpos: são
+      <b>dois</b>, e os dois na proporção <em>Superhero</em> — o masculino é um
+      fisiculturista. Regular e teen estão só na versão SOURCE, paga. Para um
+      life sim isso é o achado mais importante do experimento, e é o que
+      decide se a migração é uma troca de corpo ou uma compra.</li>
+    <li><b>Rig humanoide de verdade:</b> 65 ossos com a convenção do Unreal,
+      incluindo <b>cadeias completas de dedos</b>. O nosso tem ~20 e nenhuma
+      junta de dedo — é a diferença entre um aceno e uma mão que fecha.</li>
+    <li><b>O que NÃO atravessa.</b> Todo o guarda-roupa do Streampolis é
+      lofteado das estações do NOSSO corpo, e o portão de 176 combinações mede
+      contra ele. Nada disso migra: as 45 peças teriam de ser refeitas ou
+      compradas, e o portão, reescrito. É o custo real da troca, e não aparece
+      em nenhuma captura.</li>
+    <li><b>Peso.</b> Corpo 1 MB, 15 mil triângulos — barato. As animações são
+      caras: 8 faixas dão 5 MB, porque o custo é o keyframe e não a malha.
+      Numa migração vale quantizar.</li>
+  </ul>
+
   <h2><span class="num">00b</span>Praça Asset Pass — a experiência</h2>
   <p class="lead">
     A crítica: o jogo estava mais perto de um MMO social low-poly indie do que

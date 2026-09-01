@@ -19,7 +19,7 @@
  *   POST em `/file/<id>` para receber a URL assinada do arquivo. O endpoint
  *   `/file` mora na URL BASE do jogo, não na URL com token — ali dá 404.
  */
-import { mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir, copyFile, rm, stat } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -132,6 +132,45 @@ async function download(url, dest) {
 
 const exists = (p) => stat(p).then(() => true, () => false);
 
+/**
+ * Conserta referências de textura que o pacote publicou com o nome errado.
+ *
+ * O Universal Base Characters aponta para `T_Eye_Normal_png.png` e
+ * `T_Hair_1_Normal_png.png`, e o que existe na pasta é `T_Eye_Normal.png`.
+ * É erro de empacotamento do autor, não nosso — e o glTF simplesmente não abre
+ * por causa dele. O conserto é genérico de propósito: se um `uri` some e o
+ * mesmo nome sem o sufixo `_png` existe, copia. Assim vale para o próximo
+ * pacote com o mesmo deslize, e não vira uma exceção com nome de pacote dentro
+ * do fetcher.
+ */
+async function repairTextureRefs(dir) {
+  const gltfs = [];
+  const walk = async (d) => {
+    for (const entry of await readdir(d, { withFileTypes: true })) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.endsWith('.gltf')) gltfs.push(full);
+    }
+  };
+  await walk(dir).catch(() => {});
+
+  let fixed = 0;
+  for (const file of gltfs) {
+    const json = JSON.parse(await readFile(file, 'utf8'));
+    for (const image of json.images ?? []) {
+      if (!image.uri || image.uri.startsWith('data:')) continue;
+      const target = path.join(path.dirname(file), decodeURIComponent(image.uri));
+      if (await exists(target)) continue;
+      const alt = target.replace(/_png(\.[a-z]+)$/i, '$1');
+      if (alt !== target && await exists(alt)) {
+        await copyFile(alt, target);
+        fixed++;
+      }
+    }
+  }
+  if (fixed) console.log(`  ⟳ ${fixed} textura(s) com nome quebrado no pacote, copiadas`);
+}
+
 async function fetchPack(pack) {
   const dir = path.join(VENDOR, pack.id);
   if (!force && await exists(path.join(dir, '.done'))) {
@@ -162,6 +201,8 @@ async function fetchPack(pack) {
       await rm(zip);
     }
   }
+
+  await repairTextureRefs(dir);
 
   await writeFile(path.join(dir, 'LICENSE.txt'),
     `${pack.name}\nFonte: ${pack.page}\nLicença: ${pack.license}\n${pack.licenseUrl}\n`

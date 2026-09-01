@@ -29,7 +29,7 @@
  */
 import { Document, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { dedup, prune, weld, join, flatten, textureCompress, mergeDocuments, unpartition } from '@gltf-transform/functions';
+import { dedup, prune, weld, join, flatten, textureCompress, mergeDocuments, unpartition, resample } from '@gltf-transform/functions';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -144,6 +144,93 @@ async function loadModel(file) {
 
 /** Every root node of a document's default scene, as one list. */
 const sceneRoots = (doc) => doc.getRoot().listScenes()[0]?.listChildren() ?? [];
+
+/**
+ * Família de malha SKINADA — o caminho separado, e ele existe por um motivo
+ * duro: o passe normal chama `flatten()` e `join()`, e achatar uma malha
+ * skinada destrói o vínculo dela com o esqueleto. Personagem não pode passar
+ * por lá.
+ *
+ * Aqui cada modelo vira o SEU GLB, com o rig e a topologia como o autor
+ * entregou. É essa fidelidade que faz a biblioteca de animação do mesmo autor
+ * tocar sem retarget nenhum: mesmos 65 ossos, mesmos nomes.
+ */
+async function buildSkinnedFamily(name, spec) {
+  const out = [];
+  await mkdir(path.join(OUT, name), { recursive: true });
+
+  for (const entry of spec.models) {
+    const doc = await io.read(path.join(VENDOR, entry.file));
+    if (inspect) {
+      const root = doc.getRoot();
+      let tris = 0;
+      for (const mesh of root.listMeshes()) {
+        for (const prim of mesh.listPrimitives()) {
+          const idx = prim.getIndices();
+          tris += (idx ? idx.getCount() : prim.getAttribute('POSITION').getCount()) / 3;
+        }
+      }
+      console.log(`${name.padEnd(9)} ${entry.id.padEnd(12)} ${Math.round(tris)} tri · `
+        + `${root.listSkins()[0]?.listJoints().length ?? 0} ossos · `
+        + `${root.listAnimations().length} animações`);
+      continue;
+    }
+
+    // Um pacote de ANIMAÇÃO não precisa da malha que veio junto: as faixas
+    // referenciam os ossos pelo nome, e o esqueleto sobrevive sozinho. Jogar a
+    // malha fora derruba o arquivo de 7,3 MB para uma fração disso, e é a
+    // diferença entre "cabe num carregamento de cena" e "não cabe".
+    if (entry.id === 'animations') {
+      // Só as faixas que o experimento usa. As 43 do pacote custam 7,3 MB de
+      // keyframe — o peso é a animação, não a malha, e mandar 43 para o
+      // navegador por causa de 3 é o tipo de coisa que ninguém percebe até o
+      // primeiro carregamento no celular.
+      if (entry.keep) {
+        const keep = new Set(entry.keep);
+        for (const anim of doc.getRoot().listAnimations()) {
+          if (!keep.has(anim.getName())) anim.dispose();
+        }
+      }
+      for (const mesh of doc.getRoot().listMeshes()) mesh.dispose();
+      for (const skin of doc.getRoot().listSkins()) skin.dispose();
+      for (const mat of doc.getRoot().listMaterials()) mat.dispose();
+      for (const tex of doc.getRoot().listTextures()) tex.dispose();
+      for (const node of doc.getRoot().listNodes()) node.setMesh(null).setSkin(null);
+      // `prune` só aqui: sem malha não há skin para ele estragar, e é ele que
+      // libera os accessors das faixas descartadas. Sem esta linha o arquivo
+      // continua carregando os keyframes das 35 animações que já foram
+      // jogadas fora.
+      await doc.transform(prune());
+    }
+
+    // Sem flatten, sem join, sem weld. Só o que não toca em vértice.
+    await doc.transform(
+      dedup(),
+      // Corta keyframe redundante: o exportador grava toda amostra de todo
+      // osso, inclusive as constantes.
+      resample(),
+      unpartition(),
+      textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [spec.texture ?? 1024, spec.texture ?? 1024] }),
+    );
+    const glb = await io.writeBinary(doc);
+    await writeFile(path.join(OUT, name, `${entry.id}.glb`), glb);
+
+    const root = doc.getRoot();
+    out.push({
+      id: entry.id,
+      family: name,
+      weight: 1,
+      pack: entry.pack ?? spec.pack,
+      license: entry.license ?? spec.license,
+      size: [0, 0, 0],
+      joints: root.listSkins()[0]?.listJoints().length ?? 0,
+      animations: root.listAnimations().map((a) => a.getName()),
+      collider: { kind: 'none', radius: 0, height: 0 },
+    });
+    console.log(`✓ ${name}/${entry.id}.glb  ${(glb.byteLength / 1e6).toFixed(2)} MB`);
+  }
+  return inspect ? null : out;
+}
 
 async function buildFamily(name, spec) {
   const family = new Document();
@@ -287,7 +374,7 @@ for (const [name, spec] of Object.entries(curation.families)) {
     } catch { /* primeira execução */ }
     continue;
   }
-  const rows = await buildFamily(name, spec);
+  const rows = spec.skinned ? await buildSkinnedFamily(name, spec) : await buildFamily(name, spec);
   if (rows) catalog.push(...rows);
 }
 

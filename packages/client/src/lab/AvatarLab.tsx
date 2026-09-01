@@ -4,6 +4,7 @@ import { DEFAULT_AVATAR, type AvatarConfig } from '@streampolis/shared';
 import { Renderer, LOOK_DAY } from '../game/Renderer.js';
 import { Environment, GOLDEN_HOUR } from '../game/Environment.js';
 import { Avatar } from '../game/avatar/Avatar.js';
+import { CharacterV2 } from '../game/avatar/v2/CharacterV2.js';
 import { auditAvatar, AUDIT_LIMITS } from '../game/avatar/Audit.js';
 import { buildMatrix } from './matrix.js';
 import { concrete, applySurface } from '../game/materials/Textures.js';
@@ -70,6 +71,15 @@ export function AvatarLab() {
 
     const group = new THREE.Group();
     const avatars: Avatar[] = [];
+    /**
+     * EXPERIMENTO AvatarV2. `?v2=1` põe o corpo base do Quaternius ao lado do
+     * avatar procedural, na MESMA cena, com a mesma luz e a mesma câmera —
+     * porque a pergunta que este experimento responde só se responde lado a
+     * lado. `?v2=only` mostra só o V2. Nada aqui substitui nada: o avatar do
+     * jogo continua sendo o procedural.
+     */
+    const v2Mode = params.get('v2');
+    const v2s: CharacterV2[] = [];
     // Matrix mode starts empty: the harness drives one combination at a time
     // through __lab.tile(), so every tile gets the same framing and light.
     const matrix = params.get('matrix') === '1';
@@ -86,6 +96,42 @@ export function AvatarLab() {
       avatars.push(a);
     }
     scene.add(group);
+
+    if (v2Mode) {
+      const pitch = 0.95;
+      // Altura opcional: `?v2h=1.67` mede o pacote contra a nossa proporção,
+      // sem ela contra a proporção do próprio autor. As duas perguntas
+      // importam e são diferentes.
+      const height = params.get('v2h') ? Number(params.get('v2h')) : undefined;
+      void Promise.all([
+        CharacterV2.load('female', { height, hair: '#3a2a20', hairstyle: params.get('v2hair') ?? 'hair_long' }),
+        CharacterV2.load('male', { height, hair: '#1b1614', hairstyle: 'hair_parted' }),
+      ]).then(([female, male]) => {
+        // À DIREITA da fileira procedural, nunca em cima dela. Os dois grupos
+        // se centram de formas diferentes, e somar índices sem levar isso em
+        // conta põe um V2 exatamente sobre um avatar do jogo — o que, numa
+        // comparação, é a única coisa que não pode acontecer.
+        const solo = v2Mode === 'solo';
+        const right = n > 0 ? ((n - 1) / 2) * spacing + pitch : -pitch / 2;
+        const pair = solo ? [female] : [female, male];
+        pair.forEach((c, i) => {
+          c.root.position.x = solo ? 0 : right + i * pitch;
+          group.add(c.root);
+          v2s.push(c);
+          for (const mat of c.materials()) env.registerMaterial(mat);
+          c.play(params.get('anim') ?? 'Idle_Loop');
+        });
+        if (solo) male.dispose();
+        Object.assign(window as object, {
+          __v2: v2s.map((c) => ({
+            nativeHeight: +c.nativeHeight.toFixed(3),
+            triangles: c.triangles,
+            bones: c.bones,
+            clips: [...c.clips.keys()],
+          })),
+        });
+      }).catch((err) => console.warn('[v2] não carregou:', err));
+    }
 
     const focus = new THREE.Vector3(0, 0.95, 0);
     key.target.position.copy(focus);
@@ -109,6 +155,7 @@ export function AvatarLab() {
     const frame = () => {
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.05, clock.getDelta());
+      for (const c of v2s) c.update(dt);
       const t = clock.getElapsedTime();
       group.rotation.y = matrix ? yaw : (spin ? t * 0.28 : yaw);
 
@@ -301,6 +348,7 @@ export function AvatarLab() {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       for (const a of avatars) a.dispose();
+      for (const c of v2s) c.dispose();
       env.dispose();
       renderer.dispose();
     };

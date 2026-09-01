@@ -80,6 +80,28 @@
       "license": "CC0-1.0",
       "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
       "use": "interiores do apartamento"
+    },
+    {
+      "id": "quaternius-characters",
+      "name": "Quaternius Universal Base Characters",
+      "source": "itch",
+      "itchUser": "quaternius",
+      "itchGame": "universal-base-characters",
+      "page": "https://quaternius.itch.io/universal-base-characters",
+      "license": "verificar no .txt do pacote (as versões gratuitas da Quaternius declaram CC0 1.0)",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "experimento AvatarV2: corpo base masculino e feminino com rig humanoide"
+    },
+    {
+      "id": "quaternius-animations",
+      "name": "Quaternius Universal Animation Library",
+      "source": "itch",
+      "itchUser": "quaternius",
+      "itchGame": "universal-animation-library",
+      "page": "https://quaternius.itch.io/universal-animation-library",
+      "license": "verificar no .txt do pacote",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "experimento AvatarV2: animações prontas para o mesmo rig humanoide"
     }
   ],
   "hdris": [

@@ -150,6 +150,61 @@ O que já está certo e não deve ser mexido: proporção (1,67 m), presets de c
 que mudam silhueta de verdade, e o pipeline de vestir — que valida posse antes
 de deixar usar (SPECs §68).
 
+### AvatarV2 — o experimento Quaternius (não substitui nada)
+
+Depois de três sprints consertando o avatar procedural, a pergunta virou: vale
+continuar? O experimento responde com uma imagem, e o escopo foi mantido
+estreito de propósito — **corpo base importado, rig original preservado,
+renderizado no laboratório com os materiais do Streampolis. Roupa, loja, banco
+e multiplayer não foram tocados, e o avatar do jogo continua sendo o
+procedural.** Ao vivo em `?view=lab&v2=1` (e `&v2=solo` para o close).
+
+**A descoberta que decide.** O pacote gratuito NÃO traz seis corpos: traz
+**dois**, ambos na proporção *Superhero* — o masculino é um fisiculturista.
+Regular e teen estão só na versão SOURCE, paga. Para um life sim isso é o
+achado mais importante do teste, porque muda a pergunta de "trocamos o corpo?"
+para "compramos o pacote?".
+
+**A boa surpresa.** O plano previa retargetar Idle, Walk e Dance. **Não foi
+preciso**: o pacote de corpos e a Universal Animation Library do mesmo autor
+usam o MESMO esqueleto — 65 ossos com a convenção do Unreal (`pelvis`,
+`spine_01`, `clavicle_l`, `thigh_r`…) — e o `AnimationMixer` do three amarra as
+faixas pelo NOME do nó. As animações tocam direto no personagem.
+
+| Medida | Procedural (hoje) | AvatarV2 |
+|---|---|---|
+| Triângulos | ~9 mil | 14–15 mil |
+| Ossos | ~20, sem junta de dedo | 65, com cadeias completas de dedos |
+| Peso do corpo | 0 (gerado) | ~1 MB |
+| Animações | 12 clipes autorais | 43 no pacote (8 empacotadas, 5 MB) |
+| Proporção | 1,67 m, ajustável por preset | 1,78–1,82 m, só *Superhero* no grátis |
+| Roupa | 45 peças, portão de 176 combinações | nenhuma; corpo vem de roupa íntima |
+
+**O que NÃO atravessa, e é o custo real.** Todo o guarda-roupa é lofteado das
+estações do NOSSO corpo (`torso()`, `arm()`, `leg()`), e o portão mede contra
+ele. Nada disso migra: as 45 peças teriam de ser refeitas ou compradas, e o
+portão reescrito. Isso não aparece em captura nenhuma e é a maior parte do
+trabalho de uma migração.
+
+**Notas de pipeline que valem para qualquer personagem futuro:**
+
+- **Malha skinada não passa pelo passe normal.** `flatten()` e `join()` destroem
+  o vínculo com o esqueleto. `spec.skinned` no `assets/curation.json` manda
+  cada modelo para um caminho separado: só dedup, textura e reempacote, um GLB
+  por modelo, topologia e rig como o autor entregou. É essa fidelidade que faz
+  a biblioteca de animação tocar sem retarget.
+- **O peso de um pacote de animação é o keyframe, não a malha.** Jogar a malha
+  fora tirou 0,2 MB de 7,3; ficar com 8 das 43 faixas e rodar `resample()` +
+  `prune()` levou a 5 MB. `prune()` é obrigatório: sem ele os accessors das
+  faixas descartadas continuam no arquivo.
+- **O pacote publica duas texturas com o nome errado** (`T_Eye_Normal_png.png`
+  quando o arquivo é `T_Eye_Normal.png`), e o glTF simplesmente não abre. O
+  `fetch` conserta genericamente: `uri` que some e existe sem o sufixo `_png` é
+  copiado.
+- **Cabelo "Origin at 0" vem no espaço do MODELO.** Pendurá-lo no osso da
+  cabeça sem mais nada aplica a transformação da cabeça duas vezes;
+  pré-multiplicar pela inversa da matriz de repouso do osso cancela a primeira.
+
 ### O avatar em close — a rodada que o cenário cobrava
 
 Com a praça e o apartamento resolvidos, o avatar passou a ser o que derrubava a

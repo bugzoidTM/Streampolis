@@ -407,6 +407,54 @@
         "saturation": 0.9,
         "brightness": 0.93
       }
+    },
+    "character": {
+      "$comment": "EXPERIMENTO AvatarV2. Malha COM SKIN: o passe normal achata e funde geometria, e achatar uma malha skinada destrói o vínculo com o esqueleto. Aqui só dedup, textura e reempacote — a topologia e o rig chegam como o autor entregou, que é exatamente a condição de a biblioteca de animação do mesmo autor funcionar sem retarget.",
+      "pack": "Quaternius Universal Base Characters",
+      "license": "CC0-1.0",
+      "skinned": true,
+      "texture": 1024,
+      "models": [
+        {
+          "id": "male",
+          "file": "quaternius-characters/extracted/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.gltf"
+        },
+        {
+          "id": "female",
+          "file": "quaternius-characters/extracted/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Female_FullBody.gltf"
+        },
+        {
+          "id": "animations",
+          "file": "quaternius-animations/extracted/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+          "pack": "Quaternius Universal Animation Library",
+          "keep": [
+            "A_TPose",
+            "Idle_Loop",
+            "Idle_Talking_Loop",
+            "Walk_Loop",
+            "Jog_Fwd_Loop",
+            "Dance_Loop",
+            "Sitting_Idle_Loop",
+            "Interact"
+          ]
+        },
+        {
+          "id": "hair_long",
+          "file": "quaternius-characters/extracted/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Long.gltf"
+        },
+        {
+          "id": "hair_parted",
+          "file": "quaternius-characters/extracted/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_SimpleParted.gltf"
+        },
+        {
+          "id": "hair_buns",
+          "file": "quaternius-characters/extracted/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buns.gltf"
+        },
+        {
+          "id": "hair_buzzed",
+          "file": "quaternius-characters/extracted/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buzzed.gltf"
+        }
+      ]
     }
   }
 }
