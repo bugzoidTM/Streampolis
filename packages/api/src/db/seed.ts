@@ -64,6 +64,20 @@ export async function mirrorCatalog(): Promise<number> {
         ],
       );
     }
+
+    // O que SAIU do catálogo é desativado, não apagado.
+    //
+    // Espelhar só o que existe deixava para trás os itens retirados, ainda
+    // ativos e ainda vestíveis: quando o guarda-roupa procedural saiu de cena,
+    // as 45 peças velhas continuaram no banco e um avatar antigo seguiu
+    // apontando para elas. Apagar quebraria inventário e extrato — a compra
+    // aconteceu, e um extrato com item inexistente é pior do que um item que
+    // não se vende mais.
+    await client.query(
+      `UPDATE streampolis.items SET active = false
+        WHERE active AND id <> ALL($1::text[])`,
+      [ITEM_CATALOG.map((i) => i.id)],
+    );
   });
   return ITEM_CATALOG.length;
 }
@@ -74,22 +88,23 @@ const DEV_USERS: DevUser[] = [
   {
     username: 'ana', email: 'ana@dev.streampolis', coins: 50_000, credits: 20_000, role: 'player',
     look: {
-      bodyPreset: 2, skinTone: 3, facePreset: 1, hair: 'hair_long_01', hairColor: 4,
-      top: 'top_jacket_01', bottom: 'bottom_skirt_01', shoes: 'shoes_boot_01', height: 1.0,
+      // Peças do guarda-roupa v2 (ver `shared/items.ts`): `hair` é a CABEÇA.
+      bodyPreset: 2, skinTone: 3, facePreset: 1, hair: 'f_suit_head', hairColor: 4,
+      top: 'f_suit_top', bottom: 'f_suit_bottom', shoes: 'f_suit_shoes', height: 1.0,
     },
   },
   {
     username: 'beto', email: 'beto@dev.streampolis', coins: 50_000, credits: 20_000, role: 'player',
     look: {
-      bodyPreset: 1, skinTone: 6, facePreset: 2, hair: 'hair_buzz_01', hairColor: 0,
-      top: 'top_hoodie_01', bottom: 'bottom_cargo_01', shoes: 'shoes_sneaker_01', height: 1.05,
+      bodyPreset: 1, skinTone: 6, facePreset: 2, hair: 'm_hoodie_character_head', hairColor: 0,
+      top: 'm_hoodie_character_top', bottom: 'm_worker_bottom', shoes: 'm_casual_character_shoes', height: 1.05,
     },
   },
   {
     username: 'caio', email: 'caio@dev.streampolis', coins: 5_000, credits: 5_000, role: 'player',
     look: {
-      bodyPreset: 3, skinTone: 1, facePreset: 3, hair: 'hair_afro_01', hairColor: 2,
-      top: 'top_tee_01', bottom: 'bottom_track_01', shoes: 'shoes_glow_01', height: 0.96,
+      bodyPreset: 3, skinTone: 1, facePreset: 3, hair: 'm_business_man_head', hairColor: 2,
+      top: 'm_business_man_top', bottom: 'm_business_man_bottom', shoes: 'm_business_man_shoes', height: 0.96,
     },
   },
   { username: 'moderador', email: 'mod@dev.streampolis', coins: 0, credits: 0, role: 'moderator' },

@@ -1,10 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ITEM_BY_ID, type AvatarConfig, type ItemType } from '@streampolis/shared';
 import { useAccountStore } from '../state/useAccountStore.js';
-import {
-  BODY_PRESET_LABELS, FACE_PRESET_LABELS, HAIR_SWATCHES, SKIN_SWATCHES,
-  itemSwatch, wearablesOfType,
-} from '../state/avatarOptions.js';
+import { HAIR_SWATCHES, SKIN_SWATCHES, itemSwatch, wearablesOfType } from '../state/avatarOptions.js';
 import { usePoster } from './usePoster.js';
 import { Button, Segmented } from './primitives/Controls.js';
 import './avatar.css';
@@ -33,11 +30,11 @@ export interface AvatarViewProps {
   onClose: () => void;
 }
 
-type TabId = 'corpo' | 'cabelo' | 'roupa';
+type TabId = 'corpo' | 'cabeca' | 'roupa';
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'corpo', label: 'Corpo' },
-  { id: 'cabelo', label: 'Cabelo' },
+  { id: 'cabeca', label: 'Cabeça' },
   { id: 'roupa', label: 'Roupa' },
 ];
 
@@ -95,7 +92,7 @@ export function AvatarView({ onClose }: AvatarViewProps) {
       <header className="screen__head">
         <div>
           <h1 className="screen__title">Seu visual</h1>
-          <p className="screen__sub">Corpo, rosto, cabelo e roupa</p>
+          <p className="screen__sub">Corpo, cabeça e roupa</p>
         </div>
         <Button variant="ghost" onClick={onClose}>Fechar</Button>
       </header>
@@ -120,22 +117,10 @@ export function AvatarView({ onClose }: AvatarViewProps) {
                   />
                 ))}
               </Row>
-
-              <Row label="Rosto">
-                {FACE_PRESET_LABELS.map((name, i) => (
-                  <Chip key={name} on={config.facePreset === i} onClick={() => set({ facePreset: i })}>
-                    {name}
-                  </Chip>
-                ))}
-              </Row>
-
-              <Row label="Corpo">
-                {BODY_PRESET_LABELS.map((name, i) => (
-                  <Chip key={name} on={config.bodyPreset === i} onClick={() => set({ bodyPreset: i })}>
-                    {name}
-                  </Chip>
-                ))}
-              </Row>
+              {/* Rosto e corpo saíram desta aba com a migração para o corpo de
+                  asset: o formato do rosto vem na CABEÇA, e o físico vem no
+                  personagem de onde a peça saiu. Deixar dois seletores que não
+                  mexem em nada é pior do que não tê-los. */}
 
               <label className="look__slider">
                 <span>Altura</span>
@@ -151,10 +136,12 @@ export function AvatarView({ onClose }: AvatarViewProps) {
             </>
           )}
 
-          {tab === 'cabelo' && (
+          {tab === 'cabeca' && (
             <>
-              <Row label="Corte">
-                <Chip on={config.hair === ''} onClick={() => set({ hair: '' })}>Nenhum</Chip>
+              {/* No pacote, rosto e cabelo vêm na MESMA malha: escolher cabeça é
+                  escolher as duas coisas. Por isso não há "nenhum" aqui — um
+                  avatar sem cabeça não é um estilo. */}
+              <Row label="Cabeça">
                 {wearablesOfType('hair').map((item) => (
                   <Chip
                     key={item.id} on={config.hair === item.id}
@@ -166,7 +153,7 @@ export function AvatarView({ onClose }: AvatarViewProps) {
                 ))}
               </Row>
 
-              <Row label="Cor">
+              <Row label="Cor do cabelo">
                 {HAIR_SWATCHES.map((hex, i) => (
                   <Swatch
                     key={hex} color={hex} on={config.hairColor === i}
@@ -177,7 +164,7 @@ export function AvatarView({ onClose }: AvatarViewProps) {
             </>
           )}
 
-          {tab === 'roupa' && SLOTS.map((slot) => (
+          {tab === 'roupa' && SLOTS.filter((s) => wearablesOfType(s.type).length > 0).map((slot) => (
             <Row key={slot.key} label={slot.label}>
               <Chip
                 on={config[slot.key] === ''}

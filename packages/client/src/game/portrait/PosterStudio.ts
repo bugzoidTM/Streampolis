@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
-import { Avatar } from '../avatar/Avatar.js';
+import { createAvatar, isProcedural } from '../avatar/createAvatar.js';
+import { AvatarV2 } from '../avatar/v2/AvatarV2.js';
 
 /**
  * Retratos 3D para a UI.
@@ -124,10 +125,10 @@ export function renderPoster(config: AvatarConfig, options: PosterOptions = {}):
   const hit = cache.get(cacheKey);
   if (hit) return Promise.resolve(hit);
 
-  const job = queue.then(() => {
+  const job = queue.then(async () => {
     const again = cache.get(cacheKey);
     if (again) return again;
-    const url = shoot(config, o, options.rim, turn);
+    const url = await shoot(config, o, options.rim, turn);
     cache.set(cacheKey, url);
     return url;
   });
@@ -136,26 +137,36 @@ export function renderPoster(config: AvatarConfig, options: PosterOptions = {}):
   return job;
 }
 
-function shoot(
+async function shoot(
   config: AvatarConfig,
   o: { shot: PosterShot; pose: AnimState; at: number; width: number; height: number },
   rimColor?: number,
   turn?: number,
-): string {
+): Promise<string> {
   if (!studio) studio = makeStudio(o.width, o.height);
   const s = studio;
   s.renderer.setSize(o.width, o.height, false);
   s.camera.aspect = o.width / o.height;
   if (rimColor !== undefined) s.rim.color.setHex(rimColor);
 
-  const avatar = new Avatar(config);
-  // Retrato não pisca: o laço abaixo adianta segundos de animação para o corpo
-  // ter peso, e o reflexo corre junto — sem prender, um card em cada tantos
-  // sai com a modelo de olho fechado.
-  avatar.pinBlink(0);
-  // Um frame parado no meio de um clipe é muito mais vivo do que a pose de
-  // descanso: o corpo aparece com peso de um lado, os braços fora do eixo.
-  avatar.animator.pin(o.pose);
+  // O MESMO construtor do jogo: o card tem de mostrar o corpo que a pessoa vai
+  // ver na praça, e um estúdio com avatar próprio é como as duas coisas se
+  // separam sem ninguém notar.
+  const avatar = createAvatar(config);
+  // Retrato espera as PEÇAS. O corpo v2 vem de quatro arquivos e nasce vazio;
+  // renderizar antes de eles chegarem fotografa o chão.
+  if (avatar instanceof AvatarV2) await avatar.ready;
+  if (isProcedural(avatar)) {
+    // Retrato não pisca: o laço abaixo adianta segundos de animação para o
+    // corpo ter peso, e o reflexo corre junto — sem prender, um card em cada
+    // tantos sai com a modelo de olho fechado.
+    avatar.pinBlink(0);
+    // Um frame parado no meio de um clipe é muito mais vivo do que a pose de
+    // descanso: o corpo aparece com peso de um lado, os braços fora do eixo.
+    avatar.animator.pin(o.pose);
+  } else {
+    avatar.setAnim(o.pose);
+  }
   const step = 1 / 30;
   for (let t = 0; t < o.at; t += step) avatar.animate(step, 0);
   // Três quartos: de frente o avatar vira foto 3x4 de documento.
@@ -168,7 +179,14 @@ function shoot(
   // altura visível é 2·d·tan(15°) ≈ 0,54·d. Corpo inteiro precisa de ~2,1 m de
   // altura visível (o avatar tem 1,67 m e a moldura pede folga), busto precisa
   // de ~0,8 m. Chutar a distância é o que decapitava o retrato.
-  const crown = avatar.eyeHeight;
+  // A ALTURA do avatar, não a linha dos olhos.
+  //
+  // O enquadramento antigo saía de `eyeHeight`, que no corpo procedural era a
+  // coroa do crânio; no corpo v2 é a linha dos olhos, uns 6% abaixo. Seis por
+  // cento de 1,7 m é uma cabeça cortada no topo do card — foi assim que o feed
+  // publicou gente sem cabeça no dia da migração.
+  const height = isProcedural(avatar) ? avatar.eyeHeight : avatar.eyeHeight / 0.94;
+  const crown = height;
   if (o.shot === 'bust') {
     // Folga acima da cabeça: um cabelo com volume (afro, moicano) precisa de
     // mais quadro do que a coroa do crânio.
@@ -183,8 +201,12 @@ function shoot(
     s.camera.position.set(0.40, crown * 0.16, 1.05);
     s.camera.lookAt(0, crown * 0.07, 0);
   } else {
-    s.camera.position.set(0.66, crown * 0.62, 3.7);
-    s.camera.lookAt(0, crown * 0.52, 0);
+    // Corpo inteiro: com fov de 30° a altura visível é 2·d·tan(15°) ≈ 0,536·d.
+    // Pedindo 1,45 altura de folga (cabelo em cima, sombra embaixo), a distância
+    // é aritmética e não tentativa — chutar é o que decapita o retrato.
+    const distance = (crown * 1.45) / 0.536;
+    s.camera.position.set(0.66, crown * 0.58, distance);
+    s.camera.lookAt(0, crown * 0.48, 0);
   }
   s.camera.updateProjectionMatrix();
 

@@ -481,7 +481,10 @@ export class World {
       actor.avatar.root.rotation.y = actor.yaw;
 
       // The state travels on the wire; here is where it becomes movement.
-      actor.avatar.setAnim(pose.anim ?? 'idle');
+      // O estado vem do servidor; `forcedAnim` é a trava da revisão visual, que
+      // manda o mesmo gesto para todo mundo. No corpo procedural ela entra pelo
+      // `Animator`; no v2, que não tem um, ela simplesmente VIRA o estado.
+      actor.avatar.setAnim(this.forcedAnim ?? pose.anim ?? 'idle');
       if (isProcedural(actor.avatar)) actor.avatar.animator.pin(this.forcedAnim);
       actor.avatar.animate(dt, actor.speed);
 

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { DEFAULT_AVATAR, type AvatarConfig, type CrowdRoutine } from '@streampolis/shared';
 import { mulberry32 } from './materials/Noise.js';
-import { Avatar } from './avatar/Avatar.js';
+import type { AvatarLike } from './avatar/AvatarLike.js';
+import { createAvatar } from './avatar/createAvatar.js';
 
 /**
  * Decorative crowd.
@@ -23,7 +24,7 @@ import { Avatar } from './avatar/Avatar.js';
 export type Routine = CrowdRoutine;
 
 interface Member {
-  avatar: Avatar;
+  avatar: AvatarLike;
   routine: Routine;
   leg: number;
   linger: number;
@@ -34,29 +35,38 @@ interface Member {
 
 const WALK_SPEED = 1.15;
 const SKIN = [0, 1, 2, 3, 4, 5, 6, 7];
-const HAIRS = [
-  'hair_crop_01', 'hair_bob_01', 'hair_buzz_01', 'hair_wave_01',
-  'hair_ponytail_01', 'hair_long_01', 'hair_braids_01', 'hair_afro_01',
+
+/**
+ * Quem anda na praça.
+ *
+ * Figurante veste um personagem INTEIRO do pacote, não uma mistura sorteada de
+ * peças: uma pessoa de terno com bota de operário e cabeça de punk lê como
+ * defeito, e ninguém olha um figurante tempo suficiente para achar graça na
+ * combinação. Misturar é privilégio de quem escolhe.
+ *
+ * A lista é de gente de rua — a bruxa, o astronauta e o rei estão no catálogo
+ * da loja e não atravessando a praça.
+ */
+const STREET = [
+  'm_casual_character', 'm_hoodie_character', 'm_business_man', 'm_worker',
+  'm_beach_character', 'm_farmer', 'm_punk', 'f_animated_woman',
+  'f_suit', 'f_worker', 'f_punk', 'f_adventurer',
 ];
-const TOPS = ['top_tee_01', 'top_hoodie_01', 'top_shirt_01', 'top_knit_01', 'top_jacket_01', 'top_tank_01'];
-const BOTTOMS = ['bottom_jeans_01', 'bottom_cargo_01', 'bottom_skirt_01', 'bottom_wide_01', 'bottom_shorts_01'];
-const SHOES = ['shoes_sneaker_01', 'shoes_boot_01', 'shoes_loafer_01', 'shoes_hitop_01'];
 
 /** A stranger. Deterministic per index, so a scene looks the same twice. */
 function extra(i: number): AvatarConfig {
   const rnd = mulberry32(4801 + i * 7919);
   const pick = <T>(list: readonly T[]): T => list[Math.floor(rnd() * list.length) % list.length];
+  const who = pick(STREET);
   return {
     ...DEFAULT_AVATAR,
-    bodyPreset: Math.floor(rnd() * 4),
-    facePreset: Math.floor(rnd() * 4),
     skinTone: pick(SKIN),
-    hair: pick(HAIRS),
     hairColor: Math.floor(rnd() * 10),
-    top: pick(TOPS),
-    bottom: pick(BOTTOMS),
-    shoes: pick(SHOES),
-    accessory: rnd() < 0.35 ? pick(['acc_cap_01', 'acc_glasses_01', 'acc_beanie_01', 'acc_chain_01']) : '',
+    hair: `${who}_head`,
+    top: `${who}_top`,
+    bottom: `${who}_bottom`,
+    shoes: `${who}_shoes`,
+    accessory: '',
     height: 0.94 + rnd() * 0.12,
   };
 }
@@ -72,8 +82,9 @@ export class AmbientCrowd {
     const count = Math.min(budget, routines.length);
     for (let i = 0; i < count; i++) {
       const routine = routines[i];
-      // Sem rig de expressão: oito meshes por figurante que ninguém vê.
-      const avatar = new Avatar(extra(i), { face: false });
+      // Sem rig de expressão: oito meshes por figurante que ninguém vê. (O
+      // corpo v2 não tem rig de rosto nenhum, e a opção vira letra morta nele.)
+      const avatar = createAvatar(extra(i), { face: false });
       const start = routine.path[0];
       avatar.root.position.set(start.x, routine.y ?? 0, start.z);
       // No shadow casting: a crowd of shadow casters doubles the shadow pass

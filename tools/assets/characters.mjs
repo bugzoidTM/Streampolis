@@ -22,7 +22,7 @@
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, prune, quantize, textureCompress, weld } from '@gltf-transform/functions';
-import { readdir, mkdir, writeFile, rm } from 'node:fs/promises';
+import { readdir, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 
@@ -139,6 +139,61 @@ await writeFile(path.join(OUT, 'catalog.json'), `${JSON.stringify({
   $comment: 'Peças de guarda-roupa fatiadas dos pacotes Ultimate Modular (CC0). Geradas por tools/assets/characters.mjs.',
   parts: catalog,
 }, null, 2)}\n`);
+
+/**
+ * As peças entram no CATÁLOGO COMPARTILHADO, entre marcadores.
+ *
+ * A loja, a API e o cliente têm de concordar sobre quais peças existem, e a
+ * lista não pode ser digitada à mão — ela sai de arquivos em disco. Um módulo
+ * separado seria mais limpo e não funciona: a API roda TypeScript cru no Node e
+ * não resolve os `import` internos do pacote compartilhado, então `items.ts`
+ * não pode importar um `wardrobe.ts` ao lado dele. Gerar dentro do próprio
+ * arquivo mantém UMA fonte, que é o que importa — o catálogo escrito duas vezes
+ * já custou um dia a este projeto.
+ */
+const NOME = {
+  adventurer: 'Aventureiro', animated_woman: 'Clássica', animated_woman_niitlv9nxs: 'Clássica II',
+  astronaut: 'Astronauta', beach_character: 'Praia', business_man: 'Executivo',
+  casual_character: 'Casual', farmer: 'Fazendeiro', hoodie_character: 'Moletom',
+  king: 'Realeza', medieval: 'Medieval', punk: 'Punk', sci_fi_character: 'Sci-Fi',
+  soldier: 'Militar', suit: 'Alfaiataria', swat: 'Tático', witch: 'Bruxa', worker: 'Operário',
+};
+const PECA = { head: 'Cabeça', top: 'Blusa', bottom: 'Calça', shoes: 'Calçado' };
+/** Slot do protocolo. `head` entra como `hair` porque rosto e cabelo vêm na mesma malha. */
+const TIPO = { head: 'hair', top: 'top', bottom: 'bottom', shoes: 'shoes' };
+/** Personagens que saem mais caros: silhueta distinta, não roupa de rua. */
+const RARO = new Set(['king', 'astronaut', 'sci_fi_character', 'witch', 'swat', 'soldier']);
+/** O conjunto que todo mundo já veste ao entrar: de graça, ou não há avatar. */
+const GRATIS = new Set(['m_casual_character', 'f_animated_woman']);
+
+const preco = (part) => {
+  const chave = `${part.gender}_${part.character}`;
+  if (GRATIS.has(chave)) return { rarity: 'common', credits: 0, coins: null };
+  if (RARO.has(part.character)) return { rarity: 'epic', credits: null, coins: 320 };
+  if (part.slot === 'head') return { rarity: 'rare', credits: 680, coins: null };
+  return { rarity: 'common', credits: 320, coins: null };
+};
+
+const linhas = catalog.map((part) => {
+  const p = preco(part);
+  const nome = `${PECA[part.slot]} ${NOME[part.character] ?? part.character}`
+    + (part.gender === 'f' ? ' F' : ' M');
+  return `  wear('${part.id}', '${TIPO[part.slot]}', '${nome}', '${p.rarity}', `
+    + `${p.credits}, ${p.coins}),`;
+}).join('\n');
+
+const itemsPath = path.join(ROOT, 'packages/shared/src/items.ts');
+const items = await readFile(itemsPath, 'utf8');
+const marcado = items.replace(
+  /(\/\/ <<< GERADO: guarda-roupa[\s\S]*?\n)[\s\S]*?(\n *\/\/ >>> GERADO)/,
+  `$1${linhas}$2`,
+);
+if (marcado === items) {
+  console.warn('! não achei os marcadores em shared/src/items.ts — catálogo NÃO atualizado');
+} else {
+  await writeFile(itemsPath, marcado);
+  console.log(`catálogo compartilhado atualizado com ${catalog.length} peças`);
+}
 
 const total = catalog.reduce((a, p) => a + p.kb, 0);
 console.log(`${catalog.length} peças em ${path.relative(ROOT, OUT)} (${(total / 1024).toFixed(1)} MB no total)`);
