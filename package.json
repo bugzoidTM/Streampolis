@@ -17,7 +17,8 @@
     "assets:fetch": "node tools/assets/fetch.mjs",
     "assets": "node tools/assets/fetch.mjs && node tools/assets/pass.mjs",
     "plaza:ab": "node tools/scene-ab.mjs --query=scene=central_plaza --out=shots/ab-praca",
-    "home:ab": "node tools/scene-ab.mjs --out=shots/ab-apto"
+    "home:ab": "node tools/scene-ab.mjs --out=shots/ab-apto",
+    "gate:face": "node tools/v2-face.mjs"
   },
   "engines": {
     "node": ">=22"

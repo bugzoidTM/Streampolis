@@ -42,6 +42,15 @@ export interface AvatarLike {
   setAnim(state: AnimState): void;
   /** Avança um quadro. `speed` é a velocidade horizontal medida, em m/s. */
   animate(dt: number, speed: number): void;
+  /**
+   * Prende o piscar num valor, ou solta com `null`.
+   *
+   * Está no contrato porque os DOIS corpos piscam e porque quem tira retrato
+   * precisa parar o reflexo: o estúdio adianta segundos de animação num quadro
+   * só, o piscar corre junto, e um card em cada tantos sai com a modelo de olho
+   * fechado — defeito que não se reproduz olhando o jogo.
+   */
+  pinBlink(value: number | null): void;
   dispose(): void;
 }
 

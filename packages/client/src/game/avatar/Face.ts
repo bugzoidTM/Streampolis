@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BLINK_CLOSE, BLINK_HOLD, BLINK_OPEN } from './Reflex.js';
 import { loft, assemble, mergeGeometries, type Station } from './Loft.js';
 import { BONE_INDEX, type BuiltRig } from './Skeleton.js';
 import { type FaceShape, skullPoint, headRadius, headCentre } from './BodyBuilder.js';
@@ -72,9 +73,10 @@ const LID_CLOSED_UPPER = 0.62;
 const LID_CLOSED_LOWER = 0.26;
 
 /** Tempos de um piscar humano, em segundos. Fecha rápido, abre devagar. */
-const BLINK_CLOSE = 0.06;
-const BLINK_HOLD = 0.03;
-const BLINK_OPEN = 0.13;
+// Os tempos do piscar moram em `Reflex.ts`: o corpo do pacote pisca com os
+// mesmos, e um piscar de 60 ms num corpo e de 90 ms no outro é a praça com duas
+// espécies de gente.
+
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 

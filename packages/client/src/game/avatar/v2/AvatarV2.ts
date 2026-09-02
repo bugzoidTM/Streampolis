@@ -3,6 +3,7 @@ import type { AnimState, AvatarConfig } from '@streampolis/shared';
 import type { AvatarOptions } from '../Avatar.js';
 import type { AvatarLike } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
+import { FaceV2 } from './FaceV2.js';
 import {
   findAllSkinned, findSkinned, instantiate, loadClips, loadPart, rigOf,
   type PartSlot,
@@ -22,10 +23,12 @@ import {
  * entram quando chegam, e a animação pedida nesse meio-tempo é aplicada na
  * chegada.
  *
- * **O que este corpo NÃO tem**, e é honesto dizer: rosto articulado. O v1
- * piscava, movia o olhar e tinha quatro expressões; aqui a cabeça é uma malha
- * do pacote. A troca foi deliberada — um rosto que ninguém achou bonito, com
- * expressões, perde para um rosto que as pessoas aceitam.
+ * **O rosto** não tem as quatro expressões do v1 — o pacote não dá pálpebra nem
+ * lábio separados — mas está VIVO: `FaceV2` pisca, move o olhar e faz a
+ * sobrancelha derivar mexendo nos primitivos do olho e da sobrancelha, que vêm
+ * separados dentro da malha da cabeça. Um rosto de olho arregalado e imóvel é a
+ * diferença entre um personagem e um manequim, e ela aparece em qualquer card
+ * da loja.
  */
 
 /**
@@ -113,6 +116,14 @@ export class AvatarV2 implements AvatarLike {
    * (que monta e destrói um avatar por card) vaza um por peça.
    */
   private skeleton: THREE.Skeleton | null = null;
+  /**
+   * O que faz este rosto parecer vivo: piscar, olhar e a deriva da sobrancelha.
+   *
+   * Nulo no figurante (`options.face === false`) e na cabeça que não tem olho
+   * nenhum — capacete de astronauta, viseira do tático. Nos dois casos não há
+   * nada a fechar, e fingir que há custaria uma deformação por quadro à toa.
+   */
+  private face: FaceV2 | null = null;
 
   /**
    * Resolve quando as peças estão em cena.
@@ -160,8 +171,10 @@ export class AvatarV2 implements AvatarLike {
     const host = findSkinned(hostRoot);
     if (!host) return;
     this.root.add(hostRoot);
+    const bySlot = new Map<PartSlot, THREE.SkinnedMesh[]>();
+    bySlot.set(present[0].slot, findAllSkinned(hostRoot));
 
-    for (const { part } of present.slice(1)) {
+    for (const { slot, part } of present.slice(1)) {
       const clone = instantiate(part);
       // TODAS as malhas da peça, não só a primeira.
       //
@@ -170,13 +183,16 @@ export class AvatarV2 implements AvatarLike {
       // BRAÇOS (material `Skin`) noutro. Ficar com a primeira é o que pôs 21
       // camisas sem braço e 17 tênis sem sola na praça — e ninguém viu, porque
       // a `head`, que é a peça HOSPEDEIRA, entra inteira e por outro caminho.
+      const mine: THREE.SkinnedMesh[] = [];
       for (const mesh of findAllSkinned(clone)) {
+        mine.push(mesh);
         host.parent?.add(mesh);
         // Descarta o esqueleto que veio no arquivo da peça e usa o do corpo. Só
         // funciona porque a ORDEM dos ossos é idêntica nos 21 personagens: o
         // `skinIndex` da peça aponta para a mesma articulação nos dois.
         mesh.bind(host.skeleton, host.bindMatrix);
       }
+      bySlot.set(slot, mine);
     }
 
     this.root.traverse((o) => {
@@ -219,6 +235,16 @@ export class AvatarV2 implements AvatarLike {
     }
 
     this.skeleton = host.skeleton;
+    // O rosto DEPOIS do tingimento: ele toma a geometria do olho para si, e o
+    // tom de pele mexe em material, não em vértice — as duas coisas não se
+    // atropelam, mas a ordem deixa claro que o rosto vê a cabeça montada.
+    if (this.options.face !== false) {
+      const head = bySlot.get('head');
+      if (head?.length) {
+        this.face = new FaceV2(head, host.skeleton);
+        if (this.pinnedBlink !== null) this.face.pinBlink(this.pinnedBlink);
+      }
+    }
     this.mixer = new THREE.AnimationMixer(hostRoot);
     // O rig é o da peça HOSPEDEIRA, que é a dona do esqueleto que todas as
     // outras adotaram. Vestir uma blusa do outro pacote continua valendo — a
@@ -279,6 +305,23 @@ export class AvatarV2 implements AvatarLike {
     this.action = next;
   }
 
+  /**
+   * Prende o piscar, e continua valendo se as peças ainda não chegaram: o valor
+   * fica guardado e o rosto nasce preso. Sem isso o retrato do card corre uma
+   * corrida contra o carregamento das peças, e perde de vez em quando.
+   */
+  /** O que o rosto achou na cabeça — nulo quando não há rosto (figurante, capacete). */
+  faceReport(): Record<string, unknown> | null {
+    return this.face?.describe() ?? null;
+  }
+
+  pinBlink(value: number | null): void {
+    this.pinnedBlink = value;
+    this.face?.pinBlink(value);
+  }
+
+  private pinnedBlink: number | null = null;
+
   setAnim(state: AnimState): void {
     if (state === this.state) return;
     this.state = state;
@@ -286,6 +329,9 @@ export class AvatarV2 implements AvatarLike {
   }
 
   animate(dt: number, speed: number): void {
+    // O rosto avança MESMO SEM MIXER: ele não depende de clipe nenhum, e um
+    // avatar que ainda não recebeu as animações precisa piscar do mesmo jeito.
+    this.face?.update(dt);
     if (!this.mixer) return;
     if (this.action) {
       // O ciclo é regido pela velocidade DESENHADA, como no v1: é a única coisa
@@ -310,6 +356,8 @@ export class AvatarV2 implements AvatarLike {
     this.materials = [];
     this.skeleton?.dispose();
     this.skeleton = null;
+    this.face?.dispose();
+    this.face = null;
     // Geometria e materiais originais são do PROTÓTIPO em cache, compartilhado
     // com todo avatar que veste a mesma peça: descartá-los aqui apagaria os
     // outros da tela.

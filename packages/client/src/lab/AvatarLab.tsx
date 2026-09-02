@@ -387,6 +387,73 @@ export function AvatarLab() {
             rim.target.position.copy(focus);
           }
         },
+        /**
+         * O ROSTO do corpo que o jogo desenha, de perto e com o piscar preso.
+         *
+         * `face-sheet` e `face-close` fotografam o rosto procedural: uma malha
+         * com pálpebra, sobrancelha e lábio articulados que o jogo não desenha
+         * mais. Este rosto é outro problema — um olho e uma sobrancelha em
+         * primitivos separados — e a pergunta que ele precisa responder também
+         * é outra: **o olho fechado lê como olho fechado?** Só se responde
+         * grande e com o reflexo PRESO, porque um piscar dura 220 ms e nenhuma
+         * captura o pega de propósito.
+         */
+        gameFace: async (look: Partial<AvatarConfig>, yaw = 0, blink = 0, zoom = 1) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          avatar.pinBlink(blink);
+          group.add(avatar.root);
+          const prev = group.rotation.y;
+          try {
+            avatar.setAnim('idle' as never);
+            for (let i = 0; i < 40; i++) avatar.animate(0.05, 0);
+            group.rotation.y = yaw;
+            group.updateMatrixWorld(true);
+            // A linha dos olhos, derivada da estatura.
+            // A linha dos olhos fica a 0,933 da estatura: o osso da cabeça está a
+            // 0,87 e o olho uns 11 cm acima dele. A 0,9 o retrato saía cortando
+            // a testa e enchendo o quadro de bochecha.
+            const eye = avatar.stature * 0.933;
+            camera.position.set(0, eye, 0.78 * zoom);
+            camera.lookAt(0, eye - 0.02, 0);
+            key.target.position.set(0, eye, 0);
+            rim.target.position.set(0, eye, 0);
+            env.update(camera);
+            renderer.render(0.016);
+            const face = (avatar as { faceReport?: () => unknown }).faceReport?.() ?? null;
+            return { png: canvas.toDataURL('image/png'), face };
+          } finally {
+            group.rotation.y = prev;
+            group.remove(avatar.root);
+            avatar.dispose();
+            key.target.position.copy(focus);
+            rim.target.position.copy(focus);
+          }
+        },
+        /**
+         * O piscar ao longo do tempo, sem prender nada.
+         *
+         * Uma captura não prova reflexo: um piscar inteiro dura 220 ms e cai a
+         * cada quatro segundos, então uma foto ao acaso o perde em 95% das
+         * vezes — e uma que o pegasse por sorte não seria prova de nada. Isto
+         * adianta o relógio e devolve a série, que é o que se pode medir.
+         */
+        blinkTrace: async (look: Partial<AvatarConfig>, seconds = 14, fps = 30) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          try {
+            const step = 1 / fps;
+            const trace: number[] = [];
+            for (let t = 0; t < seconds; t += step) {
+              avatar.animate(step, 0);
+              const face = (avatar as { faceReport?: () => { piscar?: number | null } | null }).faceReport?.();
+              trace.push(face?.piscar ?? -1);
+            }
+            return trace;
+          } finally {
+            avatar.dispose();
+          }
+        },
         limits: () => AUDIT_LIMITS,
 
         /**
