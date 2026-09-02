@@ -127,13 +127,24 @@ async function seedUser(user: DevUser, passwordHash: string): Promise<string> {
     ]);
     await client.query('INSERT INTO player_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING', [id]);
     const look = { ...DEFAULT_AVATAR_DTO, ...(user.look ?? {}) };
-    // Atualiza o visual só se ele ainda for o padrão: quem já se vestiu no jogo
-    // não perde o próprio look porque alguém rodou o seed de novo.
+    // O seed é AUTORIDADE sobre a aparência das quatro contas de fixture.
+    //
+    // Ele já foi condicional — só escrevia se o guardado ainda fosse exatamente
+    // o padrão, para não tirar de ninguém a roupa que a pessoa escolheu. A
+    // intenção estava certa e o efeito, invertido: a migração do guarda-roupa
+    // v2 reescreveu os quatro para o mesmo conjunto casual, e a partir daí
+    // nenhum deles era mais igual ao padrão — a condição travou para sempre a
+    // aparência que ela deveria consertar, e a tela de entrada passou a abrir a
+    // demonstração com três pessoas idênticas.
+    //
+    // Ninguém se veste como ana/beto/caio/moderador: são fixtures de
+    // desenvolvimento, recriadas por este arquivo, e `seed` é proibido em
+    // produção (ver `mirror-catalog.ts`). Quem tem look para perder é o jogador
+    // de verdade, e neste arquivo não há nenhum.
     await client.query(
       `INSERT INTO avatars (user_id, config) VALUES ($1, $2)
-       ON CONFLICT (user_id) DO UPDATE SET config = EXCLUDED.config, updated_at = now()
-        WHERE avatars.config = $3::jsonb`,
-      [id, JSON.stringify(look), JSON.stringify(DEFAULT_AVATAR_DTO)],
+       ON CONFLICT (user_id) DO UPDATE SET config = EXCLUDED.config, updated_at = now()`,
+      [id, JSON.stringify(look)],
     );
 
     // Saldo de desenvolvimento entra direto na carteira, sem passar pelo ledger:
