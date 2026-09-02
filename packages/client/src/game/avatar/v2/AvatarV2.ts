@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
 import type { AvatarLike } from '../AvatarLike.js';
+import { extraClips } from './Clips.js';
 import { findSkinned, instantiate, loadClips, loadPart, type PartSlot } from './Wardrobe.js';
 
 /**
@@ -24,25 +25,25 @@ import { findSkinned, instantiate, loadClips, loadPart, type PartSlot } from './
  */
 
 /**
- * De estado do jogo para clipe do pacote.
+ * De estado do jogo para clipe.
  *
- * As 24 faixas do pacote são de jogo de ação — tiro, soco, rolamento — e não
- * incluem DANÇAR nem SENTAR, que são justamente os dois gestos de um jogo de
- * live e de vida virtual. Enquanto eles não existem, cada estado cai no
- * vizinho mais próximo e amigável: `dance` acena em vez de sacar uma espada,
- * que foi o primeiro mapeamento e apareceu num card do feed.
+ * As 24 faixas do pacote são de jogo de ação — tiro, soco, rolamento, espada —
+ * e não incluem DANÇAR, SENTAR, COMEMORAR nem BATER PALMA, que são justamente
+ * os gestos de um jogo de live e de vida virtual. Essas quatro são autoradas
+ * em `Clips.ts` e entram junto; o resto vem do pacote, que faz locomoção
+ * melhor do que nós faríamos.
  */
 const CLIP_FOR: Record<AnimState, string> = {
   idle: 'Idle',
   walk: 'Walk',
   run: 'Run',
-  sit: 'Idle_Neutral',
+  sit: 'Sit',
   wave: 'Wave',
-  clap: 'Interact',
-  dance: 'Wave',
-  celebrate: 'Wave',
+  clap: 'Clap',
+  dance: 'Dance',
+  celebrate: 'Celebrate',
   giftReact: 'Interact',
-  pkWin: 'Wave',
+  pkWin: 'Celebrate',
   pkLose: 'HitRecieve',
 };
 
@@ -181,10 +182,14 @@ export class AvatarV2 implements AvatarLike {
     }
 
     this.mixer = new THREE.AnimationMixer(hostRoot);
-    for (const clip of await loadClips()) {
-      if (this.disposed) return;
+    const packClips = await loadClips();
+    if (this.disposed) return;
+    for (const clip of packClips) {
       this.clips.set(clip.name.replace('CharacterArmature|', ''), clip);
     }
+    // As autorais entram DEPOIS e por cima: se um dia o pacote ganhar uma
+    // dança, ela vence a nossa só trocando a ordem aqui.
+    for (const clip of extraClips(hostRoot)) this.clips.set(clip.name, clip);
     this.play(this.state, 0);
   }
 
