@@ -43,6 +43,13 @@ export interface PosterOptions {
    * para conferir um cabelo ou uma jaqueta).
    */
   turn?: number;
+  /**
+   * O id da PEÇA que este retrato existe para mostrar.
+   *
+   * Com ele o quadro é medido na peça em vez de chutado pelo tipo dela, e
+   * `shot` deixa de importar. Ver `frameOnPiece`.
+   */
+  focus?: string;
 }
 
 interface Studio {
@@ -121,14 +128,14 @@ export function renderPoster(config: AvatarConfig, options: PosterOptions = {}):
     height: options.height ?? (options.shot === 'bust' ? 300 : 420),
   };
   const turn = options.turn;
-  const cacheKey = `${keyOf(config, o)}|${turn ?? ''}`;
+  const cacheKey = `${keyOf(config, o)}|${turn ?? ''}|${options.focus ?? ''}`;
   const hit = cache.get(cacheKey);
   if (hit) return Promise.resolve(hit);
 
   const job = queue.then(async () => {
     const again = cache.get(cacheKey);
     if (again) return again;
-    const url = await shoot(config, o, options.rim, turn);
+    const url = await shoot(config, o, options.rim, turn, options.focus);
     cache.set(cacheKey, url);
     return url;
   });
@@ -142,6 +149,7 @@ async function shoot(
   o: { shot: PosterShot; pose: AnimState; at: number; width: number; height: number },
   rimColor?: number,
   turn?: number,
+  focus?: string,
 ): Promise<string> {
   if (!studio) studio = makeStudio(o.width, o.height);
   const s = studio;
@@ -187,7 +195,13 @@ async function shoot(
   // abaixo — e 6% de 1,7 m é uma cabeça cortada no topo do card. O conserto
   // certo não era o `if`: era o contrato ter um significado só.
   const crown = avatar.stature;
-  if (o.shot === 'bust') {
+  // A PEÇA manda no quadro quando o retrato existe por causa dela.
+  const naPeca = focus && avatar instanceof AvatarV2
+    ? frameOnPiece(s.camera, withFace(avatar.pieceBox(focus), crown), o.width / o.height)
+    : false;
+  if (naPeca) {
+    // já enquadrado
+  } else if (o.shot === 'bust') {
     // Folga acima da cabeça: um cabelo com volume (afro, moicano) precisa de
     // mais quadro do que a coroa do crânio.
     s.camera.position.set(0.34, crown * 0.97, 1.62);
@@ -216,6 +230,97 @@ async function shoot(
   s.scene.remove(avatar.root);
   avatar.dispose();
   return url;
+}
+
+/**
+ * Aponta a câmera para a caixa da peça, e chega perto o bastante para ela
+ * PREENCHER o quadro.
+ *
+ * O enquadramento era um chute de altura por tipo de item — busto para blusa,
+ * pés para calçado —, e ele erra por construção agora que o guarda-roupa tem 83
+ * peças de vinte e um personagens: a bota do aventureiro sobe até o joelho e a
+ * sandália mal cobre o pé, e o mesmo quadro fixo corta uma e perde a outra num
+ * quadro vazio. Pior, o que enchia o card de um calçado era a CALÇA de quem
+ * estava olhando — grande, escura, e na frente.
+ *
+ * A conta é a de sempre e não tem chute nenhum: com `fov` vertical, a altura
+ * visível a uma distância `d` é `2·d·tan(fov/2)`, e a largura é ela vezes o
+ * aspecto. A distância pedida é a MAIOR das duas — a que faz caber a altura e a
+ * que faz caber a largura —, porque caber num eixo e estourar no outro é
+ * exatamente o card que corta a peça.
+ *
+ * A folga é multiplicativa (`FOLGA`) e não em metros: uma cabeça e uma calça
+ * não pedem a mesma sobra em centímetros, pedem a mesma sobra em proporção.
+ *
+ * E a caixa é INFLADA a um mínimo (`MINIMO`): uma peça pequena — um pé de
+ * sandália — enquadrada justa vira uma macrofotografia de dedo, sem corpo em
+ * volta para dizer o que aquilo é. O card precisa mostrar a peça E onde ela
+ * fica.
+ */
+const FOLGA = 1.2;
+const MINIMO = 0.26;
+
+/**
+ * De onde a câmera olha a peça, em direção — a distância é que se calcula.
+ *
+ * De três quartos como todo retrato daqui: o avatar já foi girado, então quem
+ * mostra o perfil é o corpo e a câmera só sai um pouco do eixo.
+ */
+const OLHAR = new THREE.Vector3(0.18, 0, 1).normalize();
+
+/**
+ * Sobe a caixa até a coroa quando a peça é do tronco para cima.
+ *
+ * Uma blusa enquadrada justa é um quadro de tecido: a caixa de um `top` vai do
+ * ombro ao punho e o rosto fica de fora, e o card perde a pessoa que está
+ * vestindo — que é metade do que ele vende. Da cintura para baixo não há esse
+ * problema, porque não há rosto a incluir, e forçar a coroa faria de um card de
+ * calçado um retrato de corpo inteiro com o sapato do tamanho de uma unha.
+ *
+ * O corte é a linha da cintura, e não o nome do slot: quem decide é onde a peça
+ * ESTÁ, e há vestido que desce até o joelho e bota que sobe até ele.
+ *
+ * E quem responde "onde ela está" é o CENTRO da caixa, não o topo dela: pelo
+ * topo, uma calça — que começa na cintura — conta como peça de tronco e o card
+ * dela vira um retrato de corpo inteiro com a calça na metade de baixo. Pelo
+ * centro, calça é calça e blusa é blusa, sem consultar o nome do slot.
+ */
+function withFace(box: THREE.Box3 | null, crown: number): THREE.Box3 | null {
+  const cintura = crown * 0.55;
+  if (!box || box.getCenter(new THREE.Vector3()).y < cintura) return box;
+  const comRosto = box.clone();
+  comRosto.max.y = Math.max(comRosto.max.y, crown);
+  // E o quadro para na cintura por baixo. A caixa de uma blusa desce até o
+  // PUNHO, porque a manga vai junto com o braço, e um quadro que vai do punho
+  // à coroa é o corpo inteiro menos as pernas: a câmera recua e a peça — que é
+  // o que o card vende — vira detalhe no meio. Manga caída é braço; a roupa
+  // está no tronco.
+  comRosto.min.y = Math.max(comRosto.min.y, cintura);
+  return comRosto;
+}
+
+function frameOnPiece(
+  camera: THREE.PerspectiveCamera, box: THREE.Box3 | null, aspect: number,
+): boolean {
+  if (!box) return false;
+  const centro = box.getCenter(new THREE.Vector3());
+  const tamanho = box.getSize(new THREE.Vector3());
+  // A largura que importa é a que a peça ocupa NA TELA, e não o maior lado da
+  // caixa: a caixa é do mundo, e a câmera olha de viés. Com os pés afastados
+  // numa passada, o lado Z da caixa de um calçado é meio metro de PROFUNDIDADE
+  // — tratá-lo como largura afasta a câmera até o sapato virar um detalhe.
+  // Para uma caixa alinhada aos eixos, a sombra dela sobre a direita da câmera
+  // é a soma dos lados vezes o quanto cada um aponta para lá.
+  const direita = new THREE.Vector3().crossVectors(OLHAR, camera.up).normalize();
+  const alto = Math.max(tamanho.y, MINIMO) * FOLGA;
+  const largo = Math.max(
+    Math.abs(direita.x) * tamanho.x + Math.abs(direita.z) * tamanho.z, MINIMO,
+  ) * FOLGA;
+  const meio = THREE.MathUtils.degToRad(camera.fov) / 2;
+  const distancia = Math.max(alto / 2 / Math.tan(meio), largo / 2 / Math.tan(meio) / aspect);
+  camera.position.copy(OLHAR).multiplyScalar(distancia).add(centro);
+  camera.lookAt(centro);
+  return true;
 }
 
 /** Libera o contexto do estúdio. Só o teardown da aplicação chama isto. */

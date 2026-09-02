@@ -207,6 +207,25 @@ O enquadramento é trigonometria, não tentativa: com fov de 30° a altura visí
 é `2·d·tan(15°) ≈ 0,54·d`. Corpo inteiro pede ~2 m de altura visível, busto pede
 ~0,8 m. Chutar a distância foi o que decapitou o primeiro lote de retratos.
 
+E no card da loja quem manda no quadro é a **peça**, não o tipo dela: com
+`focus: <id do item>` o estúdio mede a caixa daquela peça no corpo já posado
+(`AvatarV2.pieceBox`) e chega perto o bastante para ela preencher o card. O
+`shot` por tipo virou reserva, para quando a medida não é possível. Três
+detalhes que a medida precisa ter e que já custaram uma rodada:
+
+- a largura que importa é a **projetada na tela**, não o maior lado da caixa —
+  com os pés afastados numa passada, o lado Z de um calçado é profundidade, e
+  tratá-lo como largura afasta a câmera até o sapato virar detalhe;
+- peça do tronco para cima **ganha o rosto** no quadro (um card de blusa sem
+  a pessoa é um quadro de tecido), e quem decide isso é o CENTRO da caixa: pelo
+  topo, uma calça começa na cintura e conta como peça de tronco;
+- e esse quadro **para na cintura** por baixo, porque a caixa de uma blusa
+  desce até o punho: manga caída é braço, e deixá-la mandar recua a câmera.
+
+`npm run gate:cards` prova as 83 peças: cada uma está em cena e enche o próprio
+card (contact sheet em `shots/store-cards/`). `window.__lab.poster(config, opts)`
+chama o mesmo `renderPoster` da loja sem login nem navegação.
+
 ## Feed de lives: quem responde o quê
 
 `GET /lives` (API) é a LISTA — quem está no ar é estado persistente e social, e

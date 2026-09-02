@@ -30,6 +30,13 @@ const WEARABLE: Partial<Record<ItemType, keyof AvatarConfig>> = {
   accessory: 'accessory',
 };
 
+/**
+ * O enquadramento de reserva, por tipo de item.
+ *
+ * O card mede o quadro NA PEÇA (`focus`); isto é o que sobra quando a medida
+ * não é possível — corpo procedural, id que não existe, arquivo que não
+ * chegou. Não é o caminho normal, e por isso não precisa acertar em cheio.
+ */
 const SHOT_FOR: Partial<Record<ItemType, 'full' | 'bust' | 'legs' | 'feet'>> = {
   hair: 'bust', accessory: 'bust', top: 'bust',
   bottom: 'legs', shoes: 'feet',
@@ -172,14 +179,18 @@ function ItemCard({ item, avatar, owned, onBuy, onWear }: CardProps) {
   // O avatar de quem está olhando, vestindo a peça. É o motivo de a loja
   // existir como tela em vez de lista.
   const preview = slot && avatar ? ({ ...avatar, [slot]: item.id } as AvatarConfig) : null;
-  // Cada tipo no seu enquadramento. Calça em busto e tênis de corpo inteiro
-  // eram cards que não mostravam a peça.
+  // O quadro é medido NA PEÇA, e o tipo só decide a proporção do card e o
+  // enquadramento de reserva. Enquanto o quadro vinha do tipo, a bota do
+  // aventureiro saía cortada e a sandália se perdia num quadro vazio — o mesmo
+  // "sapato" com meio metro de diferença —, e o que enchia o card de um calçado
+  // era a CALÇA de quem estava olhando, porque ela é grande e está no caminho.
   const shot = SHOT_FOR[item.type] ?? 'bust';
   const poster = usePoster(preview, {
     shot,
     at: 1.5,
     width: 220,
     height: shot === 'legs' ? 300 : shot === 'feet' ? 200 : 240,
+    focus: slot ? item.id : undefined,
   });
 
   return (

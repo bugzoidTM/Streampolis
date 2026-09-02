@@ -10,6 +10,7 @@ import { LINING } from '../game/avatar/v2/Wardrobe.js';
 import { auditAvatar, AUDIT_LIMITS } from '../game/avatar/Audit.js';
 import { buildMatrix } from './matrix.js';
 import { concrete, applySurface } from '../game/materials/Textures.js';
+import { renderPoster } from '../game/portrait/PosterStudio.js';
 
 /**
  * Alcance da régua de profundidade das passadas de máscara, em metros.
@@ -967,6 +968,18 @@ export function AvatarLab() {
             avatar.dispose();
           }
         },
+        /**
+         * O CARD DA LOJA, do jeito que a loja o pede.
+         *
+         * `renderPoster` é o que desenha a vitrine, o feed e o perfil, e até
+         * agora nenhuma ferramenta o exercitava: as capturas de loja saíam do
+         * cliente inteiro, com login e navegação, o que responde "a loja
+         * abriu?" e não "a peça aparece no quadro?". São perguntas diferentes,
+         * e a segunda é a que vende.
+         */
+        poster: (config: Partial<AvatarConfig>, opts: Record<string, unknown> = {}) =>
+          renderPoster({ ...DEFAULT_AVATAR, ...config }, opts as Parameters<typeof renderPoster>[1]),
+
         limits: () => AUDIT_LIMITS,
 
         /**

@@ -478,6 +478,41 @@ export class AvatarV2 implements AvatarLike {
   }
 
   /**
+   * A caixa que UMA PEÇA ocupa no mundo, já deformada pela pose.
+   *
+   * Existe para o card da loja poder enquadrar o que ele vende. O
+   * enquadramento era um chute de altura por tipo — busto para blusa, pés para
+   * calçado —, escrito quando o corpo era procedural e o guarda-roupa tinha
+   * cinco peças por slot. Com 83 peças de vinte e um personagens, o chute erra
+   * por construção: a bota do aventureiro sobe até o joelho e a sandália mal
+   * cobre o pé, e o mesmo quadro fixo mostra a bota cortada e a sandália
+   * perdida num quadro vazio. Pior: o que enche o card de um calçado é a CALÇA
+   * de quem está olhando, porque ela está no caminho e é grande.
+   *
+   * Medida na malha com pele (`getVertexPosition`), não na caixa da geometria:
+   * a geometria é a do kit, na pose de bind, e é compartilhada por todos os
+   * avatares em cena.
+   *
+   * Nulo quando a peça não está em cena — id que não existe, arquivo que não
+   * chegou —, e aí quem chama volta ao enquadramento fixo em vez de fotografar
+   * o vazio.
+   */
+  pieceBox(id: string): THREE.Box3 | null {
+    const caixa = new THREE.Box3();
+    const p = new THREE.Vector3();
+    this.root.updateMatrixWorld(true);
+    for (const [mesh, origem] of this.origem) {
+      if (origem !== id) continue;
+      const n = mesh.geometry.getAttribute('position').count;
+      for (let i = 0; i < n; i++) {
+        mesh.getVertexPosition(i, p);
+        caixa.expandByPoint(mesh.localToWorld(p));
+      }
+    }
+    return caixa.isEmpty() ? null : caixa;
+  }
+
+  /**
    * As faixas de altura em que o traje não cobria nada e o forro entrou.
    *
    * Existe para o instrumento poder ENQUADRAR a emenda, e para dizer, quando
