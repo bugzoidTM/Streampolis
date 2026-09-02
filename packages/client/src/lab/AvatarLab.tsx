@@ -107,10 +107,30 @@ export function AvatarLab() {
       // sem ela contra a proporção do próprio autor. As duas perguntas
       // importam e são diferentes.
       const height = params.get('v2h') ? Number(params.get('v2h')) : undefined;
-      void Promise.all([
-        CharacterV2.load('female', { height, hair: '#3a2a20', hairstyle: params.get('v2hair') ?? 'hair_long' }),
-        CharacterV2.load('male', { height, hair: '#1b1614', hairstyle: 'hair_parted' }),
-      ]).then(([female, male]) => {
+      /**
+       * Prova de corpo CANDIDATO, para a decisão de qual pacote adotar.
+       *
+       * `?v2=1&v2base=assets/candidates/&v2ids=mini-f,mini-m` põe qualquer GLB
+       * do mesmo formato no rig do jogo, com a nossa luz e o nosso pós. Julgar
+       * um pacote pela foto do vendedor é escolher tinta pelo nome do catálogo:
+       * o que decide é como ele fica NESTA cena, ao lado do que já existe.
+       */
+      const base = params.get('v2base') ?? undefined;
+      const ids = params.get('v2ids')?.split(',').filter(Boolean) ?? null;
+      void Promise.all(
+        ids
+          ? ids.map((id) => CharacterV2.load(id as 'male', {
+            height,
+            outfit: params.get('v2outfit')?.split(',').filter(Boolean),
+          }, base))
+          : [
+            CharacterV2.load('female', {
+              height, hair: '#3a2a20', hairstyle: params.get('v2hair') ?? 'hair_long',
+              outfit: params.get('v2outfit')?.split(',').filter(Boolean),
+            }, base),
+            CharacterV2.load('male', { height, hair: '#1b1614', hairstyle: 'hair_parted' }, base),
+          ],
+      ).then(([female, male]) => {
         // À DIREITA da fileira procedural, nunca em cima dela. Os dois grupos
         // se centram de formas diferentes, e somar índices sem levar isso em
         // conta põe um V2 exatamente sobre um avatar do jogo — o que, numa

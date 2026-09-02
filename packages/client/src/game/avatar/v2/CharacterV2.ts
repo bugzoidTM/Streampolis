@@ -28,6 +28,21 @@ export interface CharacterV2Options {
   hairstyle?: string;
   /** Altura alvo em metros; omitir mantém a do pacote. */
   height?: number;
+  /**
+   * ROUPA modular: arquivos glTF de peças que vestem o mesmo esqueleto.
+   *
+   * Esta é a descoberta que decide a arquitetura do avatar v2. Os pacotes de
+   * roupa da Quaternius trazem `Body`, `Arms`, `Legs`, `Feet`, `Head` e
+   * acessórios como malhas separadas, e o esqueleto delas é o MESMO do corpo
+   * base — 65 ossos, mesmos nomes, MESMA ORDEM. Então vestir não é deformar
+   * geometria nossa em cima de um corpo: é carregar a peça e amarrá-la ao
+   * esqueleto que já está lá.
+   *
+   * É exatamente o guarda-roupa que a loja precisa, e é o oposto do v1, onde
+   * cada peça era lofteada das estações do nosso corpo e um portão de 176
+   * combinações media o resultado.
+   */
+  outfit?: string[];
 }
 
 export class CharacterV2 {
@@ -127,6 +142,12 @@ export class CharacterV2 {
     ]);
 
     if (hair) CharacterV2.attachHair(body.scene, hair.scene);
+    if (opts.outfit?.length) {
+      const parts = await Promise.all(
+        opts.outfit.map((f) => loader.loadAsync(url(f)).catch(() => null)),
+      );
+      CharacterV2.dress(body.scene, parts.map((p) => p?.scene ?? null));
+    }
     return new CharacterV2(body.scene, anims.animations, opts);
   }
 
@@ -147,6 +168,37 @@ export class CharacterV2 {
     const inverse = new THREE.Matrix4().copy((head as THREE.Bone).matrixWorld).invert();
     hair.applyMatrix4(inverse);
     (head as THREE.Bone).add(hair);
+  }
+
+  /**
+   * Veste peças no esqueleto que já existe.
+   *
+   * A peça vem com um esqueleto próprio dentro do arquivo dela; o que se faz
+   * aqui é DESCARTAR esse esqueleto e amarrar a malha ao do corpo. Só funciona
+   * porque a ordem dos ossos é idêntica — `skinIndex` de uma peça aponta para
+   * a mesma articulação nas duas. Ordem diferente exigiria remapear índice por
+   * índice, e é a primeira coisa a conferir num pacote novo.
+   */
+  private static dress(body: THREE.Object3D, parts: Array<THREE.Object3D | null>) {
+    let host: THREE.SkinnedMesh | null = null;
+    body.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && !host) host = o as THREE.SkinnedMesh; });
+    if (!host) return;
+    const base = host as THREE.SkinnedMesh;
+
+    for (const part of parts) {
+      if (!part) continue;
+      const meshes: THREE.SkinnedMesh[] = [];
+      part.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) meshes.push(o as THREE.SkinnedMesh); });
+      for (const mesh of meshes) {
+        mesh.frustumCulled = false;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        // Mesma pose de repouso do corpo: a matriz de bind da peça é a dela,
+        // e usar a do corpo é o que alinha as duas no mesmo espaço.
+        base.parent?.add(mesh);
+        mesh.bind(base.skeleton, base.bindMatrix);
+      }
+    }
   }
 
   play(name: string, fade = 0.25): boolean {

@@ -102,6 +102,34 @@
       "license": "verificar no .txt do pacote",
       "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
       "use": "experimento AvatarV2: animações prontas para o mesmo rig humanoide"
+    },
+    {
+      "id": "kenney-mini-characters",
+      "name": "Kenney Mini Characters",
+      "source": "kenney",
+      "page": "https://kenney.nl/assets/mini-characters",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "CANDIDATO a corpo do avatar v2: 25 personagens modernos, animados"
+    },
+    {
+      "id": "kenney-blocky-characters",
+      "name": "Kenney Blocky Characters",
+      "source": "kenney",
+      "page": "https://kenney.nl/assets/blocky-characters",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "CANDIDATO a corpo do avatar v2: 20 personagens modulares"
+    },
+    {
+      "id": "quaternius-outfits",
+      "name": "Quaternius Modular Character Outfits",
+      "source": "itch",
+      "itchUser": "quaternius",
+      "itchGame": "modular-character-outfits-fantasy",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "TESTE: as roupas modulares da Quaternius encaixam no mesmo esqueleto do corpo base?"
     }
   ],
   "hdris": [
