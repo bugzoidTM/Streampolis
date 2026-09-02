@@ -1,0 +1,155 @@
+/*
+ * Placar (PRD §23).
+ *
+ * Duas densidades na mesma tela, de propósito: pódio com rosto para os três
+ * primeiros e lista compacta do quarto em diante. Não é só hierarquia visual —
+ * cada rosto é um render 3D na mesma fila que serve a loja e o feed, e vinte
+ * deles de uma vez travam as três telas.
+ */
+
+.rank .sp-seg { margin-bottom: var(--sp-s3); }
+
+.rank__empty {
+  margin-top: var(--sp-s6);
+  padding: var(--sp-s5);
+  border: 1px dashed var(--sp-line-2);
+  border-radius: var(--sp-r-lg);
+  text-align: center;
+  color: var(--sp-text-2);
+}
+.rank__empty strong { display: block; color: var(--sp-text); margin-bottom: 4px; }
+.rank__empty p { margin: 0; font-size: 13.5px; }
+
+/* Pódio ------------------------------------------------------------------ */
+
+.rank__podium {
+  display: grid;
+  /* Três colunas quando cabem; numa tela estreita eles empilham em vez de
+     encolher até o rosto virar selo.
+     O teto de 240px na FAIXA não é enfeite: com um só colocado — placar novo,
+     temporada recém-aberta — um `1fr` estica o card por toda a tela larga e o
+     retrato vira um rosto de meio metro. Pódio de um é um card, não um mural. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 240px));
+  justify-content: center;
+  gap: var(--sp-s3);
+  margin: var(--sp-s4) auto 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rank__podium-item { display: flex; }
+
+.rank__podium-btn {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-s4) var(--sp-s3) var(--sp-s3);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-lg);
+  background: linear-gradient(180deg, var(--sp-surface-2), var(--sp-surface));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+.rank__podium-btn:hover { transform: translateY(-2px); border-color: var(--sp-line-3); }
+
+/* O primeiro lugar ganha a cor de moeda, e só ele: três destaques dourados não
+   destacam ninguém. */
+.is-p1 .rank__podium-btn { border-color: rgba(255, 194, 71, 0.5); }
+.is-p1 .rank__medal { background: var(--sp-gold); color: #241a00; }
+.is-p2 .rank__medal { background: var(--sp-surface-3); color: var(--sp-text); }
+.is-p3 .rank__medal { background: rgba(255, 138, 61, 0.22); color: var(--sp-orange); }
+
+.rank__podium-item.is-self .rank__podium-btn { outline: 1px solid var(--sp-violet); }
+
+.rank__medal {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--sp-r-pill);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rank__art {
+  width: 100%;
+  aspect-ratio: 9 / 10;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(70% 60% at 50% 30%, #2a3145, #10131c);
+  border-radius: var(--sp-r-md);
+  overflow: hidden;
+}
+.rank__art img { width: 100%; height: 100%; object-fit: contain; }
+.rank__skeleton { width: 58%; height: 58%; border-radius: var(--sp-r-md); background: var(--sp-surface-2); }
+
+.rank__name { margin-top: var(--sp-s2); font-size: 14.5px; }
+.rank__agency { color: var(--sp-text-3); font-size: 11.5px; }
+
+.rank__score {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.rank__score small { font-size: 11px; font-weight: 500; color: var(--sp-text-3); letter-spacing: 0; }
+
+/* Lista ------------------------------------------------------------------ */
+
+.rank__list {
+  margin: var(--sp-s4) auto 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rank__row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 28px 34px 1fr auto;
+  align-items: center;
+  gap: var(--sp-s3);
+  padding: 9px var(--sp-s3);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-md);
+  background: var(--sp-surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.rank__row:hover { border-color: var(--sp-line-2); background: var(--sp-surface-2); }
+.rank__row.is-self { border-color: var(--sp-violet); }
+
+.rank__pos { color: var(--sp-text-3); font-variant-numeric: tabular-nums; text-align: right; }
+
+.rank__mono {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--sp-r-pill);
+  background: var(--sp-surface-3);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--sp-text-2);
+}
+
+.rank__who { display: flex; flex-direction: column; min-width: 0; }
+.rank__who strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank__who small { color: var(--sp-text-3); font-size: 11.5px; }
+
+.rank__value { font-weight: 700; font-variant-numeric: tabular-nums; }

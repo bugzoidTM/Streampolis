@@ -59,6 +59,8 @@
 
 /* ------------------------------------------------------------------ feed */
 
+.feed__headActions { display: flex; align-items: center; gap: var(--sp-s2); }
+
 .feed__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));

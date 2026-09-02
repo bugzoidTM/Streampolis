@@ -68,6 +68,14 @@ export const config = {
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean),
+  /**
+   * O fuso em que "hoje" acaba (PRD §23, filtro "Hoje").
+   *
+   * Em UTC o dia do ranking viraria às 21h de Brasília, no meio do horário de
+   * maior audiência: o jogador veria o placar zerar enquanto ainda está
+   * jogando. Quem manda no corte é o fuso do público, não o do servidor.
+   */
+  rankingsTimezone: env('RANKINGS_TIMEZONE', 'America/Sao_Paulo'),
   rateLimit: {
     windowMs: intEnv('RATE_WINDOW_MS', 60_000),
     generalMax: intEnv('RATE_GENERAL_MAX', 300),

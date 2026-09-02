@@ -181,6 +181,7 @@ As três telas leem do servidor e escrevem por intenção:
 | `FeedView` | `GET /lives` + contagem ao vivo do game server | nada |
 | `ProfileView` | `GET /users/:id` (ou `/me`) | `PUT /users/:id/follow` |
 | `StoreView` | catálogo do shared + `/me` (carteira, inventário) | `POST /me/purchases`, `PUT /me/avatar` |
+| `RankingsView` | `GET /rankings?board=&range=` | nada |
 
 Nenhuma delas subtrai carteira, soma seguidor ou decide preço. O preço mora no
 banco (`packages/api/src/shop/Purchases.ts`) e a entrega do item acontece na
@@ -225,6 +226,34 @@ detalhes que a medida precisa ter e que já custaram uma rodada:
 `npm run gate:cards` prova as 83 peças: cada uma está em cena e enche o próprio
 card (contact sheet em `shots/store-cards/`). `window.__lab.poster(config, opts)`
 chama o mesmo `renderPoster` da loja sem login nem navegação.
+
+## Placar: por que ele não sai de `player_stats`
+
+`GET /rankings` (PRD §23) soma **eventos datados** — `gift_events` e
+`pk_matches` —, nunca os contadores de `player_stats`. Aqueles são vitalícios:
+somam desde sempre e não sabem responder "hoje", que é metade da pergunta. Um
+placar que só sabe responder "desde sempre" é o monumento a quem chegou
+primeiro que a temporada existe para evitar.
+
+Três placares (`streamers` = Creator Points recebidos, `gifters` = Coins
+enviados, `pk` = vitórias) e três janelas (`today`, `week`, `season`). "Hoje" e
+"semana" são cortes de CALENDÁRIO no fuso do público (`RANKINGS_TIMEZONE`,
+default `America/Sao_Paulo`) — em UTC o placar do dia viraria às 21h de
+Brasília, no meio do horário de maior audiência. "Temporada" é a linha aberta
+em `seasons`; sem nenhuma aberta o placar responde vazio em vez de somar desde
+sempre. Board ou range desconhecidos são **400**, nunca um default calado.
+
+Fica de fora o Top Agencies do §23: agência não é requisito do MVP (§30) e um
+placar com cinco linhas vazias mente mais do que um placar ausente.
+
+Na tela, o pódio tem rosto e a lista não — não é hierarquia visual, é
+orçamento: cada retrato é um render na MESMA fila que serve a loja e o feed, e
+vinte de uma vez travam as três.
+
+`node tools/rankings-check.mjs` prova o caminho inteiro: Beto presenteia Ana ao
+vivo (gift de verdade, débito real) e o script espera o BANCO mudar antes de
+conferir que o placar de hoje mexeu; depois fotografa a tela trocando de placar
+e de janela.
 
 ## Feed de lives: quem responde o quê
 

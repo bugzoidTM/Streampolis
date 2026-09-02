@@ -82,6 +82,30 @@ export interface ApiLive extends LiveSummary {
   likes: number;
 }
 
+export type RankingBoard = 'streamers' | 'gifters' | 'pk';
+export type RankingRange = 'today' | 'week' | 'season';
+
+export interface RankingEntry {
+  userId: string;
+  rank: number;
+  username: string;
+  displayName: string;
+  avatar: AvatarConfig;
+  value: number;
+  fame: number;
+  agency: string | null;
+}
+
+export interface RankingPage {
+  board: RankingBoard;
+  range: RankingRange;
+  /** Nome da unidade do número, escrito pelo servidor. */
+  unit: string;
+  season: { name: string; endsAt: string } | null;
+  since: string | null;
+  entries: RankingEntry[];
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
     super(message);
@@ -185,6 +209,17 @@ export class ApiClient {
         };
       })
       .sort((a, b) => b.realViewers - a.realViewers || b.startedAt - a.startedAt);
+  }
+
+  /**
+   * Placar (PRD §23). Não exige sessão: um ranking é vitrine.
+   *
+   * Nem a ordem nem a unidade são decididas aqui — a tela desenha as linhas na
+   * ordem em que vieram e escreve a unidade que o servidor mandou. Ordenar no
+   * cliente seria um segundo lugar onde "quem está ganhando" é calculado.
+   */
+  rankings(board: RankingBoard, range: RankingRange): Promise<RankingPage> {
+    return this.call<RankingPage>(`/rankings?board=${board}&range=${range}`);
   }
 
   async profile(userId: string): Promise<PublicProfile> {

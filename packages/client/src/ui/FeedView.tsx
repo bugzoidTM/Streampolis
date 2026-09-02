@@ -26,9 +26,12 @@ export interface FeedViewProps {
   onWatch: (live: ApiLive) => void;
   onOpenProfile: (userId: string) => void;
   onGoLive: () => void;
+  /** O placar (PRD §23) mora aqui: descobrir quem está ao vivo e descobrir
+   *  quem está ganhando são a mesma vontade. */
+  onOpenRankings: () => void;
 }
 
-export function FeedView({ onWatch, onOpenProfile, onGoLive }: FeedViewProps) {
+export function FeedView({ onWatch, onOpenProfile, onGoLive, onOpenRankings }: FeedViewProps) {
   const lives = useAccountStore((s) => s.lives);
   const status = useAccountStore((s) => s.livesState);
   const following = useAccountStore((s) => s.following);
@@ -50,7 +53,10 @@ export function FeedView({ onWatch, onOpenProfile, onGoLive }: FeedViewProps) {
           <h1 className="screen__title">Streampolis</h1>
           <p className="screen__sub">Quem está ao vivo agora</p>
         </div>
-        <Button variant="live" onClick={onGoLive}>Abrir live</Button>
+        <div className="feed__headActions">
+          <Button variant="ghost" onClick={onOpenRankings}>Placar</Button>
+          <Button variant="live" onClick={onGoLive}>Abrir live</Button>
+        </div>
       </header>
 
       <Segmented

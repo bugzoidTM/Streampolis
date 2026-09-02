@@ -9,6 +9,7 @@ import { EnterScreen, clearToken, saveToken, savedToken } from './EnterScreen.js
 import { FeedView } from './FeedView.js';
 import { ProfileView } from './ProfileView.js';
 import { StoreView } from './StoreView.js';
+import { RankingsView } from './RankingsView.js';
 import { AvatarView } from './AvatarView.js';
 import { IconBag, IconClose, IconFlame, IconPlus, IconUser } from './Icons.js';
 import { Button } from './primitives/Controls.js';
@@ -26,7 +27,7 @@ import './screens.css';
  * viagem. Um card do feed navega; a aba Loja não.
  */
 
-type Tab = 'world' | 'feed' | 'store' | 'profile' | 'look';
+type Tab = 'world' | 'feed' | 'store' | 'profile' | 'look' | 'rankings';
 
 export interface AppShellProps {
   intent: WorldIntent;
@@ -109,10 +110,18 @@ export function AppShell(props: AppShellProps) {
           onWatch={watch}
           onOpenProfile={(id) => openProfile(id)}
           onGoLive={() => setGoLiveOpen(true)}
+          onOpenRankings={() => setTab('rankings')}
         />
       )}
 
       {tab === 'store' && <StoreView />}
+
+      {/* O placar não é uma aba do rodapé: cinco lugares já estão ocupados, e
+          quem procura "quem está ganhando" chega pela tela de descoberta, que
+          é o feed. */}
+      {tab === 'rankings' && (
+        <RankingsView onOpenProfile={openProfile} onClose={() => setTab('feed')} />
+      )}
 
       {/* O criador não é uma aba do rodapé: chega-se a ele pelo perfil, que é
           onde alguém vai procurar o próprio visual. */}

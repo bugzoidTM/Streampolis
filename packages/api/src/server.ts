@@ -12,6 +12,7 @@ import { canEnter, getHome, getOrCreateHomeOf, saveLayout, setVisibility } from 
 import { closeLive, listLives, openLive } from './world/Lives.ts';
 import { optionalUser, requireService, requireUser, type AuthedRequest } from './http/middleware/auth.ts';
 import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
+import { getRanking, isBoard, isRange } from './social/Rankings.ts';
 import { listInventory, purchaseItem } from './shop/Purchases.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
@@ -376,6 +377,31 @@ app.get('/lives', async (_req, res, next) => {
 function param(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 }
+
+// ------------------------------------------------------------ rankings ---
+
+/**
+ * Placares (PRD §23). Público: um ranking é vitrine, e exigir sessão para ver
+ * quem está ganhando esconde a única tela que dá vontade de competir.
+ *
+ * Placar ou janela desconhecidos são 400 e não um default silencioso: um
+ * `?range=mes` respondido com o placar de hoje é a tela mentindo sobre o que
+ * está mostrando.
+ */
+app.get('/rankings', async (req, res, next) => {
+  try {
+    const board = req.query.board ?? 'streamers';
+    const range = req.query.range ?? 'season';
+    if (!isBoard(board) || !isRange(range)) {
+      res.status(400).json({ error: 'BAD_RANKING', message: 'board ou range desconhecido' });
+      return;
+    }
+    const limit = Number.parseInt(String(req.query.limit ?? '20'), 10);
+    res.json(await getRanking(board, range, Number.isFinite(limit) ? limit : 20));
+  } catch (err) {
+    next(err);
+  }
+});
 
 // -------------------------------------------------------------- internal ---
 // Só o game server chega aqui, com o token de serviço.
