@@ -6,5 +6,9 @@ dist/
 shots/
 .vite/
 
+# Sondas de uma pergunta só. O sublinhado é a marca: instrumento que vira
+# permanente ganha nome de verdade (tools/v2-lining.mjs) e entra no git.
+tools/_*
+
 assets/vendor/
 packages/client/public/assets/

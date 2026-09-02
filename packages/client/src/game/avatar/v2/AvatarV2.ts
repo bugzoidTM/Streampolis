@@ -5,8 +5,9 @@ import type { AvatarLike } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
 import { FaceV2 } from './FaceV2.js';
 import {
-  findAllSkinned, findSkinned, instantiate, loadClips, loadPart, rigOf,
-  type PartSlot,
+  characterOf, clipToBands, columnGaps, dominantBones, findAllSkinned, findSkinned,
+  instantiate, LINING, loadClips, loadPart, outfitClearance, posed, rigOf, shrink,
+  type Clearance, type PartSlot, type Posed,
 } from './Wardrobe.js';
 
 /**
@@ -53,6 +54,57 @@ const CLIP_FOR: Record<AnimState, string> = {
   pkWin: 'Celebrate',
   pkLose: 'HitRecieve',
 };
+
+/**
+ * Quanto o forro se enfia por baixo das peças vizinhas, em metros.
+ *
+ * Sem margem o recorte termina exatamente onde a peça começa e o encontro vira
+ * uma emenda aberta a cada passo — a perna dobra e a calça sai de cima do vão.
+ *
+ * Mas margem é superfície ESCONDIDA, e escondida é o que ela deveria ser: cada
+ * centímetro a mais é mais forro debaixo de um pano cuja forma ele não conhece,
+ * e é de lá que vem quase todo o vazamento que sobra — na cintura, onde a
+ * bainha da calça é inclinada e nenhuma medida por faixa a acompanha. Quatro
+ * centímetros e meio davam 1,11% de vazamento médio; um e meio dá 0,41%, com a
+ * mesma fresta (0,01%) e as mesmas 104 de 104 combinações inteiras no
+ * `gate:wardrobe` — inclusive nas vistas de caminhada, que existem no portão
+ * justamente para que encurtar a margem não pareça melhoria de graça.
+ */
+const MARGEM_FORRO = 0.015;
+
+/**
+ * Quanto o forro aperta onde NADA o mede, em fração do raio local.
+ *
+ * É o aperto de fundo, e só ele é um número escolhido: no meio do vão o forro é
+ * a perna que se vê, e ali não há peça alguma para caber dentro. Seis por cento
+ * é o bastante para ele não encostar por fora de uma bainha que passe perto.
+ *
+ * Na EMENDA, que é onde ele vazava, quem manda é a peça de cima — ver
+ * `outfitClearance` em `Wardrobe.ts`.
+ */
+const ENCOLHE_MEIO = 0.06;
+
+/**
+ * A parede de pano entre o forro e a peça que o cobre, em metros.
+ *
+ * Oito milímetros: o suficiente para o corpo ficar por dentro sem que a roupa
+ * pareça vestida sobre o vazio, e menos do que a folga com que estas peças
+ * foram modeladas em volta do corpo do próprio personagem.
+ */
+const FOLGA_FORRO = 0.008;
+
+/** Em quantos metros, vão adentro, o forro solta da medida da bainha. */
+const RAMPA_FORRO = 0.060;
+
+/**
+ * O raio mínimo que o forro pode ter, em metros.
+ *
+ * Nenhuma perna tem dois centímetros de raio. É o batente contra o único jeito
+ * de `outfitClearance` errar para o lado perigoso: um vértice de sola ou de
+ * fivela que passe rente ao osso puxa o mínimo da faixa para quase zero, e sem
+ * batente o forro viraria ali uma navalha.
+ */
+const PISO_FORRO = 0.02;
 
 /** Velocidade em que os ciclos do pacote foram autorados, em m/s. */
 const NATIVE_WALK = 1.4;
@@ -173,8 +225,9 @@ export class AvatarV2 implements AvatarLike {
     this.root.add(hostRoot);
     const bySlot = new Map<PartSlot, THREE.SkinnedMesh[]>();
     bySlot.set(present[0].slot, findAllSkinned(hostRoot));
+    for (const m of findAllSkinned(hostRoot)) this.origem.set(m, present[0].id);
 
-    for (const { slot, part } of present.slice(1)) {
+    for (const { slot, id, part } of present.slice(1)) {
       const clone = instantiate(part);
       // TODAS as malhas da peça, não só a primeira.
       //
@@ -186,6 +239,7 @@ export class AvatarV2 implements AvatarLike {
       const mine: THREE.SkinnedMesh[] = [];
       for (const mesh of findAllSkinned(clone)) {
         mine.push(mesh);
+        this.origem.set(mesh, id);
         host.parent?.add(mesh);
         // Descarta o esqueleto que veio no arquivo da peça e usa o do corpo. Só
         // funciona porque a ORDEM dos ossos é idêntica nos 21 personagens: o
@@ -233,6 +287,10 @@ export class AvatarV2 implements AvatarLike {
       this.root.scale.setScalar(scale);
       this.height = native * scale;
     }
+
+    // O FORRO, e só agora: primeiro medir o traje montado, depois tapar.
+    await this.line(host, present);
+    if (this.disposed) return;
 
     this.skeleton = host.skeleton;
     // O rosto DEPOIS do tingimento: ele toma a geometria do olho para si, e o
@@ -293,6 +351,104 @@ export class AvatarV2 implements AvatarLike {
     return Array.isArray(material) ? material.map(one) : one(material);
   }
 
+  /**
+   * O FORRO: corpo por baixo, **recortado ao vão e só onde há vão**.
+   *
+   * Este pacote não tem corpo. As quatro peças SÃO o personagem, e cada
+   * personagem foi desenhado como um conjunto fechado: a saia da bruxa para no
+   * joelho porque a bota dela sobe até lá. A loja vende as peças separadas,
+   * então saia da bruxa com tênis baixo são dezoito centímetros de canela que
+   * não existem — enxerga-se o CENÁRIO através do avatar. Na cintura é o mesmo,
+   * e ali é entre rigs: blusa feminina desce até 1,06 e calça masculina sobe
+   * até 0,97.
+   *
+   * A primeira tentativa foi vestir o forro inteiro por baixo de tudo, e ela
+   * estava errada de um jeito que só o pixel mostrou. O forro é uma PEÇA DE
+   * ROUPA fazendo as vezes de corpo, e duas roupas de formatos diferentes sobre
+   * as mesmas pernas se atravessam: medindo a área em que o forro vencia o
+   * teste de profundidade DENTRO da silhueta do traje, ele aparecia por cima da
+   * roupa em 12% da silhueta, em 28 de 30 visuais misturados. Manchas cor de
+   * pele no meio da calça, em TODO visual misturado e não só nos poucos que
+   * tinham vão: a cura pior do que a doença. `polygonOffset` não resolve porque
+   * não é empate de profundidade, é interpenetração de verdade, e encolher o
+   * bastante para caber dentro da legging mais justa deixaria pernas de palito
+   * justamente onde o forro é a perna que se vê.
+   *
+   * Então mede-se o traje montado, e o forro entra recortado às faixas de
+   * altura em que não há mais nada — o único lugar em que ele tem o direito de
+   * aparecer. Visual sem vão nenhum não carrega forro algum, que é o caso dos
+   * 21 conjuntos inteiros e portanto dos figurantes da praça.
+   *
+   * Vem depois da escala do corpo porque as duas medidas — o vão e o
+   * encolhimento — são dadas em METROS, e só valem com a malha já do tamanho
+   * que ela terá no mundo.
+   */
+  private async line(host: THREE.SkinnedMesh, present: Array<{ id: string }>) {
+    // Um conjunto inteiro é fechado por construção: o autor do pacote desenhou
+    // as quatro peças uma para a outra. Nem vale medir.
+    if (new Set(present.map((p) => characterOf(p.id))).size < 2) return;
+
+    this.root.updateMatrixWorld(true);
+    const vestido: Posed[] = [];
+    this.root.traverse((o) => {
+      if ((o as THREE.SkinnedMesh).isSkinnedMesh) vestido.push(posed(o as THREE.SkinnedMesh));
+    });
+    const vaos = columnGaps(vestido, this.height);
+    if (!vaos.length) return;
+    this.vaos = vaos;
+
+    const part = await loadPart(LINING).catch(() => null);
+    if (!part || this.disposed) return;
+
+    const clone = instantiate(part);
+    const malhas = findAllSkinned(clone);
+
+    // Quanto o traje montado deixa livre em volta de cada membro. Medido AQUI,
+    // com o traje já em cena e o forro ainda fora dele: é o que diz onde o
+    // forro cabe, e ele não pode entrar na própria medida. Só em volta dos
+    // ossos que o forro usa — os outros cinquenta ninguém vai consultar.
+    const folgas = outfitClearance(
+      vestido, malhas.flatMap((m) => [...dominantBones(m)]),
+    );
+    this.folgas = folgas;
+
+    for (const mesh of malhas) {
+      this.origem.set(mesh, LINING);
+      host.parent?.add(mesh);
+      mesh.bind(host.skeleton, host.bindMatrix);
+      mesh.castShadow = this.options.castShadow !== false;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      // O forro inteiro vira PELE, não importa como o doador chamava seus
+      // materiais: onde ele aparece é justamente onde deveria haver corpo, e
+      // uma calça preta assomando pelo vão da cintura não é melhor do que o
+      // buraco que ela veio tapar.
+      mesh.material = this.asSkin(mesh.material);
+      mesh.updateMatrixWorld(true);
+      clipToBands(mesh, vaos, MARGEM_FORRO);
+      // E AFINA até CABER na peça vizinha. O forro é largo — uma calça de
+      // alfaiate —, e sem isso ele sai por fora da bainha que deveria estar
+      // cobrindo; apertado por um número fixo, vira uma navalha dentro de uma
+      // bota larga. Quem dá a medida é o traje.
+      shrink(mesh, ENCOLHE_MEIO, {
+        clearance: folgas, folga: FOLGA_FORRO, ramp: RAMPA_FORRO, piso: PISO_FORRO,
+      });
+    }
+  }
+
+  /** Tinge tudo com o tom de pele do jogador. Usado só no forro. */
+  private asSkin(material: THREE.Material | THREE.Material[]): THREE.Material | THREE.Material[] {
+    const one = (m: THREE.Material) => {
+      const copy = m.clone() as THREE.MeshStandardMaterial;
+      copy.color.set(SKIN_TONES[this.config.skinTone % SKIN_TONES.length]);
+      copy.color.convertSRGBToLinear();
+      if (copy.map) copy.map = null;
+      this.materials.push(copy);
+      return copy;
+    };
+    return Array.isArray(material) ? material.map(one) : one(material);
+  }
+
   private play(state: AnimState, fade = FADE) {
     // O que pode faltar é o CLIPE, não a chave: `CLIP_FOR` é um Record completo.
     // Sem o segundo `get`, um arquivo de animação que não chegou congela o
@@ -310,6 +466,49 @@ export class AvatarV2 implements AvatarLike {
    * fica guardado e o rosto nasce preso. Sem isso o retrato do card corre uma
    * corrida contra o carregamento das peças, e perde de vez em quando.
    */
+  /**
+   * De qual PEÇA veio cada malha em cena.
+   *
+   * O portão do guarda-roupa mede buraco por faixa de altura, e uma faixa vazia
+   * diz que falta corpo sem dizer de quem é a culpa. Com isto ele aponta a
+   * peça: "a calça termina em 0,97 e a blusa começa em 1,06".
+   */
+  origins(): Map<THREE.SkinnedMesh, string> {
+    return this.origem;
+  }
+
+  /**
+   * As faixas de altura em que o traje não cobria nada e o forro entrou.
+   *
+   * Existe para o instrumento poder ENQUADRAR a emenda, e para dizer, quando
+   * o portão reprova, em que costura foi. A caixa envolvente do forro serviria
+   * hoje — `clipToBands` corta a geometria —, mas não servia quando o recorte
+   * era só no ÍNDICE e os vértices descartados ficavam onde estavam: a caixa
+   * de um punho de dez centímetros ia do tornozelo à cintura, e a sonda que a
+   * usava julgava a figura inteira achando que estava de perto. Foi assim que
+   * ela aprovou um forro explodido em lascas.
+   */
+  liningBands(): Array<[number, number]> {
+    return this.vaos;
+  }
+
+  /**
+   * A folga que o traje deixou, por lado do corpo e faixa de altura.
+   *
+   * É o número em que o forro foi encolhido para caber, e sem ele o portão só
+   * sabe dizer que o forro está por cima do pano — não se está por cima porque
+   * a medida saiu errada ou porque nem havia medida ali.
+   */
+  liningClearance(): Clearance | null {
+    return this.folgas;
+  }
+
+  private vaos: Array<[number, number]> = [];
+
+  private folgas: Clearance | null = null;
+
+  private readonly origem = new Map<THREE.SkinnedMesh, string>();
+
   /** O que o rosto achou na cabeça — nulo quando não há rosto (figurante, capacete). */
   faceReport(): Record<string, unknown> | null {
     return this.face?.describe() ?? null;

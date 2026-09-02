@@ -6,9 +6,19 @@ import { Environment, GOLDEN_HOUR } from '../game/Environment.js';
 import { Avatar } from '../game/avatar/Avatar.js';
 import { createAvatar } from '../game/avatar/createAvatar.js';
 import { CharacterV2 } from '../game/avatar/v2/CharacterV2.js';
+import { LINING } from '../game/avatar/v2/Wardrobe.js';
 import { auditAvatar, AUDIT_LIMITS } from '../game/avatar/Audit.js';
 import { buildMatrix } from './matrix.js';
 import { concrete, applySurface } from '../game/materials/Textures.js';
+
+/**
+ * Alcance da régua de profundidade das passadas de máscara, em metros.
+ *
+ * Oito metros cobrem qualquer enquadramento do laboratório com folga, e em 16
+ * bits sobram 0,12 mm de resolução — três ordens de grandeza abaixo da
+ * interpenetração que se quer flagrar.
+ */
+const DEPTH_RANGE = 8;
 
 /**
  * Turntable rig used by the visual review loop. Renders a row of avatars on a
@@ -348,7 +358,18 @@ export function AvatarLab() {
          * primeira pergunta é sempre "ela chegou a entrar na cena?", e um PNG
          * não responde isso.
          */
-        gameFigure: async (look: Partial<AvatarConfig>, yaw = 0, animState = 'idle', zoom = 1) => {
+        /**
+         * A figura que o jogo desenha.
+         *
+         * `aim` é a altura que a câmera encara, em fração da ESTATURA — 0,5 é a
+         * cintura, 0,1 o tornozelo. Existe porque o que se julga aqui são
+         * EMENDAS, e uma emenda no tornozelo vista de um enquadramento centrado
+         * na cintura tem trinta pixels de altura: aproximar sem mirar só traz o
+         * quadril para mais perto.
+         */
+        gameFigure: async (
+          look: Partial<AvatarConfig>, yaw = 0, animState = 'idle', zoom = 1, aim = 0.5,
+        ) => {
           const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
           await (avatar as { ready?: Promise<void> }).ready;
           group.add(avatar.root);
@@ -359,10 +380,10 @@ export function AvatarLab() {
             group.rotation.y = yaw;
             group.updateMatrixWorld(true);
             const top = avatar.stature;
-            camera.position.set(0, top * 0.52, 2.95 * zoom);
-            camera.lookAt(0, top * 0.5, 0);
-            key.target.position.set(0, top * 0.6, 0);
-            rim.target.position.set(0, top * 0.6, 0);
+            camera.position.set(0, top * (aim + 0.02), 2.95 * zoom);
+            camera.lookAt(0, top * aim, 0);
+            key.target.position.set(0, top * (aim + 0.1), 0);
+            rim.target.position.set(0, top * (aim + 0.1), 0);
             env.update(camera);
             renderer.render(0.016);
             const png = canvas.toDataURL('image/png');
@@ -450,6 +471,498 @@ export function AvatarLab() {
               trace.push(face?.piscar ?? -1);
             }
             return trace;
+          } finally {
+            avatar.dispose();
+          }
+        },
+        /**
+         * A sonda do guarda-roupa v2: **onde o corpo tem BURACO**.
+         *
+         * O portão do corpo procedural mede pele escapando por fora da roupa,
+         * porque lá existe um corpo por baixo e a roupa é ele inflado. Aqui não
+         * existe corpo nenhum: as quatro peças SÃO o personagem — o `top` traz
+         * o pano e os braços, o `bottom` traz as pernas —, e quando duas peças
+         * não se encontram o que aparece não é pele, é o cenário atrás. Um
+         * avatar partido na cintura. Essa é a falha que o v2 pode ter e o v1
+         * não podia, e é ela que esta sonda procura.
+         *
+         * Mede por FAIXA DE ALTURA e não por raio: com os vértices já
+         * deformados pelo esqueleto, marcar as faixas que cada triângulo cruza
+         * custa uma passada pela malha, enquanto raio contra malha com pele
+         * custa uma travessia por disparo. São 160 combinações.
+         *
+         * Só a COLUNA central conta (|x| < 12 cm do eixo). Sem esse recorte um
+         * braço pendurado ao lado do quadril cobre a faixa da cintura e o
+         * buraco passa despercebido — foi assim que a sonda de pele do v1
+         * escondeu por meses a cunha do quadril.
+         */
+        wardrobeProbe: async (look: Partial<AvatarConfig>) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          try {
+            avatar.setAnim('idle' as never);
+            // Um passo de zero segundos: aplica o clipe no instante 0 e mede
+            // sempre a MESMA pose. Uma sonda que mede um quadro sorteado
+            // reprova por acaso.
+            avatar.animate(0, 0);
+            avatar.root.updateMatrixWorld(true);
+
+            // Caixa de cada malha no MUNDO, por material.
+            //
+            // Quando o portão reprova, a primeira pergunta é sempre QUAL peça
+            // foi parar onde não devia — e uma medida de faixa diz que falta
+            // corpo, não quem sumiu. É a mesma razão que fez o inventário de
+            // malhas entrar na folha de contato.
+            const caixas: Record<string, number[]> = {};
+            const colunas: Record<string, [number, number]> = {};
+            const origens = (avatar as { origins?: () => Map<THREE.SkinnedMesh, string> })
+              .origins?.() ?? new Map<THREE.SkinnedMesh, string>();
+
+            const BAND = 0.004;
+            const AXIS = 0.12;
+            const bands = new Uint8Array(Math.ceil(2.4 / BAND));
+            const a = new THREE.Vector3();
+            const b = new THREE.Vector3();
+            const c = new THREE.Vector3();
+            let tris = 0;
+            avatar.root.traverse((o) => {
+              const mesh = o as THREE.SkinnedMesh;
+              if (!mesh.isSkinnedMesh) return;
+              const box = new THREE.Box3();
+              const p = new THREE.Vector3();
+              const vertices = mesh.geometry.getAttribute('position').count;
+              for (let i = 0; i < vertices; i++) {
+                mesh.getVertexPosition(i, p);
+                box.expandByPoint(mesh.localToWorld(p));
+              }
+              const label = (Array.isArray(mesh.material) ? '?' : mesh.material?.name) || mesh.name;
+              const chave = `${origens.get(mesh) ?? '?'} ${label}:${vertices}`;
+              caixas[chave] = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z]
+                .map((v) => +v.toFixed(3));
+              // A caixa MENTE sobre o que a malha cobre na coluna: o mínimo do
+              // torso de um forro são as MÃOS, que penduram meio metro abaixo
+              // dele. Quem responde "esta peça cobre a cintura?" é a faixa que
+              // ela ocupa perto do eixo, e é ela que aponta a peça culpada.
+              const coluna: [number, number] = [Infinity, -Infinity];
+              colunas[chave] = coluna;
+
+              const index = mesh.geometry.getIndex();
+              const count = index ? index.count : mesh.geometry.getAttribute('position').count;
+              for (let t = 0; t + 2 < count; t += 3) {
+                const ia = index ? index.getX(t) : t;
+                const ib = index ? index.getX(t + 1) : t + 1;
+                const ic = index ? index.getX(t + 2) : t + 2;
+                mesh.getVertexPosition(ia, a); mesh.localToWorld(a);
+                mesh.getVertexPosition(ib, b); mesh.localToWorld(b);
+                mesh.getVertexPosition(ic, c); mesh.localToWorld(c);
+                tris++;
+                if (Math.abs((a.x + b.x + c.x) / 3) > AXIS) continue;
+                const lo = Math.min(a.y, b.y, c.y);
+                const hi = Math.max(a.y, b.y, c.y);
+                coluna[0] = Math.min(coluna[0], lo);
+                coluna[1] = Math.max(coluna[1], hi);
+                for (let y = Math.max(0, Math.floor(lo / BAND)); y <= Math.floor(hi / BAND) && y < bands.length; y++) {
+                  bands[y] = 1;
+                }
+              }
+            });
+
+            // A janela de interesse: do peito do pé ao queixo. Fora dela não há
+            // o que provar — abaixo é solado, acima é cabelo.
+            const stature = avatar.stature;
+            const from = Math.floor((stature * 0.07) / BAND);
+            const to = Math.floor((stature * 0.84) / BAND);
+            const gaps: Array<[number, number]> = [];
+            let run = -1;
+            for (let i = from; i <= to; i++) {
+              if (!bands[i]) { if (run < 0) run = i; } else if (run >= 0) { gaps.push([run, i]); run = -1; }
+            }
+            if (run >= 0) gaps.push([run, to + 1]);
+            return {
+              stature: +stature.toFixed(3),
+              tris,
+              caixas,
+              colunas: Object.fromEntries(Object.entries(colunas)
+                .filter(([, v]) => Number.isFinite(v[0]))
+                .map(([k, v]) => [k, [+v[0].toFixed(3), +v[1].toFixed(3)]])),
+              // Quem termina logo ABAIXO do buraco e quem começa logo ACIMA: é a
+              // dupla que não se encontra, e é o que um relatório de portão
+              // precisa dizer para alguém poder consertar.
+              culpados: gaps.filter(([lo, hi]) => (hi - lo) * BAND >= 0.006).map(([lo, hi]) => {
+                const de = lo * BAND; const ate = hi * BAND;
+                const abaixo = Object.entries(colunas)
+                  .filter(([, v]) => Number.isFinite(v[0]) && v[1] <= de + 0.01)
+                  .sort((x, y) => y[1][1] - x[1][1])[0];
+                const acima = Object.entries(colunas)
+                  .filter(([, v]) => Number.isFinite(v[0]) && v[0] >= ate - 0.01)
+                  .sort((x, y) => x[1][0] - y[1][0])[0];
+                return { abaixo: abaixo?.[0] ?? null, acima: acima?.[0] ?? null };
+              }),
+              buracos: gaps
+                .map(([lo, hi]) => ({ de: +(lo * BAND).toFixed(3), ate: +(hi * BAND).toFixed(3), mm: Math.round((hi - lo) * BAND * 1000) }))
+                .filter((g) => g.mm >= 6)
+                .sort((x, y) => y.mm - x.mm),
+            };
+          } finally {
+            avatar.dispose();
+          }
+        },
+        /**
+         * O FORRO ESTÁ APARECENDO POR CIMA DA ROUPA?
+         *
+         * O forro existe para tapar o vão entre duas peças que não se
+         * encontram, e a sonda de faixas (`wardrobeProbe`) confirma que ele
+         * tapa. Ela não vê o preço: o forro é uma PEÇA DE ROUPA fazendo as
+         * vezes de corpo, e duas roupas de formatos diferentes sobre as mesmas
+         * pernas se atravessam. Quando isso acontece o avatar ganha manchas cor
+         * de pele no meio da calça — um defeito pior do que o buraco que o
+         * forro veio consertar, porque aparece em TODO visual misturado e não
+         * só nos poucos que tinham vão.
+         *
+         * Mede-se em PIXEL, que é onde o defeito mora, e em duas passadas com
+         * a mesma câmera:
+         *
+         *   silhueta  — a roupa toda branca, SEM forro: onde o traje já cobre.
+         *   forro     — a roupa toda preta e só o forro branco: onde o forro
+         *               vence o teste de profundidade e chega à tela.
+         *
+         * O que sai da conta:
+         *   `vazamento` — forro visível DENTRO da silhueta do traje. É a
+         *                 mancha. Tem de ser zero.
+         *   `tapado`    — forro visível FORA dela: exatamente o buraco que ele
+         *                 foi posto para tapar. Quanto maior, mais ele serviu.
+         *
+         * Passada por material chapado e sem o composer de propósito: o bloom
+         * espalha a borda por uma dúzia de pixels e contaminaria as duas
+         * máscaras.
+         *
+         * **E ENQUADRADA NA EMENDA, uma passada por vão.** A primeira versão
+         * fotografava a figura inteira, e a figura inteira mede o defeito
+         * errado: um avatar de 1,8 m num quadro de 400 px dá quatro pixels a
+         * um estilhaço de três centímetros, e a conta o dilui em sessenta mil
+         * pixels de silhueta. Ela aprovou — 0 de 30 em vazamento e 0 de 30 em
+         * fresta — um forro que em close estava EXPLODIDO, com lascas
+         * atravessando a canela e um cone saindo da cintura. As emendas ficam
+         * em duas faixas de dez centímetros, e é nelas que a câmera tem de
+         * estar.
+         */
+        liningExposure: async (
+          look: Partial<AvatarConfig>, yaw = 0, cor = false, anim = 'idle', fase = 0,
+        ) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          const origens = (avatar as { origins?: () => Map<THREE.SkinnedMesh, string> })
+            .origins?.() ?? new Map<THREE.SkinnedMesh, string>();
+
+          // Cena própria, fundo preto e sem luz: as duas máscaras não podem
+          // depender do chão, do céu nem de para onde o sol aponta.
+          const palco = new THREE.Scene();
+          palco.background = new THREE.Color(0x000000);
+          // Só entra no quadro em cor: as máscaras são de material chapado e
+          // não podem depender de luz nenhuma.
+          //
+          // Forte, e sem o céu do laboratório: aqui não há mapa de ambiente
+          // nenhum, e o que ilumina estas peças na cena de verdade é ele. Com a
+          // intensidade da cena o quadro sai quase preto.
+          const luz = new THREE.HemisphereLight(0xffffff, 0x8a8f99, 9);
+          const sol = new THREE.DirectionalLight(0xfff4e6, 4);
+          sol.position.set(1.4, 2.2, 2.6);
+          luz.add(sol);
+          const pivo = new THREE.Group();
+          pivo.rotation.y = yaw;
+          palco.add(pivo);
+          pivo.add(avatar.root);
+
+          // A régua da passada: DISTÂNCIA à câmera, em 16 bits, e não uma
+          // mancha branca.
+          //
+          // A primeira versão pintava o traje de branco, o forro de branco na
+          // outra passada, e chamava de vazamento todo pixel em que os dois
+          // caíam juntos. Isso conta como defeito a OCLUSÃO LEGÍTIMA, e num
+          // enquadramento de meio metro ela é enorme: a perna esquerda passa à
+          // frente da bota direita, e a perna inteira passa à frente do avesso
+          // de uma saia rodada — nos dois casos o forro está na frente do
+          // traje, nos dois casos está certo. Era isso, e não uma peça mal
+          // vestida, que dava 26% de "vazamento" a um close que a olho nu está
+          // correto.
+          //
+          // Com distância dá para separar o que importa: interpenetração é o
+          // forro furando a roupa por milímetros; oclusão é ele estar à frente
+          // por um membro inteiro. `PROXIMO`, em `v2-lining.mjs`, é onde se
+          // corta.
+          //
+          // Sem `#include <colorspace_fragment>` nem tonemapping: o valor
+          // chega ao canvas como foi escrito.
+          //
+          // **Face frontal, como o jogo desenha.** Com dupla face, olhar para
+          // dentro do cano de uma bota registra a parede de TRÁS dela, e a
+          // perna passa à frente dessa parede por quatro centímetros — o que é
+          // exatamente o que uma perna dentro de uma bota faz. Era esse o caso
+          // do grosso das acusações: das 16 mil que sobravam no pior visual,
+          // 12 mil estavam a mais de um centímetro do pano, distância que
+          // nenhuma interpenetração de roupa tem. O que o jogador vê é a face
+          // frontal, e é ela que julga.
+          //
+          // E o AZUL carrega a identidade da malha, não só um "tem superfície
+          // aqui". Quando o portão acusa, a pergunta seguinte é sempre com QUE
+          // peça o forro está brigando, e sem isso a resposta sai de olhar
+          // fotografia e adivinhar.
+          const profundidade = (id: number) => new THREE.ShaderMaterial({
+            vertexShader: `
+              #include <common>
+              #include <skinning_pars_vertex>
+              varying float vDist;
+              void main() {
+                #include <skinbase_vertex>
+                #include <begin_vertex>
+                #include <skinning_vertex>
+                #include <project_vertex>
+                vDist = -mvPosition.z;
+              }
+            `,
+            fragmentShader: `
+              varying float vDist;
+              void main() {
+                float t = clamp(vDist / ${DEPTH_RANGE.toFixed(1)}, 0.0, 1.0);
+                // Dois canais para a distância: 8 bits seriam 3 cm de
+                // resolução em 8 m, e a conta toda é sobre milímetros. O azul
+                // é a malha, contada a partir de 1 — zero é o fundo, que não
+                // foi desenhado.
+                gl_FragColor = vec4(floor(t * 255.0) / 255.0, fract(t * 255.0), ${(id / 255).toFixed(6)}, 1.0);
+              }
+            `,
+          });
+          const malhas: Array<{
+            mesh: THREE.SkinnedMesh; mat: THREE.Material | THREE.Material[];
+            forro: boolean; pele: boolean; regua: THREE.ShaderMaterial; nome: string;
+          }> = [];
+          avatar.root.traverse((o) => {
+            const mesh = o as THREE.SkinnedMesh;
+            if (!mesh.isSkinnedMesh) return;
+            const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+            const forro = origens.get(mesh) === LINING;
+            malhas.push({
+              mesh, mat: mesh.material, forro,
+              // PELE, e não pano: metade das peças do acervo traz um pedaço de
+              // corpo junto — o `top` traz os braços, dezessete calçados trazem
+              // o tornozelo —, e `tint` pinta todos eles com o tom de pele do
+              // jogador, o mesmo do forro. Forro atravessando um desses não é
+              // defeito nenhum: é pele da mesma cor sobre pele da mesma cor, e
+              // não há o que ver. Quem julga isso é o portão; aqui só se diz
+              // qual malha é qual.
+              pele: forro || /skin/i.test(material?.name ?? ''),
+              regua: profundidade(malhas.length + 1),
+              nome: `${origens.get(mesh) ?? '?'} ${material?.name || mesh.name}`,
+            });
+          });
+
+          try {
+            // A POSE também é uma pergunta. O forro é recortado e apertado uma
+            // vez, na pose em que o avatar nasce, e a margem que o enfia por
+            // baixo da peça vizinha existe justamente para o que acontece
+            // depois: a perna dobra, a bainha sobe, e uma margem curta demais
+            // abre a emenda no meio do passo. Medir só parado é medir o
+            // problema com o movimento desligado.
+            avatar.setAnim(anim as never);
+            avatar.animate(0, 0);
+            for (let i = 0; i * 0.05 < fase; i++) avatar.animate(0.05, 0);
+            palco.updateMatrixWorld(true);
+            const top = avatar.stature;
+            camera.position.set(0, top * 0.52, 2.95);
+            camera.lookAt(0, top * 0.5, 0);
+            camera.updateMatrixWorld(true);
+
+            // Uma passada só o traje, outra só o forro. Não é preciso pintar o
+            // que não interessa de preto: o que não entra na passada não é
+            // desenhado, e o fundo já responde "não há superfície aqui".
+            const passada = (paraForro: boolean) => {
+              for (const m of malhas) {
+                m.mesh.visible = m.forro === paraForro;
+                if (m.mesh.visible) m.mesh.material = m.regua;
+              }
+              renderer.webgl.render(palco, camera);
+              return canvas.toDataURL('image/png');
+            };
+
+            // As faixas em que o forro entrou, PERGUNTADAS AO AVATAR.
+            //
+            // Nunca deduzidas da caixa envolvente das malhas do forro: quando
+            // o recorte era feito só no ÍNDICE, os vértices descartados
+            // continuavam na malha e a caixa de um punho de dez centímetros ia
+            // do tornozelo à cintura. Enquadrar por ela é enquadrar a figura
+            // inteira achando que se está de perto — e foi assim que esta
+            // sonda aprovou, com 0 de 30 em vazamento e 0 em fresta, um forro
+            // que em close estava explodido em lascas.
+            const juntas = (avatar as { liningBands?: () => Array<[number, number]> })
+              .liningBands?.() ?? [];
+
+            const quadros = juntas.map(([de, ate]) => {
+              const meio = (de + ate) / 2;
+              // A câmera chega o bastante para a faixa mais a folga das
+              // vizinhas ocuparem o quadro: é a emenda que se julga, e a
+              // emenda inclui a bainha de quem está por cima.
+              const alto = Math.max(0.22, (ate - de) + 0.14);
+              camera.position.set(0, meio, alto * 1.9);
+              camera.lookAt(0, meio, 0);
+              camera.updateMatrixWorld(true);
+              // O quadro em COR, no mesmo enquadramento, só quando pedido.
+              //
+              // Uma máscara diz onde o forro venceu o traje e não diz o que
+              // aquilo é. Ver a mancha por cima da figura é a diferença entre
+              // "12% de vazamento" e "a canela está por cima do cano da bota"
+              // — e às vezes entre um defeito e um falso positivo.
+              let quadro: string | null = null;
+              if (cor) {
+                for (const m of malhas) { m.mesh.visible = true; m.mesh.material = m.mat; }
+                palco.add(luz);
+                renderer.webgl.render(palco, camera);
+                palco.remove(luz);
+                quadro = canvas.toDataURL('image/png');
+              }
+              return { de, ate, traje: passada(false), forro: passada(true), cor: quadro };
+            });
+            return {
+              quadros, temForro: malhas.some((m) => m.forro), escala: DEPTH_RANGE,
+              // Na ordem do azul: a malha de id `n` é `pecas[n - 1]`.
+              pecas: malhas.map((m) => m.nome),
+              pele: malhas.map((m) => m.pele),
+            };
+          } finally {
+            for (const m of malhas) { m.mesh.material = m.mat; m.mesh.visible = true; m.regua.dispose(); }
+            pivo.remove(avatar.root);
+            avatar.dispose();
+          }
+        },
+        /**
+         * O PERFIL de cada primitivo de uma peça: até onde ele cobre a coluna
+         * do corpo e qual o seu raio máximo por faixa de altura.
+         *
+         * É a medida que escolhe o doador do forro. Um forro tem de satisfazer
+         * duas coisas ao mesmo tempo, e olhar só para uma delas foi o que pôs
+         * uma calça de alfaiate por baixo de todo mundo: precisa COBRIR (do
+         * tornozelo até acima do umbigo) e precisa CABER (ser mais estreito que
+         * a peça mais justa do acervo, ou aparece por cima dela).
+         */
+        /**
+         * O forro CABE? A medida contra a medida, faixa de altura por faixa.
+         *
+         * O portão fotografa e diz que o forro está por cima do pano. Ele não
+         * diz por quê, e há duas causas opostas: ou a folga do traje foi medida
+         * e o forro não obedeceu, ou não havia folga medida ali — e nesse caso
+         * o defeito está em `outfitClearance`, não em `shrink`. Esta sonda põe
+         * as duas colunas lado a lado.
+         */
+        /** Só monta e descarta: o custo do avatar sem o custo de desenhar. */
+        buildOnly: async (look: Partial<AvatarConfig>) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          avatar.dispose();
+        },
+        liningFit: async (look: Partial<AvatarConfig>) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          const origens = (avatar as { origins?: () => Map<THREE.SkinnedMesh, string> })
+            .origins?.() ?? new Map<THREE.SkinnedMesh, string>();
+          const folgas = (avatar as { liningClearance?: () => Map<number, Float32Array> | null })
+            .liningClearance?.() ?? null;
+          try {
+            avatar.setAnim('idle' as never);
+            avatar.animate(0, 0);
+            avatar.root.updateMatrixWorld(true);
+            const BANDA = 0.004;
+            // Por OSSO e faixa, que é a chave em que a folga foi medida.
+            const forro = new Map<string, { osso: number; faixa: number; r: number }>();
+            const traje = new Map<string, number>();
+            let ossos: THREE.Bone[] = [];
+            const p = new THREE.Vector3();
+            avatar.root.traverse((o) => {
+              const mesh = o as THREE.SkinnedMesh;
+              if (!mesh.isSkinnedMesh) return;
+              const ehForro = origens.get(mesh) === LINING;
+              ossos = mesh.skeleton?.bones ?? ossos;
+              const skinIndex = mesh.geometry.getAttribute('skinIndex');
+              const skinWeight = mesh.geometry.getAttribute('skinWeight');
+              if (!skinIndex || !skinWeight) return;
+              // Só os vértices que o índice usa. Hoje `clipToBands` corta a
+              // geometria e não sobra vértice órfão, mas medir o que é
+              // DESENHADO em vez do que está guardado é o que torna esta sonda
+              // independente de como o recorte é feito.
+              const idx = mesh.geometry.getIndex();
+              const vivos = new Set<number>();
+              if (idx) for (let k = 0; k < idx.count; k++) vivos.add(idx.getX(k));
+              else for (let k = 0; k < skinIndex.count; k++) vivos.add(k);
+              for (const i of vivos) {
+                let dom = -1; let maior = 0;
+                for (let j = 0; j < 4; j++) {
+                  const w = skinWeight.getComponent(i, j);
+                  if (w > maior) { maior = w; dom = skinIndex.getComponent(i, j); }
+                }
+                if (dom < 0) continue;
+                mesh.getVertexPosition(i, p);
+                mesh.localToWorld(p);
+                const e = mesh.skeleton.bones[dom].matrixWorld.elements;
+                const faixa = Math.floor(p.y / BANDA);
+                const r = Math.hypot(p.x - e[12], p.z - e[14]);
+                const chave = `${dom}:${faixa}`;
+                if (ehForro) {
+                  const antes = forro.get(chave);
+                  if (!antes || r > antes.r) forro.set(chave, { osso: dom, faixa, r });
+                } else {
+                  traje.set(chave, Math.min(traje.get(chave) ?? Infinity, r));
+                }
+              }
+            });
+            const linhas: Array<Record<string, number | string>> = [];
+            for (const [chave, { osso, faixa, r }] of forro) {
+              const folga = folgas?.get(osso)?.[faixa] ?? Infinity;
+              linhas.push({
+                osso: ossos[osso]?.name ?? String(osso), y: +(faixa * BANDA).toFixed(3),
+                forro: +r.toFixed(4),
+                traje: Number.isFinite(traje.get(chave) ?? Infinity) ? +(traje.get(chave) as number).toFixed(4) : 0,
+                folga: Number.isFinite(folga) ? +folga.toFixed(4) : 'sem medida',
+              });
+            }
+            linhas.sort((a, b) => String(a.osso).localeCompare(String(b.osso)) || (a.y as number) - (b.y as number));
+            return { linhas, bandas: (avatar as { liningBands?: () => Array<[number, number]> }).liningBands?.() ?? [] };
+          } finally {
+            avatar.dispose();
+          }
+        },
+        pieceProfile: async (look: Partial<AvatarConfig>, alvo: string) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          const origens = (avatar as { origins?: () => Map<THREE.SkinnedMesh, string> })
+            .origins?.() ?? new Map<THREE.SkinnedMesh, string>();
+          try {
+            avatar.setAnim('idle' as never);
+            avatar.animate(0, 0);
+            avatar.root.updateMatrixWorld(true);
+            const saida: Array<Record<string, unknown>> = [];
+            const p = new THREE.Vector3();
+            avatar.root.traverse((o) => {
+              const mesh = o as THREE.SkinnedMesh;
+              if (!mesh.isSkinnedMesh || origens.get(mesh) !== alvo) return;
+              let de = Infinity; let ate = -Infinity; let raio = 0;
+              const BANDA = 0.02;
+              const perfil = new Float32Array(Math.ceil(2.2 / BANDA));
+              const n = mesh.geometry.getAttribute('position').count;
+              // O raio é medido a partir do EIXO DA PERNA, não do eixo do
+              // corpo: da linha do quadril para baixo são duas pernas, e a
+              // distância ao centro do avatar mediria o vão entre elas.
+              for (let i = 0; i < n; i++) {
+                mesh.getVertexPosition(i, p);
+                mesh.localToWorld(p);
+                de = Math.min(de, p.y); ate = Math.max(ate, p.y);
+                const eixo = p.y < avatar.stature * 0.53 ? Math.sign(p.x) * 0.09 : 0;
+                const r = Math.hypot(p.x - eixo, p.z);
+                raio = Math.max(raio, r);
+                const faixa = Math.floor(p.y / BANDA);
+                if (faixa >= 0 && faixa < perfil.length) perfil[faixa] = Math.max(perfil[faixa], r);
+              }
+              const mat = Array.isArray(mesh.material) ? '?' : (mesh.material as THREE.Material).name;
+              saida.push({ mat: mat || mesh.name, de, ate, raio, verts: n, perfil: Array.from(perfil) });
+            });
+            return saida;
           } finally {
             avatar.dispose();
           }

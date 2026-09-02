@@ -72,6 +72,48 @@ for (const old of await readdir(OUT).catch(() => [])) {
   if (/\.(glb|json)$/.test(old)) await rm(path.join(OUT, old), { force: true });
 }
 
+/**
+ * O FORRO: a pele que fica por baixo da roupa.
+ *
+ * Este pacote não tem corpo. As quatro peças SÃO o personagem — o `top` traz o
+ * pano e os braços, o `bottom` traz as pernas —, e cada personagem foi
+ * desenhado como um CONJUNTO: a saia da bruxa para no joelho porque a bota dela
+ * sobe até lá. A loja vende as peças separadas, então saia da bruxa com tênis
+ * baixo é uma canela de dezoito centímetros de nada, e dá para ver o cenário
+ * através do avatar.
+ *
+ * O pacote não traz corpo nu para este rig — o "Universal Base Characters" da
+ * mesma casa é outro esqueleto e não serve. Quem serve é uma peça de baixo, e
+ * escolhê-la é um problema de duas medidas ao mesmo tempo: precisa COBRIR (do
+ * tornozelo até acima do umbigo, porque é lá que ficam as duas emendas) e
+ * precisa CABER (ser mais estreita que a peça mais justa do acervo, ou aparece
+ * por cima dela).
+ *
+ * A primeira escolha olhou só para a cobertura e pegou a calça do alfaiate
+ * feminino, que vai de 0,12 m a 1,08 m. Ela cobre e não cabe: medindo o raio a
+ * partir do eixo da perna, faixa a faixa (`__lab.pieceProfile`), o punho dela
+ * tem 0,310 — quase o mais largo das 42 peças de baixo do acervo, porque é o
+ * punho de uma CALÇA e não um tornozelo. O que se via era a bainha do forro
+ * saindo por cima do cano do sapato.
+ *
+ * A calça da `f_animated_woman` alcança quase o mesmo (0,13 a 1,065 — e 1,06 é
+ * o mais alto que uma blusa deste acervo sobe pela cintura) e é 3 cm mais
+ * estreita no tornozelo, com coxa e cintura iguais ou menores. Das quatro peças
+ * do acervo que vão do tornozelo à cintura, é a mais justa.
+ *
+ * Ela entra tingida com o TOM DE PELE do jogador, não com a cor do tecido: onde
+ * ela aparece é justamente onde deveria haver corpo.
+ *
+ * O buraco da cintura, aliás, é só entre RIGS: as blusas masculinas descem até
+ * 0,92 e as femininas param em 1,06, enquanto as calças masculinas sobem só até
+ * 0,97. Blusa feminina com calça masculina abre dez centímetros de nada.
+ *
+ * Não entra no catálogo — ninguém compra o próprio corpo.
+ */
+const FORRO = [
+  { id: 'under_body', pack: 'women', file: 'Animated Woman.glb', suffix: 'Legs' },
+];
+
 const catalog = [];
 
 for (const pack of PACKS) {
@@ -147,6 +189,32 @@ for (const pack of PACKS) {
 }
 
 process.stdout.write('\n');
+
+// O forro, depois das peças: mesmo corte, mas guardando SÓ o primitivo de pele.
+for (const forro of FORRO) {
+  const pack = PACKS.find((p) => p.id === forro.pack);
+  if (!pack || (ONLY && !ONLY.has(pack.id))) continue;
+  const doc = await io.read(path.join(VENDOR, pack.dir, forro.file));
+  const root = doc.getRoot();
+  const alvo = root.listMeshes().find((m) => m.getName().endsWith(`_${forro.suffix}`));
+  if (!alvo) { console.error(`forro ${forro.id}: malha *_${forro.suffix} não existe em ${forro.file}`); continue; }
+  for (const m of root.listMeshes()) if (m !== alvo) m.dispose();
+  // TODOS os primitivos da malha, e não só os de pele: a cobertura é o que
+  // importa, e o avatar tinge o forro inteiro com o tom de pele na hora de
+  // vestir. Ficar só com a pele do doador deixaria de fora justamente o tecido,
+  // que é o que cobre o quadril e a cintura.
+  for (const a of root.listAnimations()) {
+    for (const ch of a.listChannels()) ch.dispose();
+    for (const sp of a.listSamplers()) sp.dispose();
+    a.dispose();
+  }
+  await doc.transform(weld(), prune(), dedup(),
+    textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [512, 512] }));
+  const bytes = await io.writeBinary(doc);
+  await writeFile(path.join(OUT, `${forro.id}.glb`), bytes);
+  console.log(`forro ${forro.id}: ${Math.round(bytes.length / 1024)} KB`);
+}
+
 await writeFile(path.join(OUT, 'catalog.json'), `${JSON.stringify({
   $comment: 'Peças de guarda-roupa fatiadas dos pacotes Ultimate Modular (CC0). Geradas por tools/assets/characters.mjs.',
   parts: catalog,
@@ -196,15 +264,20 @@ const linhas = catalog.map((part) => {
 
 const itemsPath = path.join(ROOT, 'packages/shared/src/items.ts');
 const items = await readFile(itemsPath, 'utf8');
-const marcado = items.replace(
-  /(\/\/ <<< GERADO: guarda-roupa[\s\S]*?\n)[\s\S]*?(\n *\/\/ >>> GERADO)/,
-  `$1${linhas}$2`,
-);
-if (marcado === items) {
+const MARCADORES = /(\/\/ <<< GERADO: guarda-roupa[\s\S]*?\n)[\s\S]*?(\n *\/\/ >>> GERADO)/;
+// Duas coisas diferentes, e o aviso as confundia: "não achei os marcadores" e
+// "achei e já estava igual" davam a mesma mensagem, porque o teste era só
+// comparar as strings. Um catálogo em dia era anunciado como catálogo quebrado.
+if (!MARCADORES.test(items)) {
   console.warn('! não achei os marcadores em shared/src/items.ts — catálogo NÃO atualizado');
 } else {
-  await writeFile(itemsPath, marcado);
-  console.log(`catálogo compartilhado atualizado com ${catalog.length} peças`);
+  const marcado = items.replace(MARCADORES, `$1${linhas}$2`);
+  if (marcado === items) {
+    console.log(`catálogo compartilhado já estava em dia (${catalog.length} peças)`);
+  } else {
+    await writeFile(itemsPath, marcado);
+    console.log(`catálogo compartilhado atualizado com ${catalog.length} peças`);
+  }
 }
 
 const total = catalog.reduce((a, p) => a + p.kb, 0);
