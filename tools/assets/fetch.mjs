@@ -171,6 +171,27 @@ async function repairTextureRefs(dir) {
   if (fixed) console.log(`  ⟳ ${fixed} textura(s) com nome quebrado no pacote, copiadas`);
 }
 
+/**
+ * Poly Pizza: o catálogo CC0 que hospeda os pacotes da Quaternius que sumiram
+ * do site do autor.
+ *
+ * Os pacotes "Ultimate Modular Men/Women" são CC0 e continuam anunciados em
+ * quaternius.com, mas o botão de download de lá está quebrado (widget do itch
+ * com `game: ""`) e eles não estão no perfil do itch. O poly.pizza publica os
+ * dois como bundle, sem login: pede-se um token ao endpoint do bundle, o
+ * download responde um JSON com a URL do zip já compactado, e é ele que se
+ * baixa. Duas requisições, nenhuma conta.
+ */
+async function polyPizzaZip(bundleId, format = 'glb') {
+  await req(`https://poly.pizza/api/bundle/${bundleId}/gettoken`);
+  const res = await req(`https://poly.pizza/api/list/${bundleId}/download/${format}`, {
+    headers: { referer: `https://poly.pizza/bundle/${bundleId}` },
+  });
+  const body = await res.json();
+  if (!body?.url) throw new Error(`poly.pizza não devolveu url para ${bundleId}`);
+  return body.url;
+}
+
 async function fetchPack(pack) {
   const dir = path.join(VENDOR, pack.id);
   if (!force && await exists(path.join(dir, '.done'))) {
@@ -182,7 +203,9 @@ async function fetchPack(pack) {
 
   const files = pack.source === 'kenney'
     ? [{ name: `${pack.id}.zip`, url: await kenneyZipUrl(pack.page) }]
-    : await itchFiles(pack.itchUser, pack.itchGame);
+    : pack.source === 'polypizza'
+      ? [{ name: `${pack.id}.zip`, url: await polyPizzaZip(pack.bundle, pack.format) }]
+      : await itchFiles(pack.itchUser, pack.itchGame);
 
   // Um pacote do itch costuma trazer Standard/Pro/Source; o Standard é o que
   // um jogo web quer, e o Source é um .blend de centenas de MB.

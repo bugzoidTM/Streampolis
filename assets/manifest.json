@@ -130,6 +130,28 @@
       "license": "CC0-1.0",
       "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
       "use": "TESTE: as roupas modulares da Quaternius encaixam no mesmo esqueleto do corpo base?"
+    },
+    {
+      "id": "quaternius-modular-women",
+      "name": "Quaternius Ultimate Modular Women Pack",
+      "source": "polypizza",
+      "bundle": "aCBDXDdTNN",
+      "format": "glb",
+      "page": "https://poly.pizza/bundle/Ultimate-Modular-Women-Pack-aCBDXDdTNN",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "corpo e guarda-roupa do avatar v2: 10 personagens, 4 peças trocáveis cada, 24 animações"
+    },
+    {
+      "id": "quaternius-modular-men",
+      "name": "Quaternius Ultimate Modular Men Pack",
+      "source": "polypizza",
+      "bundle": "ZiH8muWqwQ",
+      "format": "glb",
+      "page": "https://poly.pizza/bundle/Ultimate-Modular-Men-Pack-ZiH8muWqwQ",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "corpo e guarda-roupa do avatar v2: 11 personagens, 4 peças trocáveis cada, 24 animações"
     }
   ],
   "hdris": [
