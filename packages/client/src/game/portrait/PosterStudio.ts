@@ -179,14 +179,13 @@ async function shoot(
   // altura visível é 2·d·tan(15°) ≈ 0,54·d. Corpo inteiro precisa de ~2,1 m de
   // altura visível (o avatar tem 1,67 m e a moldura pede folga), busto precisa
   // de ~0,8 m. Chutar a distância é o que decapitava o retrato.
-  // A ALTURA do avatar, não a linha dos olhos.
+  // A ESTATURA, que é a mesma pergunta nos dois corpos.
   //
-  // O enquadramento antigo saía de `eyeHeight`, que no corpo procedural era a
-  // coroa do crânio; no corpo v2 é a linha dos olhos, uns 6% abaixo. Seis por
-  // cento de 1,7 m é uma cabeça cortada no topo do card — foi assim que o feed
-  // publicou gente sem cabeça no dia da migração.
-  const height = isProcedural(avatar) ? avatar.eyeHeight : avatar.eyeHeight / 0.94;
-  const crown = height;
+  // Aqui havia um `if` sobre o tipo concreto dividindo por 0,94, porque o
+  // `eyeHeight` de um corpo era a coroa e o do outro a linha dos olhos, uns 6%
+  // abaixo — e 6% de 1,7 m é uma cabeça cortada no topo do card. O conserto
+  // certo não era o `if`: era o contrato ter um significado só.
+  const crown = avatar.stature;
   if (o.shot === 'bust') {
     // Folga acima da cabeça: um cabelo com volume (afro, moicano) precisa de
     // mais quadro do que a coroa do crânio.

@@ -53,8 +53,21 @@ const STREET = [
   'f_suit', 'f_worker', 'f_punk', 'f_adventurer',
 ];
 
+/**
+ * Personagens que o pacote não traz inteiros.
+ *
+ * O fazendeiro não tem malha de pernas — é o único incompleto dos 21, e a loja
+ * já vende só a cabeça, a blusa e o calçado dele. Sem esta linha, todo
+ * fazendeiro da praça pedia um `m_farmer_bottom.glb` que não existe, levava 404
+ * e caía na calça padrão por exceção. Vestir de propósito é melhor do que
+ * acertar por acidente.
+ */
+const REMENDO: Record<string, Partial<Record<'top' | 'bottom' | 'shoes', string>>> = {
+  m_farmer: { bottom: 'm_worker_bottom' },
+};
+
 /** A stranger. Deterministic per index, so a scene looks the same twice. */
-function extra(i: number): AvatarConfig {
+export function extra(i: number): AvatarConfig {
   const rnd = mulberry32(4801 + i * 7919);
   const pick = <T>(list: readonly T[]): T => list[Math.floor(rnd() * list.length) % list.length];
   const who = pick(STREET);
@@ -63,12 +76,32 @@ function extra(i: number): AvatarConfig {
     skinTone: pick(SKIN),
     hairColor: Math.floor(rnd() * 10),
     hair: `${who}_head`,
-    top: `${who}_top`,
-    bottom: `${who}_bottom`,
-    shoes: `${who}_shoes`,
+    top: REMENDO[who]?.top ?? `${who}_top`,
+    bottom: REMENDO[who]?.bottom ?? `${who}_bottom`,
+    shoes: REMENDO[who]?.shoes ?? `${who}_shoes`,
     accessory: '',
     height: 0.94 + rnd() * 0.12,
   };
+}
+
+/**
+ * As peças que os figurantes vão vestir, para quem pré-carrega saber o que
+ * buscar.
+ *
+ * `extra(i)` é determinístico por índice: dá para saber, ANTES de a cena
+ * existir, exatamente quais arquivos os figurantes pedirão — e são só uns
+ * poucos personagens repetidos, não os doze. Sem isto, o pré-carregamento
+ * buscava só o conjunto padrão e a rua começava a se povoar DEPOIS de a tela de
+ * carregamento sair, uma pessoa por vez, que é exatamente a impressão de
+ * travamento que a tela veio consertar.
+ */
+export function crowdParts(budget: number): string[] {
+  const ids = new Set<string>();
+  for (let i = 0; i < budget; i++) {
+    const cfg = extra(i);
+    for (const id of [cfg.hair, cfg.top, cfg.bottom, cfg.shoes]) if (id) ids.add(id);
+  }
+  return [...ids];
 }
 
 export class AmbientCrowd {
@@ -84,12 +117,16 @@ export class AmbientCrowd {
       const routine = routines[i];
       // Sem rig de expressão: oito meshes por figurante que ninguém vê. (O
       // corpo v2 não tem rig de rosto nenhum, e a opção vira letra morta nele.)
-      const avatar = createAvatar(extra(i), { face: false });
+      // Sem sombra e sem rig de expressão, e as duas coisas por OPÇÃO.
+      //
+      // O `castShadow = false` era um `traverse` no nó recém-criado: no corpo
+      // v2 esse nó ainda está vazio (ele se monta quando os quatro arquivos
+      // chegam), então a varredura não encontrava malha nenhuma e a montagem
+      // acendia todas depois. Os doze figurantes entravam no passe de sombra
+      // todo quadro — o oposto exato do que este comentário prometia.
+      const avatar = createAvatar(extra(i), { face: false, castShadow: false });
       const start = routine.path[0];
       avatar.root.position.set(start.x, routine.y ?? 0, start.z);
-      // No shadow casting: a crowd of shadow casters doubles the shadow pass
-      // for figures the player never looks at directly.
-      avatar.root.traverse((o) => { (o as THREE.Mesh).castShadow = false; });
       this.root.add(avatar.root);
 
       const member: Member = {

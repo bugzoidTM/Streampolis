@@ -69,6 +69,7 @@ export class NameTag {
   readonly sprite: THREE.Sprite;
 
   constructor(name: string, gifterLevel: number, private height: number) {
+    // `height` é a ESTATURA do avatar: do chão ao alto do crânio.
     this.sprite = new THREE.Sprite(draw(name, gifterLevel));
     this.sprite.renderOrder = 10;
     this.applyScale();
@@ -80,7 +81,9 @@ export class NameTag {
     const aspect = image ? image.width / image.height : 4;
     const h = 0.16;
     this.sprite.scale.set(h * aspect, h, 1);
-    this.sprite.position.y = this.height + 0.18;
+    // 12 cm acima da COROA. O valor era 0,18 sobre um "eyeHeight" que valia o
+    // osso da cabeça: dava 1,66 num corpo de 1,666 — a placa pousava no cabelo.
+    this.sprite.position.y = this.height + 0.12;
   }
 
   set(name: string, gifterLevel: number, height = this.height): void {

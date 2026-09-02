@@ -279,7 +279,9 @@ export function AvatarLab() {
             // `zoom > 1` pulls back: a ponytail or a waist-length style lives
             // mostly BELOW a head-and-shoulders crop, and cannot be reviewed
             // in one.
-            const head = avatar.eyeHeight;
+            // A linha dos olhos, derivada da estatura: um retrato se enquadra
+            // pelos olhos, e é ela que o contrato deixou de fingir que sabia.
+            const head = avatar.stature * 0.888;
             camera.position.set(0, head + 0.02 - 0.20 * (zoom - 1), 0.62 * zoom);
             camera.lookAt(0, head + 0.01 - 0.22 * (zoom - 1), 0);
             key.target.position.set(0, head, 0);
@@ -312,7 +314,7 @@ export function AvatarLab() {
             for (let i = 0; i < 60; i++) avatar.animate(0.05, 0);
             group.rotation.y = yaw;
             group.updateMatrixWorld(true);
-            const top = avatar.eyeHeight + 0.16;
+            const top = avatar.stature;
             camera.position.set(0, top * 0.52, 2.95);
             camera.lookAt(0, top * 0.5, 0);
             key.target.position.set(0, top * 0.6, 0);
@@ -356,7 +358,7 @@ export function AvatarLab() {
             for (let i = 0; i < 60; i++) avatar.animate(0.05, 0);
             group.rotation.y = yaw;
             group.updateMatrixWorld(true);
-            const top = avatar.eyeHeight + 0.16;
+            const top = avatar.stature;
             camera.position.set(0, top * 0.52, 2.95 * zoom);
             camera.lookAt(0, top * 0.5, 0);
             key.target.position.set(0, top * 0.6, 0);
@@ -376,7 +378,7 @@ export function AvatarLab() {
                 tris: Math.round((g.index ? g.index.count : g.attributes.position.count) / 3),
               });
             });
-            return { png, meshes, eyeHeight: +avatar.eyeHeight.toFixed(3) };
+            return { png, meshes, stature: +avatar.stature.toFixed(3) };
           } finally {
             group.rotation.y = prev;
             group.remove(avatar.root);

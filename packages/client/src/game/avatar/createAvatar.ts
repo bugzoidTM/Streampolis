@@ -63,19 +63,24 @@ export function lookOf(config: AvatarConfig): V2Look {
 }
 
 export function createAvatar(config: AvatarConfig, options: AvatarOptions = {}): AvatarLike {
-  if (v2Enabled()) return new AvatarV2(config, lookOf(config));
+  if (v2Enabled()) return new AvatarV2(config, lookOf(config), options);
   return new Avatar(config, options);
 }
 
 /**
  * Busca o que os corpos deste cliente vão precisar, antes de o mundo aparecer.
  *
- * O corpo procedural não pede rede nenhuma e isto retorna na hora. O v2 pede 6
- * MB, e sem este passo eles seriam buscados DEPOIS da tela de carregamento
- * sair — a praça abriria vazia e as pessoas apareceriam uma a uma, que é
- * exatamente a impressão de travamento que a tela veio consertar.
+ * O corpo procedural não pede rede nenhuma e isto retorna na hora. O v2 pede
+ * quatro arquivos por corpo, e sem este passo eles seriam buscados DEPOIS da
+ * tela de carregamento sair — a praça abriria vazia e as pessoas apareceriam
+ * uma a uma, que é exatamente a impressão de travamento que a tela veio
+ * consertar.
+ *
+ * `extras` são as peças de quem mais vai estar em cena (os figurantes, ver
+ * `crowdParts`). Elas entram aqui e não numa lista fixa porque quem sabe
+ * quantos figurantes cabem é o orçamento de qualidade, não este arquivo.
  */
-export async function preloadAvatarBodies(): Promise<void> {
+export async function preloadAvatarBodies(extras: readonly string[] = []): Promise<void> {
   if (!v2Enabled()) return;
   // Os DOIS rigs, porque quem está na praça não é só quem entrou: os dez
   // personagens femininos e os onze masculinos animam com arquivos diferentes,
@@ -83,7 +88,8 @@ export async function preloadAvatarBodies(): Promise<void> {
   await Promise.all([
     loadClips('f').catch(() => undefined),
     loadClips('m').catch(() => undefined),
-    ...Object.values(DEFAULT_LOOK).map((id) => loadPart(id).catch(() => undefined)),
+    ...[...new Set([...Object.values(DEFAULT_LOOK), ...extras])]
+      .map((id) => loadPart(id).catch(() => undefined)),
   ]);
 }
 

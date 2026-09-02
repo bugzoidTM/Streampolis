@@ -114,9 +114,14 @@ const DANCE: Spec = {
 };
 
 /**
- * SENTAR. Coxa à frente, canela para baixo, tronco levemente inclinado e o
- * corpo BAIXADO — sem baixar, o avatar senta no ar meio metro acima do banco,
- * que é o erro clássico de uma pose de sentar sem deslocamento de raiz.
+ * SENTAR. Coxa à frente, canela para baixo, tronco levemente inclinado — e
+ * **sem baixar o corpo**, que é o contrário do que um "sentar" costuma fazer.
+ *
+ * Uma faixa nossa de posição no osso `Body` não SOMA, substitui: neste rig é a
+ * animação que levanta o corpo quadro a quadro, então a faixa derrubava o
+ * avatar na origem e a praça ganhava um borrão branco atravessando a tela. Quem
+ * desce meio metro é o JOELHO, como num corpo de verdade, e quem põe o avatar
+ * na altura do assento é a cena, que já sabe onde fica o banco.
  */
 const SIT: Spec = {
   name: 'Sit',

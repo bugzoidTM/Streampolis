@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
+import type { AvatarOptions } from '../Avatar.js';
 import type { AvatarLike } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
 import {
@@ -94,7 +95,7 @@ export class AvatarV2 implements AvatarLike {
    * A estatura nominal, já com o multiplicador do jogador.
    *
    * Ela precisa estar certa ANTES de as peças chegarem: o `World` constrói a
-   * placa de nome com `eyeHeight` no mesmo quadro em que cria o avatar, e a
+   * placa de nome com `stature` no mesmo quadro em que cria o avatar, e a
    * placa guarda essa altura para sempre. Nascer com 1,72 fixo punha a placa de
    * um jogador alto seis centímetros DENTRO da cabeça dele.
    */
@@ -122,7 +123,11 @@ export class AvatarV2 implements AvatarLike {
    */
   readonly ready: Promise<void>;
 
-  constructor(private readonly config: AvatarConfig, look: V2Look) {
+  constructor(
+    private readonly config: AvatarConfig,
+    look: V2Look,
+    private readonly options: AvatarOptions = {},
+  ) {
     this.height = GAME_HEIGHT * (config.height ?? 1);
     this.ready = this.assemble(look);
   }
@@ -177,7 +182,10 @@ export class AvatarV2 implements AvatarLike {
     this.root.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
-      mesh.castShadow = true;
+      // A sombra é decidida AQUI, na chegada da peça. Apagá-la de fora, no nó
+      // que o construtor devolve, é varrer um grupo vazio: o corpo v2 se monta
+      // depois, e o que chega depois chega aceso.
+      mesh.castShadow = this.options.castShadow !== false;
       mesh.receiveShadow = true;
       // O rig deforma muito além da caixa de repouso: um avatar culado no meio
       // de um gesto some da tela.
@@ -288,8 +296,8 @@ export class AvatarV2 implements AvatarLike {
     this.mixer.update(dt);
   }
 
-  get eyeHeight(): number {
-    return this.height * 0.94;
+  get stature(): number {
+    return this.height;
   }
 
   dispose(): void {

@@ -16,6 +16,7 @@ import { LoadTracker, type LoadReport } from './assets/loading.js';
 import { CameraManager } from './CameraManager.js';
 import { InputManager } from './InputManager.js';
 import type { AvatarLike } from './avatar/AvatarLike.js';
+import { crowdParts } from './AmbientCrowd.js';
 import { createAvatar, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
 import { SpeechBubble } from './SpeechBubble.js';
@@ -64,7 +65,7 @@ interface Actor {
   /**
    * Tipado pela INTERFACE, não pela classe. É o que faz a troca por um corpo
    * comprado ser uma linha em `createAvatar()` e não uma cirurgia aqui — o
-   * laço de jogo só precisa de `root`, `eyeHeight`, `setAnim` e `animate`.
+   * laço de jogo só precisa de `root`, `stature`, `setAnim` e `animate`.
    */
   avatar: AvatarLike;
   /** Nulo no avatar local: ninguém precisa de uma placa com o próprio nome. */
@@ -163,7 +164,7 @@ export class World {
       // praça abrir vazia e ir se povoando — que parece defeito.
       await Promise.all([
         scene.build(this.renderer.webgl, this.renderer.quality.settings.tier),
-        preloadAvatarBodies(),
+        preloadAvatarBodies(crowdParts(this.renderer.quality.settings.ambientNpcs)),
       ]);
     } finally {
       track.stopFollowingAssets();
@@ -251,10 +252,19 @@ export class World {
     const actor = this.actorOfUser(message.senderId);
     if (!actor) return;
     actor.bubble?.dispose();
-    const bubble = new SpeechBubble(message.text, actor.avatar.eyeHeight + 0.34);
+    // O balão fica LOGO ACIMA DA CABEÇA, e é a placa de nome que sai da frente.
+    //
+    // Empilhar balão sobre placa parece a solução óbvia e põe o texto a trinta
+    // centímetros da coroa: a três metros de distância — que é onde as pessoas
+    // conversam numa praça — a fala se descola de quem falou e passa a parecer
+    // do poste atrás. Pior no jogador local, que não tem placa nenhuma e fica
+    // com o balão sobre um palmo de ar. Quem fala tem nome dito pelo painel de
+    // chat; a placa volta quando o balão morre.
+    const bubble = new SpeechBubble(message.text, actor.avatar.stature + 0.08);
     bubble.place(0);
     actor.avatar.root.add(bubble.sprite);
     actor.bubble = bubble;
+    if (actor.tag) actor.tag.sprite.visible = false;
   }
 
   /**
@@ -438,7 +448,7 @@ export class World {
         // sendo transmitido.
         const tag = pose.isLocal
           ? null
-          : new NameTag(pose.name, pose.gifterLevel, avatar.eyeHeight);
+          : new NameTag(pose.name, pose.gifterLevel, avatar.stature);
         if (tag) avatar.root.add(tag.sprite);
         this.scene?.scene.add(avatar.root);
         actor = {
@@ -491,6 +501,7 @@ export class World {
       if (actor.bubble && !actor.bubble.update(dt)) {
         actor.bubble.dispose();
         actor.bubble = null;
+        if (actor.tag) actor.tag.sprite.visible = true;
       }
     }
 

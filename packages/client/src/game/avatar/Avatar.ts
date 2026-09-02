@@ -31,6 +31,15 @@ export interface AvatarOptions {
    * para figurantes: são oito meshes por pessoa que ninguém olha de perto.
    */
   face?: boolean;
+  /**
+   * Projeta sombra. Falso para figurantes: uma multidão de projetores dobra o
+   * passe de sombra por gente que ninguém olha de perto.
+   *
+   * É OPÇÃO e não um `traverse` de fora porque o corpo v2 nasce vazio e se
+   * monta depois — quem apagava a sombra por fora estava varrendo um grupo sem
+   * filho nenhum, e a montagem depois acendia tudo de novo.
+   */
+  castShadow?: boolean;
 }
 
 /**
@@ -271,9 +280,17 @@ export class Avatar {
 
   get current(): Readonly<AvatarConfig> { return this.config; }
 
-  /** World-space height of the crown, for name tags and camera framing. */
-  get eyeHeight(): number {
-    return this.rig.restWorld.Head.y * 1.02;
+  /**
+   * A estatura: do chão ao alto do crânio.
+   *
+   * Era `Head.y * 1.02` sob um comentário que dizia "altura da coroa". Não era:
+   * o osso da cabeça está 19 cm abaixo da coroa, e a coroa é `HeadTop_End`. A
+   * placa de nome somava 0,18 a esse valor e acabava POUSADA no cabelo em vez
+   * de acima dele — o deslocamento tinha sido escolhido para compensar o erro,
+   * e os dois erros juntos davam quase certo.
+   */
+  get stature(): number {
+    return this.rig.restWorld.HeadTop_End.y;
   }
 
   dispose() {

@@ -30,13 +30,18 @@ export interface AvatarConfig {
   accessory: string;
   height: number;          // 0.92..1.08 multiplier
   /**
-   * Qual CORPO desenha este avatar. Ausente ou `'v1'` é o corpo procedural.
+   * Qual CORPO desenha este avatar, e hoje é um campo DORMENTE.
    *
-   * `'v2'` está reservado para o corpo base importado e **não é jogável**: o
-   * guarda-roupa inteiro é lofteado das estações do corpo v1, e um jogador de
-   * corpo v2 ficaria sem roupa nenhuma. O campo existe agora, e é validado
-   * contra POSSE DE ITEM no servidor como qualquer peça, para que vendê-lo um
-   * dia seja uma mudança de catálogo e não de arquitetura.
+   * Ele foi escrito para o dia em que o corpo do pacote fosse um item à venda,
+   * e a migração v2 chegou por outro caminho: o corpo do pacote não virou item,
+   * virou o corpo do jogo, e o cliente escolhe por `?body=v1` na URL, sem olhar
+   * para este campo. Por isso o padrão continua `'v1'` mesmo com todo mundo
+   * desenhando v2 — mudar o valor não mudaria pixel nenhum e mexeria no token
+   * assinado, no schema da sala e no banco de uma vez.
+   *
+   * Continua validado contra POSSE DE ITEM no servidor, como qualquer peça, e é
+   * essa validação que o mantém aqui: o dia de vender um corpo é um dia de
+   * catálogo.
    */
   body?: 'v1' | 'v2';
 }
