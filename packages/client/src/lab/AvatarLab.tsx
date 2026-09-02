@@ -4,6 +4,7 @@ import { DEFAULT_AVATAR, type AvatarConfig } from '@streampolis/shared';
 import { Renderer, LOOK_DAY } from '../game/Renderer.js';
 import { Environment, GOLDEN_HOUR } from '../game/Environment.js';
 import { Avatar } from '../game/avatar/Avatar.js';
+import { createAvatar } from '../game/avatar/createAvatar.js';
 import { CharacterV2 } from '../game/avatar/v2/CharacterV2.js';
 import { auditAvatar, AUDIT_LIMITS } from '../game/avatar/Audit.js';
 import { buildMatrix } from './matrix.js';
@@ -319,6 +320,63 @@ export function AvatarLab() {
             env.update(camera);
             renderer.render(0.016);
             return canvas.toDataURL('image/png');
+          } finally {
+            group.rotation.y = prev;
+            group.remove(avatar.root);
+            avatar.dispose();
+            key.target.position.copy(focus);
+            rim.target.position.copy(focus);
+          }
+        },
+        /**
+         * A figura do avatar **QUE O JOGO DESENHA HOJE**, montado pela mesma
+         * `createAvatar()` da praça.
+         *
+         * Todo o resto desta bancada — `figure`, `portrait`, `handShot`, `tile`
+         * e a matriz de 176 combinações — instancia `new Avatar(...)`, o corpo
+         * PROCEDURAL, que desde a migração v2 só aparece no jogo com `?body=v1`.
+         * Ou seja: o repositório inteiro julgava um corpo aposentado. Foi assim
+         * que 21 camisas sem braço e 17 tênis sem sola entraram na praça sem
+         * ninguém ver — nenhum instrumento apontava para lá.
+         *
+         * Ela é ASSÍNCRONA porque o corpo v2 nasce vazio e se monta quando os
+         * quatro arquivos chegam; fotografar antes disso é fotografar o chão.
+         *
+         * Devolve a imagem E o inventário de malhas: quando uma peça some, a
+         * primeira pergunta é sempre "ela chegou a entrar na cena?", e um PNG
+         * não responde isso.
+         */
+        gameFigure: async (look: Partial<AvatarConfig>, yaw = 0, animState = 'idle', zoom = 1) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          group.add(avatar.root);
+          const prev = group.rotation.y;
+          try {
+            avatar.setAnim(animState as never);
+            for (let i = 0; i < 60; i++) avatar.animate(0.05, 0);
+            group.rotation.y = yaw;
+            group.updateMatrixWorld(true);
+            const top = avatar.eyeHeight + 0.16;
+            camera.position.set(0, top * 0.52, 2.95 * zoom);
+            camera.lookAt(0, top * 0.5, 0);
+            key.target.position.set(0, top * 0.6, 0);
+            rim.target.position.set(0, top * 0.6, 0);
+            env.update(camera);
+            renderer.render(0.016);
+            const png = canvas.toDataURL('image/png');
+            const meshes: Array<{ name: string; material: string; tris: number }> = [];
+            avatar.root.traverse((o) => {
+              const m = o as THREE.SkinnedMesh;
+              if (!m.isSkinnedMesh) return;
+              const g = m.geometry;
+              const mat = m.material as THREE.Material;
+              meshes.push({
+                name: m.name,
+                material: Array.isArray(m.material) ? '(múltiplos)' : (mat?.name ?? ''),
+                tris: Math.round((g.index ? g.index.count : g.attributes.position.count) / 3),
+              });
+            });
+            return { png, meshes, eyeHeight: +avatar.eyeHeight.toFixed(3) };
           } finally {
             group.rotation.y = prev;
             group.remove(avatar.root);

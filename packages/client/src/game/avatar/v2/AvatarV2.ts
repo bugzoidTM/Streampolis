@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
 import type { AvatarLike } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
-import { findSkinned, instantiate, loadClips, loadPart, type PartSlot } from './Wardrobe.js';
+import {
+  findAllSkinned, findSkinned, instantiate, loadClips, loadPart, rigOf,
+  type PartSlot,
+} from './Wardrobe.js';
 
 /**
  * O avatar v2: quatro peças de roupa sobre um esqueleto comum.
@@ -87,10 +90,28 @@ export class AvatarV2 implements AvatarLike {
   private clips = new Map<string, THREE.AnimationClip>();
   private action: THREE.AnimationAction | null = null;
   private state: AnimState = 'idle';
-  private height = GAME_HEIGHT;
+  /**
+   * A estatura nominal, já com o multiplicador do jogador.
+   *
+   * Ela precisa estar certa ANTES de as peças chegarem: o `World` constrói a
+   * placa de nome com `eyeHeight` no mesmo quadro em que cria o avatar, e a
+   * placa guarda essa altura para sempre. Nascer com 1,72 fixo punha a placa de
+   * um jogador alto seis centímetros DENTRO da cabeça dele.
+   */
+  private height: number;
   private disposed = false;
   /** Materiais clonados por avatar, para tingir pele e cabelo sem afetar os outros. */
   private materials: THREE.Material[] = [];
+  /**
+   * O esqueleto clonado deste avatar.
+   *
+   * `SkeletonUtils.clone` compartilha geometria e material com o protótipo, mas
+   * cria um `Skeleton` novo — e o renderizador aloca uma textura de ossos na
+   * GPU para cada um. Sem descartá-la, uma praça por onde passam dezenas de
+   * figurantes acumula um handle de textura por visitante, e a vitrine da loja
+   * (que monta e destrói um avatar por card) vaza um por peça.
+   */
+  private skeleton: THREE.Skeleton | null = null;
 
   /**
    * Resolve quando as peças estão em cena.
@@ -102,6 +123,7 @@ export class AvatarV2 implements AvatarLike {
   readonly ready: Promise<void>;
 
   constructor(private readonly config: AvatarConfig, look: V2Look) {
+    this.height = GAME_HEIGHT * (config.height ?? 1);
     this.ready = this.assemble(look);
   }
 
@@ -118,7 +140,7 @@ export class AvatarV2 implements AvatarLike {
       // problema é outro, é arquivo que não está lá.
       for (const candidate of [id, FALLBACK[slot]]) {
         if (!candidate) continue;
-        try { return { slot, part: await loadPart(candidate) }; } catch { /* tenta o próximo */ }
+        try { return { slot, id: candidate, part: await loadPart(candidate) }; } catch { /* tenta o próximo */ }
       }
       return null;
     }));
@@ -136,13 +158,20 @@ export class AvatarV2 implements AvatarLike {
 
     for (const { part } of present.slice(1)) {
       const clone = instantiate(part);
-      const mesh = findSkinned(clone);
-      if (!mesh) continue;
-      host.parent?.add(mesh);
-      // Descarta o esqueleto que veio no arquivo da peça e usa o do corpo. Só
-      // funciona porque a ORDEM dos ossos é idêntica nos 21 personagens: o
-      // `skinIndex` da peça aponta para a mesma articulação nos dois.
-      mesh.bind(host.skeleton, host.bindMatrix);
+      // TODAS as malhas da peça, não só a primeira.
+      //
+      // Cada primitivo do arquivo vira uma `SkinnedMesh` irmã, e uma peça deste
+      // pacote quase nunca tem um primitivo só: o `top` traz o pano num e OS
+      // BRAÇOS (material `Skin`) noutro. Ficar com a primeira é o que pôs 21
+      // camisas sem braço e 17 tênis sem sola na praça — e ninguém viu, porque
+      // a `head`, que é a peça HOSPEDEIRA, entra inteira e por outro caminho.
+      for (const mesh of findAllSkinned(clone)) {
+        host.parent?.add(mesh);
+        // Descarta o esqueleto que veio no arquivo da peça e usa o do corpo. Só
+        // funciona porque a ORDEM dos ossos é idêntica nos 21 personagens: o
+        // `skinIndex` da peça aponta para a mesma articulação nos dois.
+        mesh.bind(host.skeleton, host.bindMatrix);
+      }
     }
 
     this.root.traverse((o) => {
@@ -181,8 +210,19 @@ export class AvatarV2 implements AvatarLike {
       this.height = native * scale;
     }
 
+    this.skeleton = host.skeleton;
     this.mixer = new THREE.AnimationMixer(hostRoot);
-    const packClips = await loadClips();
+    // O rig é o da peça HOSPEDEIRA, que é a dona do esqueleto que todas as
+    // outras adotaram. Vestir uma blusa do outro pacote continua valendo — a
+    // malha dela é reamarrada a este esqueleto —, e quem decide como o corpo se
+    // move é o corpo, não a roupa.
+    const rig = rigOf(present[0].id);
+    // O corpo JÁ ESTÁ EM CENA aqui. Se o arquivo de animação falhar, seguir sem
+    // ele deixa o avatar de pé na pose de bind; deixar a exceção subir aborta a
+    // montagem, e aí `play()` nunca roda, `setAnim()` vira no-op silencioso e a
+    // praça enche de estátuas — com uma promessa rejeitada por jogador que
+    // ninguém observa. As quatro faixas autorais não dependem do arquivo.
+    const packClips = await loadClips(rig).catch(() => [] as THREE.AnimationClip[]);
     if (this.disposed) return;
     for (const clip of packClips) {
       this.clips.set(clip.name.replace('CharacterArmature|', ''), clip);
@@ -220,7 +260,10 @@ export class AvatarV2 implements AvatarLike {
   }
 
   private play(state: AnimState, fade = FADE) {
-    const clip = this.clips.get(CLIP_FOR[state] ?? 'Idle');
+    // O que pode faltar é o CLIPE, não a chave: `CLIP_FOR` é um Record completo.
+    // Sem o segundo `get`, um arquivo de animação que não chegou congela o
+    // avatar no estado anterior para sempre.
+    const clip = this.clips.get(CLIP_FOR[state]) ?? this.clips.get('Idle');
     if (!clip || !this.mixer) return;
     const next = this.mixer.clipAction(clip);
     next.reset().setLoop(THREE.LoopRepeat, Infinity).play();
@@ -257,6 +300,8 @@ export class AvatarV2 implements AvatarLike {
     this.clips.clear();
     for (const m of this.materials) m.dispose();
     this.materials = [];
+    this.skeleton?.dispose();
+    this.skeleton = null;
     // Geometria e materiais originais são do PROTÓTIPO em cache, compartilhado
     // com todo avatar que veste a mesma peça: descartá-los aqui apagaria os
     // outros da tela.

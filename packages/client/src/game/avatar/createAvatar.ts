@@ -7,21 +7,12 @@ import { loadClips, loadPart } from './v2/Wardrobe.js';
 /**
  * O ÚNICO lugar onde um corpo de jogador nasce.
  *
- * Existe para a troca por um corpo comprado ser uma mudança neste arquivo, e
- * não uma caçada por `new Avatar(` espalhado pelo jogo.
+ * Existe para a troca de corpo ser uma mudança neste arquivo, e não uma caçada
+ * por `new Avatar(` espalhado pelo jogo — e foi exatamente isso que a migração
+ * v2 cobrou: um `if` aqui, e o mundo inteiro passou a desenhar outro corpo.
  *
- * Hoje sabe fabricar os DOIS corpos — o procedural (`v1`) e o do pacote
- * (`v2`) —, e por padrão devolve o procedural mesmo quando o jogador pede
- * `'v2'`. Isso não é omissão, é o estado do produto: as 45 peças do
- * guarda-roupa são lofteadas das estações do corpo v1 e o portão de 176
- * combinações mede contra ele. Um jogador de corpo v2 anda com a roupa que o
- * autor do pacote pintou na textura, e nada da loja aparece nele.
- *
- * Então o v2 é uma PEÇA, não um botão: o servidor já valida `body` contra
- * posse de item como valida qualquer roupa, e o dia de vendê-lo é um dia de
- * catálogo — ativar `body_v2_01` em `shared/items.ts` e ligar o interruptor
- * abaixo. Não é um dia de refatoração, e essa é a diferença que este arquivo
- * e {@link AvatarLike} existem para garantir.
+ * Sabe fabricar os DOIS: o do pacote (`v2`), que é o corpo do jogo, e o
+ * procedural (`v1`), que continua no código enquanto a migração é conferida.
  */
 
 /**
@@ -86,8 +77,12 @@ export function createAvatar(config: AvatarConfig, options: AvatarOptions = {}):
  */
 export async function preloadAvatarBodies(): Promise<void> {
   if (!v2Enabled()) return;
+  // Os DOIS rigs, porque quem está na praça não é só quem entrou: os dez
+  // personagens femininos e os onze masculinos animam com arquivos diferentes,
+  // e buscar o segundo depois da tela sair é ver metade da rua congelar.
   await Promise.all([
-    loadClips().catch(() => undefined),
+    loadClips('f').catch(() => undefined),
+    loadClips('m').catch(() => undefined),
     ...Object.values(DEFAULT_LOOK).map((id) => loadPart(id).catch(() => undefined)),
   ]);
 }

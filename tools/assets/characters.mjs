@@ -14,8 +14,19 @@
  * mostrar 1,2 MB de malha.
  *
  * Cada peça sai com o esqueleto inteiro (é o que a deformação exige) e com as
- * animações REMOVIDAS: elas são idênticas nos 21 arquivos, então ficam num
- * único `animations.glb` em vez de vinte e uma cópias.
+ * animações REMOVIDAS: dentro de um pacote elas são idênticas nos 10 ou 11
+ * arquivos, então ficam num `animations_f.glb` e num `animations_m.glb` em vez
+ * de vinte e uma cópias.
+ *
+ * **UM arquivo de animação para os dois pacotes não serve, e isso custou caro.**
+ * Os 21 personagens dividem os nomes e a ORDEM dos 62 ossos — é o que faz o
+ * guarda-roupa existir —, mas os dois pacotes têm POSES DE BIND diferentes: as
+ * dez mulheres numa, os onze homens noutra, com 1,34 de diferença no
+ * `Shoulder.L`. As faixas do pacote são rotações ABSOLUTAS, então dar a faixa
+ * da mulher ao homem não o põe na pose autorada: põe o braço dele na pose dela
+ * MAIS a diferença entre os dois repousos. Na prática, todo avatar masculino do
+ * jogo — inclusive o `m_casual_character`, que é o padrão de quem entra —
+ * andava pela praça com os dois braços esticados para a frente.
  *
  *   node tools/assets/characters.mjs [--only=women,men]
  */
@@ -62,7 +73,6 @@ for (const old of await readdir(OUT).catch(() => [])) {
 }
 
 const catalog = [];
-let animationsWritten = false;
 
 for (const pack of PACKS) {
   if (ONLY && !ONLY.has(pack.id)) continue;
@@ -74,15 +84,17 @@ for (const pack of PACKS) {
     const doc = await io.read(path.join(dir, file));
     const root = doc.getRoot();
 
-    // As animações são as mesmas nos 21 arquivos: uma cópia serve para todos.
-    if (!animationsWritten) {
+    // As animações são as mesmas DENTRO DE UM PACOTE: uma cópia serve para os
+    // dez ou onze personagens dele. Entre pacotes elas NÃO servem — ver o
+    // cabeçalho deste arquivo —, e é por isso que o nome leva o gênero.
+    if (!pack.animationsWritten) {
       const anim = await io.read(path.join(dir, file));
       const ar = anim.getRoot();
       for (const mesh of ar.listMeshes()) mesh.dispose();
       for (const skin of ar.listSkins()) skin.dispose();
       await anim.transform(prune(), dedup());
-      await writeFile(path.join(OUT, 'animations.glb'), await io.writeBinary(anim));
-      animationsWritten = true;
+      await writeFile(path.join(OUT, `animations_${pack.gender}.glb`), await io.writeBinary(anim));
+      pack.animationsWritten = true;
     }
 
     for (const mesh of root.listMeshes()) {
