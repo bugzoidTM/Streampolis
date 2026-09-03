@@ -610,6 +610,31 @@ export class AvatarV2 implements AvatarLike {
     return this.mouth?.state ?? this.pendingMouth;
   }
 
+  /**
+   * Fala: a boca se mexe pelo tempo que o TEXTO levaria para ser dito.
+   *
+   * A duração sai do tamanho da mensagem porque é o único dado que existe — não
+   * há áudio, não há fonema, e inventar um protocolo para transportar duração
+   * seria caro para uma animação que cada navegador consegue fazer sozinho a
+   * partir da mesma `ChatMessage` que todos receberam. Quarenta e cinco
+   * milésimos por caractere é a velocidade de leitura em voz alta de um adulto
+   * em português; o piso existe porque "oi" também é uma fala, e o teto porque
+   * o limite do chat são 200 caracteres e nove segundos de boca mexendo viram
+   * um tique.
+   *
+   * O ESTADO não muda: quem estava sorrindo fala sorrindo. A fala é uma
+   * modulação por cima da expressão, e quando acaba a boca já está onde estava.
+   */
+  speak(text: string, seed = 0): void {
+    const segundos = Math.min(4.5, Math.max(0.8, 0.55 + text.length * 0.045));
+    this.mouth?.speak(segundos, seed);
+  }
+
+  /** A boca está se mexendo agora? É o que uma ferramenta pergunta. */
+  get speaking(): boolean {
+    return this.mouth?.speaking ?? false;
+  }
+
   private pendingMouth: MouthState = 'neutral';
 
   animate(dt: number, speed: number): void {

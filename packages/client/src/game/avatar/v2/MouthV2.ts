@@ -146,6 +146,26 @@ const OPEN_DOWN = 0.72;
 const MORPH_HALFLIFE = 0.055;
 
 /**
+ * A FALA, em três números.
+ *
+ * Falar não é um quinto estado: é uma modulação POR CIMA do estado em que a
+ * boca está. Quem fala sorrindo continua sorrindo, e quando a fala acaba a boca
+ * volta para onde estava sem que ninguém precise se lembrar de onde era.
+ *
+ * A cadência é de sílaba, não de fonema: 4,2 por segundo é a taxa silábica do
+ * português falado, e é o que separa uma boca que fala de uma boca que treme.
+ * A segunda onda, lenta e fora de fase, é o que impede a fala de virar
+ * metrônomo — sem ela quinze avatares conversando na praça abrem a boca no
+ * mesmo compasso.
+ */
+const TALK_HZ = 4.2;
+const TALK_SWING_HZ = 1.7;
+/** Quanto a fala abre, em alturas de traço. Menos que a surpresa, de propósito. */
+const TALK_OPEN = 1.5;
+/** Sobe e desce da fala, em segundos: começar e terminar de boca escancarada é caretice. */
+const TALK_FADE = 0.14;
+
+/**
  * A cor da boca, derivada do TOM DE PELE.
  *
  * Uma cor fixa vale para uma pele só: o mesmo bordô que lê como boca numa pele
@@ -187,6 +207,13 @@ export class MouthV2 {
   private estado: MouthState = 'neutral';
   /** Falso quando `atual` já é `alvo`: aí não há o que reescrever por quadro. */
   private mexendo = false;
+  /** Relógio próprio, em segundos. A fala precisa de um, o estado não. */
+  private clock = 0;
+  /** Quando a fala acaba, no relógio acima. Zero é boca calada. */
+  private falaAte = 0;
+  private falaDe = 0;
+  /** Fase da fala deste avatar. Ver `speak`. */
+  private falaSeed = 0;
 
   /**
    * @param frame o rosto descoberto pelo `FaceV2` — sem ele não há onde pôr boca.
@@ -247,24 +274,74 @@ export class MouthV2 {
     this.mexendo = true;
   }
 
-  /** Avança a travessia. Barato quando não há travessia nenhuma. */
+  /**
+   * Põe a boca a falar por `seconds`, com uma fase própria.
+   *
+   * A fase vem de FORA — do id da mensagem — e não de `Math.random`: é o que
+   * faz duas abas do mesmo jogador desenharem a mesma fala, e o que impede a
+   * praça inteira de abrir a boca no mesmo quadro. Não há protocolo novo nisto;
+   * o id já vem na mensagem de chat que todo mundo recebeu.
+   */
+  speak(seconds: number, seed = 0): void {
+    this.falaDe = this.clock;
+    this.falaAte = this.clock + Math.max(0, seconds);
+    this.falaSeed = seed;
+  }
+
+  get speaking(): boolean {
+    return this.clock < this.falaAte;
+  }
+
+  /** Avança a travessia e a fala. Barato quando não há nem uma nem outra. */
   update(dt: number): void {
-    if (!this.mexendo || !this.mesh) return;
-    const k = 1 - Math.pow(2, -dt / MORPH_HALFLIFE);
-    let longe = 0;
-    for (const campo of ['width', 'thick', 'curve', 'open', 'taper'] as const) {
-      const d = this.alvo[campo] - this.atual[campo];
-      this.atual[campo] += d * k;
-      longe = Math.max(longe, Math.abs(this.alvo[campo] - this.atual[campo]));
+    if (!this.mesh) return;
+    this.clock += dt;
+    const falando = this.clock < this.falaAte;
+    if (!this.mexendo && !falando && !this.limpando) return;
+
+    if (this.mexendo) {
+      const k = 1 - Math.pow(2, -dt / MORPH_HALFLIFE);
+      let longe = 0;
+      for (const campo of ['width', 'thick', 'curve', 'open', 'taper'] as const) {
+        const d = this.alvo[campo] - this.atual[campo];
+        this.atual[campo] += d * k;
+        longe = Math.max(longe, Math.abs(this.alvo[campo] - this.atual[campo]));
+      }
+      // Encostou: escreve a forma EXATA e para. Sem este fecho a boca fica
+      // eternamente a um milésimo do destino, reescrevendo a geometria para
+      // sempre — o custo de uma expressão que já acabou.
+      if (longe < 0.002) {
+        this.atual = { ...this.alvo };
+        this.mexendo = false;
+      }
     }
-    // Encostou: escreve a forma EXATA e para. Sem este fecho a boca fica
-    // eternamente a um milésimo do destino, reescrevendo a geometria para
-    // sempre — o custo de uma expressão que já acabou.
-    if (longe < 0.002) {
-      this.atual = { ...this.alvo };
-      this.mexendo = false;
-    }
-    this.write(this.atual);
+
+    // A fala é somada por cima da forma corrente, e some com ela. `limpando`
+    // existe para o QUADRO SEGUINTE ao fim da fala: sem ele a boca pararia na
+    // última abertura desenhada e ficaria entreaberta para sempre.
+    this.limpando = falando;
+    this.write(falando ? this.falando(this.atual) : this.atual);
+  }
+
+  private limpando = false;
+
+  /** A forma corrente com a boca aberta na sílaba em que a fala está. */
+  private falando(shape: MouthShape): MouthShape {
+    const t = this.clock;
+    const desde = t - this.falaDe;
+    const ate = this.falaAte - t;
+    // Sobe e desce nas pontas: a fala começa e termina de boca fechada.
+    const env = Math.min(1, desde / TALK_FADE, Math.max(0, ate / TALK_FADE));
+    const silaba = 0.5 - 0.5 * Math.cos(t * Math.PI * 2 * TALK_HZ + this.falaSeed);
+    const balanco = 0.65 + 0.35 * Math.sin(t * Math.PI * 2 * TALK_SWING_HZ + this.falaSeed * 1.7);
+    const abre = TALK_OPEN * env * silaba * balanco;
+    return {
+      ...shape,
+      open: shape.open + abre,
+      // Boca aberta é boca mais estreita: sem isto a fala parece um bocejo
+      // retangular.
+      width: shape.width * (1 - 0.10 * Math.min(1, abre / TALK_OPEN)),
+    };
   }
 
   /** Onde a boca ficou, para quem precisa provar que ela existe e está no rosto. */

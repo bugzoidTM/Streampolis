@@ -19,7 +19,7 @@ import { CameraManager } from './CameraManager.js';
 import { InputManager } from './InputManager.js';
 import type { AvatarLike } from './avatar/AvatarLike.js';
 import { crowdParts } from './AmbientCrowd.js';
-import { createAvatar, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
+import { createAvatar, isPackaged, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
 import { SpeechBubble } from './SpeechBubble.js';
 import { Portals } from './Portals.js';
@@ -297,6 +297,16 @@ export class World {
     actor.avatar.root.add(bubble.sprite);
     actor.bubble = bubble;
     if (actor.tag) actor.tag.sprite.visible = false;
+
+    // E a BOCA se mexe enquanto a fala dura.
+    //
+    // Nada disto viaja: o texto e o id já vieram nesta mensagem, que o servidor
+    // mandou a todo mundo, e cada navegador anima a partir deles. Um balão que
+    // aparece sobre uma cara imóvel é o mesmo defeito do avatar que dançava
+    // parado — a informação chegou e o corpo não soube dela. O id entra como
+    // semente para que a praça não fale toda no mesmo compasso e para que duas
+    // abas do mesmo jogador desenhem a mesma fala.
+    actor.avatar.speak?.(message.text, seedOf(message.id));
   }
 
   /**
@@ -628,6 +638,12 @@ export class World {
       anim: [...this.actors.values()].map((a) => ({
         state: a.avatar.anim,
         speed: Math.round(a.speed * 100) / 100,
+        // A BOCA, de quem tem uma. Sem isto, "o balão apareceu" e "o balão
+        // apareceu e a cara se mexeu" são o mesmo relatório — e a segunda é a
+        // única que prova que a fala chegou ao corpo.
+        boca: isPackaged(a.avatar)
+          ? { estado: a.avatar.mouthState, falando: a.avatar.speaking }
+          : null,
       })),
       renderer: this.renderer.stats(),
       particles: this.gifts?.activeParticles ?? 0,
@@ -730,6 +746,18 @@ export class World {
     this.scene?.dispose();
     this.renderer.dispose();
   }
+}
+
+/**
+ * Um número estável a partir do id da mensagem.
+ *
+ * Precisa ser DETERMINÍSTICO — `Math.random` faria a mesma fala sair diferente
+ * em cada aba — e não precisa ser bom: é a fase de uma senoide de boca.
+ */
+function seedOf(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return (h % 1000) / 1000 * Math.PI * 2;
 }
 
 function shortestLerp(from: number, to: number, k: number): number {

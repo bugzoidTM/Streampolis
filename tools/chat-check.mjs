@@ -73,6 +73,25 @@ check('a mensagem aparece no painel do mundo', chegou);
 const comBalao = await page.evaluate(() => window.__lab.stats().bubbles);
 check('a fala virou balão sobre a cabeça de quem falou', comBalao >= 1, `${comBalao} balão(ões)`);
 
+// E a BOCA se mexe. Um balão sobre uma cara imóvel é o mesmo defeito do avatar
+// que dançava parado: a informação chegou e o corpo não soube dela. Nada disto
+// é protocolo — o texto e o id já vieram na mensagem que o servidor mandou a
+// todo mundo, e cada navegador anima a partir deles.
+const falou = await page.evaluate(async () => {
+  const visto = [];
+  for (let i = 0; i < 24; i++) {
+    visto.push((window.__lab.stats().anim ?? []).some((a) => a.boca?.falando));
+    await new Promise((r) => setTimeout(r, 90));
+  }
+  return { durante: visto.some(Boolean), quadros: visto.filter(Boolean).length };
+});
+check('a boca de quem falou se mexe', falou.durante, `${falou.quadros} amostras de boca aberta`);
+
+// E PARA. Uma fala que não termina é um tique, não uma fala.
+await page.waitForTimeout(5_000);
+const calou = await page.evaluate(() => (window.__lab.stats().anim ?? []).every((a) => !a.boca?.falando));
+check('e volta a ficar parada quando a fala acaba', calou);
+
 console.log('\n2) Digitar não anda');
 const antes = await page.evaluate(() => {
   const s = window.__lab.stats().local;

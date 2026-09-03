@@ -61,6 +61,20 @@ export interface AvatarLike {
    * fechado — defeito que não se reproduz olhando o jogo.
    */
   pinBlink(value: number | null): void;
+  /**
+   * "Esta pessoa acabou de dizer isto" — e a boca se mexe enquanto dura.
+   *
+   * OPCIONAL, e é a única coisa opcional deste contrato: o corpo procedural não
+   * tem boca articulada por este caminho, e o dia em que tiver é o dia em que
+   * ela deixa de ser opcional. Um corpo que não sabe falar simplesmente não
+   * implementa, e quem chama não precisa saber qual corpo está em cena.
+   *
+   * Não é protocolo: o texto e o id já vieram na `ChatMessage` que o servidor
+   * mandou para todo mundo, e a animação é feita em cada navegador a partir
+   * deles. O id entra como SEMENTE — é o que faz duas abas do mesmo jogador
+   * desenharem a mesma fala e a praça inteira não falar no mesmo compasso.
+   */
+  speak?(text: string, seed?: number): void;
   dispose(): void;
 }
 

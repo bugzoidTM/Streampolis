@@ -97,3 +97,14 @@ export async function preloadAvatarBodies(extras: readonly string[] = []): Promi
 export function isProcedural(avatar: AvatarLike): avatar is Avatar {
   return avatar instanceof Avatar;
 }
+
+/**
+ * Verdadeiro quando o corpo é o de pacote — o único que tem boca.
+ *
+ * Existe para o RELATÓRIO do mundo, e o par com `isProcedural` é de propósito:
+ * quem precisa de algo que só um dos corpos sabe fazer pergunta pelo tipo, em
+ * vez de inchar `AvatarLike` com membros que o outro corpo teria de fingir.
+ */
+export function isPackaged(avatar: AvatarLike): avatar is AvatarV2 {
+  return avatar instanceof AvatarV2;
+}
