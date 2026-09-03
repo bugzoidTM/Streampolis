@@ -6,6 +6,7 @@ import { extraClips } from './Clips.js';
 import { FaceV2 } from './FaceV2.js';
 import { MouthV2, type MouthState } from './MouthV2.js';
 import { isSkinMaterial, smoothNormals, smoothSkinAngle } from './SmoothSkin.js';
+import { finishSkin, paintFace, skinKind } from './SkinV2.js';
 import {
   characterOf, clipToBands, columnGaps, dominantBones, findAllSkinned, findSkinned,
   instantiate, LINING, loadClips, loadPart, outfitClearance, posed, rigOf, shrink,
@@ -125,6 +126,9 @@ const GAME_HEIGHT = 1.72;
 const HEAD_BONE_RATIO = 0.87;
 
 const FADE = 0.2;
+
+/** O quadro do rosto, quando existe. Cabeça de capacete não tem. */
+const frameDoRosto = (face: FaceV2 | null) => face?.face ?? null;
 
 /** A peça que veste um slot quando a pedida não existe. */
 const FALLBACK: Record<PartSlot, string> = {
@@ -326,6 +330,20 @@ export class AvatarV2 implements AvatarLike {
       if (head?.length) {
         this.face = new FaceV2(head, host.skeleton);
         if (this.pinnedBlink !== null) this.face.pinBlink(this.pinnedBlink);
+        // LÁBIO e rubor: pintura em cor por vértice, na geometria compartilhada
+        // e uma vez só por cabeça — o valor gravado é multiplicador, então ele
+        // vale para os oito tons de pele. Vem antes da boca porque é a pele em
+        // volta dela, e depois do rosto porque é dele que sai onde é a boca.
+        if (frameDoRosto(this.face)) {
+          const toHead = host.skeleton.boneInverses[
+            host.skeleton.bones.findIndex((b) => b.name === 'Head')
+          ];
+          for (const mesh of head) {
+            if (!skinKind(mesh.material) || !toHead) continue;
+            this.pintados += paintFace(mesh.geometry, frameDoRosto(this.face)!, toHead);
+          }
+        }
+
         // A boca vem DEPOIS e a partir do que o rosto achou: sem o par de olhos
         // não há eixo, régua nem linha de altura de onde tirá-la. O osso é o do
         // esqueleto DESTE avatar — pendurá-la no osso do protótipo em cache
@@ -381,9 +399,15 @@ export class AvatarV2 implements AvatarLike {
       const name = m.name ?? '';
       if (!/skin|hair/i.test(name)) return m;
       const copy = m.clone() as THREE.MeshStandardMaterial;
-      if (/skin/i.test(name)) copy.color.set(SKIN_TONES[this.config.skinTone % SKIN_TONES.length]);
+      const pele = skinKind(m);
+      if (pele) copy.color.set(SKIN_TONES[this.config.skinTone % SKIN_TONES.length]);
       else copy.color.set(HAIR_COLORS[this.config.hairColor % HAIR_COLORS.length]);
       copy.color.convertSRGBToLinear();
+      // O ACABAMENTO da pele vem depois do tom, e é onde o pacote errava: todo
+      // material dele nasce com metalness 0,4 — pele de plástico polido — e o
+      // segundo material de pele, que o autor separou para dar relevo ao rosto,
+      // recebia exatamente a mesma cor do primeiro. Ver `SkinV2.ts`.
+      if (pele) finishSkin(copy, pele);
       this.materials.push(copy);
       return copy;
     };
@@ -585,6 +609,8 @@ export class AvatarV2 implements AvatarLike {
 
   /** Quantos vértices o experimento de normal suave mexeu. Zero é experimento desligado. */
   private suavizados = 0;
+  /** Quantos vértices ganharam lábio ou rubor. Zero depois da primeira cabeça: a pintura é compartilhada. */
+  private pintados = 0;
 
   /** O que o rosto achou na cabeça — nulo quando não há rosto (figurante, capacete). */
   faceReport(): Record<string, unknown> | null {
@@ -592,7 +618,12 @@ export class AvatarV2 implements AvatarLike {
     if (!face) return null;
     // A boca junto: uma boca que não foi criada e uma boca posta atrás da pele
     // dão a mesma imagem, e é este relatório que as separa.
-    return { ...face, boca: this.mouth?.describe() ?? null, suavizados: this.suavizados };
+    return {
+      ...face,
+      boca: this.mouth?.describe() ?? null,
+      suavizados: this.suavizados,
+      pintados: this.pintados,
+    };
   }
 
   pinBlink(value: number | null): void {

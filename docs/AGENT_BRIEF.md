@@ -717,6 +717,43 @@ Duas coisas do v2 que valem para qualquer corpo comprado:
   devolve um nó vazio e adota o kit quando ele chega, guardando a animação
   pedida no meio do caminho.
 
+## O material de pele do v2
+
+Três defeitos, nenhum deles de geometria, e todos vinham do pacote:
+
+- **`metalness: 0.4` em tudo.** Pele não é metal. Era daí que vinha o brilho de
+  plástico polido na testa — o mesmo que a comparação de normal suave deixou
+  mais evidente e que não era problema de normal nenhum. Zero, sempre.
+- **`roughness: 0.415`,** que é plástico. Pele fica entre 0,6 e 0,8; 0,65 deixa
+  brilho de rosto vivo. Acima de 0,72 o rosto vira giz e perde o relevo que o
+  especular fazia de graça.
+- **Um tom só para DOIS materiais.** Toda cabeça traz `Skin` e `Skin_Darker` —
+  o segundo é o painel da frente do rosto, das maçãs ao queixo, separado pelo
+  autor do pacote. Tingir os dois com a mesma cor apagava a variação que já
+  vinha desenhada; agora ele volta a ser mais escuro.
+
+O LÁBIO e o rubor são **cor por vértice** (`SkinV2.paintFace`), e não textura:
+o pacote não traz mapa nenhum e as UVs são de um atlas compartilhado — pintar
+por textura pintaria a camisa de quem veste a mesma peça. A cor gravada é
+MULTIPLICADORA, o que faz a mesma pintura servir aos oito tons de pele e permite
+pintá-la uma vez na geometria compartilhada, em vez de uma cópia por avatar.
+
+Duas coisas que essa pintura ensina:
+
+- calibra-se AO CONTRÁRIO: primeiro com um vermelho escandaloso, para provar que
+  a mancha cai em volta da boca e não no queixo ou na nuca, e só depois baixando
+  até ler como lábio. São 28 a 52 vértices por cabeça — não há resolução para
+  mais que um tom;
+- o corte "só a frente do rosto" não é zelo: a nuca está à mesma altura e à
+  mesma distância da linha média que a boca, e sem ele o lábio aparece atrás.
+
+Onde a boca está é pergunta que se faz a `mouthAnchor` (em `MouthV2`), nunca
+repetindo as frações: duas contas da mesma coisa envelhecem separadas, e mover a
+boca meio milímetro deixaria o lábio pintado onde ela não está mais.
+
+`node tools/v2-skin-ab.mjs --param=skinmat --lados=pacote:0,nosso:1` põe o
+material do pacote e o nosso lado a lado.
+
 ## Normal suave na pele da cabeça: um experimento COM interruptor
 
 `?smoothskin=0` (padrão) desenha a cabeça chapada como o pacote a entrega;

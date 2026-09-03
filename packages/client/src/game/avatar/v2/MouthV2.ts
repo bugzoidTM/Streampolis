@@ -77,6 +77,26 @@ const WRAP = 0.20;
 const SEGMENTS = 9;
 
 /**
+ * ONDE a boca está, para quem precisa pintar em volta dela.
+ *
+ * Publicado porque a alternativa é a pele repetir as mesmas frações e as duas
+ * contas envelhecerem separadas: mover a boca meio milímetro deixaria o lábio
+ * pintado onde a boca não está mais. Quem manda na posição da boca é este
+ * arquivo, e quem quiser desenhar em volta pergunta.
+ */
+export function mouthAnchor(frame: FaceFrame): {
+  side: number; up: number; forward: number; halfWidth: number; halfHeight: number;
+} {
+  return {
+    side: frame.eyes.getComponent(frame.side),
+    up: frame.eyes.getComponent(frame.up) - frame.span * DROP,
+    forward: frame.front,
+    halfWidth: (frame.span * WIDTH) / 2,
+    halfHeight: (frame.span * THICK) / 2,
+  };
+}
+
+/**
  * A FORMA da boca, em quatro números — e é só isto que um estado é.
  *
  * Guardar quatro geometrias e trocar entre elas seria o caminho óbvio e o

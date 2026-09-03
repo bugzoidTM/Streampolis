@@ -492,7 +492,40 @@ export function AvatarLab() {
                 presa[state] = +a.distanceTo(b).toFixed(6);
               }
             }
-            return { face, superficie, presa };
+            // Os MATERIAIS da cabeça, para quem for mexer neles: um material de
+            // pele com brilho de plástico e um com brilho de pele são o mesmo
+            // material no inventário e rostos diferentes na tela.
+            const materiais: unknown[] = [];
+            avatar.root.traverse((o) => {
+              const m = o as THREE.Mesh;
+              if (!m.isMesh) return;
+              const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial;
+              if (!mat) return;
+              // Onde esta malha VIVE, em espaço da cabeça: é o que diz se o
+              // segundo material de pele do pacote é lábio, orelha ou pescoço.
+              let caixa = null;
+              if ((m as THREE.SkinnedMesh).isSkinnedMesh && bone) {
+                const b = new THREE.Box3();
+                const p2 = new THREE.Vector3();
+                const geo = m.geometry.getAttribute('position');
+                const inv = (m as THREE.SkinnedMesh).skeleton.boneInverses[
+                  (m as THREE.SkinnedMesh).skeleton.bones.findIndex((x) => x.name === 'Head')
+                ];
+                if (inv) {
+                  for (let i = 0; i < geo.count; i++) b.expandByPoint(p2.fromBufferAttribute(geo, i).applyMatrix4(inv));
+                  caixa = [b.min.toArray().map((v) => +v.toFixed(5)), b.max.toArray().map((v) => +v.toFixed(5))];
+                }
+              }
+              materiais.push({
+                caixa,
+                malha: m.name, material: mat.name,
+                cor: `#${mat.color?.getHexString?.() ?? ''}`,
+                roughness: mat.roughness, metalness: mat.metalness,
+                mapa: !!mat.map, vertexColors: mat.vertexColors,
+                de: origins?.get(o as THREE.SkinnedMesh) ?? '',
+              });
+            });
+            return { face, superficie, presa, materiais };
           } finally {
             group.remove(avatar.root);
             avatar.dispose();

@@ -17,6 +17,7 @@
  *
  *   node tools/v2-skin-ab.mjs
  *   node tools/v2-skin-ab.mjs --chars=m_king,f_witch --size=560
+ *   node tools/v2-skin-ab.mjs --param=skinmat --lados=pacote:0,nosso:1
  */
 import { chromium } from 'playwright';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
@@ -44,6 +45,14 @@ const VIEWS = [['frente', 0], ['tres-quartos', 0.6]];
  */
 const LADOS = (args.lados ?? 'chapado:0,angulo45:45,total:180').split(',')
   .map((p) => p.split(':'));
+/**
+ * Qual interruptor a comparação mexe.
+ *
+ * Nasceu para a normal (`smoothskin`) e serve para qualquer decisão de rosto
+ * que tenha um interruptor — o acabamento da pele (`skinmat`) foi a segunda.
+ * Duas ferramentas quase iguais é como se acaba com uma delas desatualizada.
+ */
+const PARAM = args.param ?? 'smoothskin';
 
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
@@ -59,7 +68,7 @@ for (const [lado, flag] of LADOS) {
   const erros = [];
   page.on('pageerror', (e) => erros.push(e.message));
   await page.goto(`${args.url ?? 'http://127.0.0.1:5273/'}?view=lab&count=0&spin=0&yaw=0`
-    + `&tier=high&exp=${args.exp ?? 0.62}&smoothskin=${flag}`,
+    + `&tier=high&exp=${args.exp ?? 0.62}&${PARAM}=${flag}`,
   { waitUntil: 'networkidle', timeout: 90_000 });
   await page.waitForFunction(() => window.__ready === true, { timeout: 90_000 });
 
