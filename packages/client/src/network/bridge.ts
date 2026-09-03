@@ -9,6 +9,7 @@ import {
 } from '@streampolis/shared';
 import { useChatStore } from '../state/useChatStore.js';
 import { useLiveStore } from '../state/useLiveStore.js';
+import { useRoomStore, type RoomPerson } from '../state/useRoomStore.js';
 import type { ChatMessage, PersonRef, PKSide, PKState } from '../state/types.js';
 import type { LiveStateView, PKView, WorldStateView } from './types.js';
 import type { AnyWorldConnection } from './WorldConnection.js';
@@ -120,9 +121,37 @@ function isLiveState(state: WorldStateView): state is LiveStateView {
  * the mock chat on attach: two sources of truth in the same list is worse than
  * an empty one.
  */
+/**
+ * Quem está na sala, na ordem em que a lista deve ser lida.
+ *
+ * Anfitrião e co-anfitrião primeiro (numa live, são eles o assunto), o próprio
+ * jogador logo depois, e o resto por nome — ordenar por sessionId faria a lista
+ * embaralhar sozinha a cada reconexão de alguém.
+ */
+function rosterOf(state: WorldStateView | undefined, meSessionId: string): RoomPerson[] {
+  const out: RoomPerson[] = [];
+  state?.players?.forEach((player, sessionId) => {
+    out.push({
+      userId: player.id,
+      sessionId,
+      name: player.name,
+      gifterLevel: player.gifterLevel,
+      gifterXp: xpFloorFor(player.gifterLevel),
+      agency: player.agency || null,
+      role: player.role,
+      isSelf: sessionId === meSessionId,
+      avatar: player.avatar,
+    });
+  });
+  const peso = (p: RoomPerson) =>
+    (p.role === 'host' ? 0 : p.role === 'cohost' ? 1 : p.isSelf ? 2 : 3);
+  return out.sort((a, b) => peso(a) - peso(b) || a.name.localeCompare(b.name));
+}
+
 export function attachStores(connection: AnyWorldConnection): () => void {
   useChatStore.setState({ messages: [] });
   useLiveStore.setState({ room: null });
+  useRoomStore.getState().clear();
 
   const offs = [
     connection.on('chat', (wire) => pushChat(toChat(connection.state, wire))),
@@ -154,6 +183,20 @@ export function attachStores(connection: AnyWorldConnection): () => void {
     }),
 
     connection.on('state', (state) => {
+      // A lista de presentes vale para TODA sala — praça, apartamento, live —,
+      // e por isso é lida antes do desvio para o estado de live.
+      //
+      // A assinatura é o que impede o painel de redesenhar vinte vezes por
+      // segundo: o patch que chega a cada tick é quase todo posição, e a
+      // composição da sala muda uma vez a cada muitos minutos.
+      const people = rosterOf(state, connection.sessionId);
+      const signature = people
+        .map((p) => `${p.sessionId}:${p.name}:${p.role}:${p.gifterLevel}`)
+        .join('|');
+      if (signature !== useRoomStore.getState().signature) {
+        useRoomStore.getState().setPeople(people, signature);
+      }
+
       if (!isLiveState(state)) return;
       const me = state.players?.get(connection.sessionId);
       useLiveStore.setState({
@@ -178,5 +221,8 @@ export function attachStores(connection: AnyWorldConnection): () => void {
     }),
   ];
 
-  return () => { for (const off of offs) off(); };
+  return () => {
+    for (const off of offs) off();
+    useRoomStore.getState().clear();
+  };
 }

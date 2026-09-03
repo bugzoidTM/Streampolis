@@ -556,6 +556,10 @@ export class AvatarV2 implements AvatarLike {
 
   private pinnedBlink: number | null = null;
 
+  get anim(): AnimState {
+    return this.state;
+  }
+
   setAnim(state: AnimState): void {
     if (state === this.state) return;
     this.state = state;

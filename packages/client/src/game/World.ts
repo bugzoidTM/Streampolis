@@ -138,6 +138,19 @@ export class World {
   }
 
   /**
+   * O corpo do jogador está em movimento AGORA.
+   *
+   * Medido no que foi desenhado, como a animação: o `moving` do servidor chega
+   * atrasado e o do preditor é intenção, não corpo. Quem pergunta é a barra de
+   * gestos — o servidor recusa gesto de quem anda, e um botão que não faz nada
+   * e não explica parece um jogo quebrado.
+   */
+  get localMoving(): boolean {
+    const me = this.actors.get(this.localKey());
+    return (me?.speed ?? 0) > 0.12;
+  }
+
+  /**
    * A casa em que este mundo entrou, com o id de verdade.
    *
    * A intenção do jogador pode dizer `me`; a conexão sabe qual casa isso virou.
@@ -585,8 +598,11 @@ export class World {
       online: this.online,
       scene: this.sceneId,
       actors: this.actors.size,
+      // Pergunta ao CORPO o que ele está tocando. Perguntava ao `Animator`, que
+      // só o procedural tem, e desde a migração respondia "idle" para todo
+      // mundo — inclusive para um avatar dançando na tela.
       anim: [...this.actors.values()].map((a) => ({
-        state: isProcedural(a.avatar) ? a.avatar.animator.current : 'idle',
+        state: a.avatar.anim,
         speed: Math.round(a.speed * 100) / 100,
       })),
       renderer: this.renderer.stats(),

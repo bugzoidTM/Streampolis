@@ -40,6 +40,16 @@ export interface AvatarLike {
   readonly stature: number;
   /** Estado de animação pedido pelo servidor. */
   setAnim(state: AnimState): void;
+  /**
+   * O que este corpo está tocando AGORA.
+   *
+   * Entrou no contrato porque só o procedural sabia responder: o relatório do
+   * mundo (`World.stats().anim`) perguntava ao `Animator`, que o corpo de
+   * pacote não tem, e devolvia `'idle'` para todo mundo desde a migração — uma
+   * ferramenta que quisesse provar que um gesto atravessou a rede leria
+   * "parado" com o avatar dançando na tela.
+   */
+  readonly anim: AnimState;
   /** Avança um quadro. `speed` é a velocidade horizontal medida, em m/s. */
   animate(dt: number, speed: number): void;
   /**

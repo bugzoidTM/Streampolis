@@ -1,0 +1,88 @@
+/*
+ * Barra de gestos.
+ *
+ * Fica acima do chat, encostada à esquerda como ele: as duas coisas que se
+ * fazem com as mãos no mundo — falar e gesticular — moram no mesmo canto. Não
+ * cobre o centro da tela, que é onde o personagem está.
+ */
+
+.emotes {
+  position: fixed;
+  left: max(env(safe-area-inset-left), 16px);
+  bottom: 128px;
+  z-index: 26;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.emotes__row {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.emotes__btn {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-md);
+  background: var(--sp-glass);
+  backdrop-filter: blur(10px);
+  color: var(--sp-text);
+  font: inherit;
+  cursor: pointer;
+  transition: transform 100ms ease, border-color 100ms ease, opacity 120ms ease;
+}
+.emotes__btn:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--sp-line-3); }
+.emotes__btn:disabled { opacity: 0.38; cursor: default; }
+
+/* O número é o atalho, e ele é a informação principal do botão num teclado:
+   fica visível sempre, pequeno, no canto. */
+.emotes__tecla {
+  position: absolute;
+  top: 2px;
+  right: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sp-text-3);
+}
+
+/* O nome só aparece no hover: seis rótulos permanentes viram uma barra de
+   menu em cima do jogo. */
+.emotes__label {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 7px;
+  border-radius: var(--sp-r-pill);
+  background: var(--sp-glass-strong);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.emotes__btn:hover .emotes__label { opacity: 1; }
+
+.emotes__aviso {
+  margin: 0;
+  padding: 5px 10px;
+  align-self: flex-start;
+  border-radius: var(--sp-r-pill);
+  background: var(--sp-glass-strong);
+  color: var(--sp-text-2);
+  font-size: 12px;
+}
+
+/* Numa tela estreita o polegar não alcança seis botões de 46 px sem cobrir o
+   jogo; eles encolhem e o chat continua sendo o caminho principal. */
+@media (max-width: 620px) {
+  .emotes { bottom: 116px; }
+  .emotes__btn { width: 38px; height: 38px; }
+}

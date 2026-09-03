@@ -123,6 +123,39 @@ e não movia nada que o olho pudesse notar.
 
 `node tools/desktop-check.mjs` prova as três coisas com o ponteiro de verdade.
 
+## Gestos e quem está aqui: o mundo como lugar com gente
+
+Duas metades do "encontrar jogadores" do PRD §6, ambas ligadas depois de o
+multiplayer já sincronizar corpos:
+
+- **`ui/EmoteBar.tsx`** manda `connection.emote(anim)`, teclas **1..6**. O
+  servidor já aceitava os seis gestos (`EMOTABLE` em `BaseWorldRoom`), com
+  recarga de 900 ms e recusa para quem está andando, desde sempre — faltava só
+  um caminho da mão do jogador até lá, e sem ele um mundo multiplayer tinha
+  exatamente uma forma de se expressar: texto. O gesto vai como INTENÇÃO e
+  volta como estado: quem gesticula vê a mesma animação que os outros veem,
+  pelo mesmo caminho. Tocar localmente "para não esperar" é como se cria um
+  jogador que dança sozinho na própria tela.
+- **`ui/RosterPanel.tsx`** lista quem está na sala e cada linha abre o perfil.
+  A fonte é `state/useRoomStore.ts`, alimentada pelo `bridge` — e a regra ali é
+  a FREQUÊNCIA: o estado chega a ~20 Hz e é quase todo posição, então a store só
+  é reescrita quando a COMPOSIÇÃO muda (uma assinatura de nomes, papéis e
+  níveis). Sem isso o painel redesenharia vinte vezes por segundo para mostrar
+  os mesmos nomes.
+
+Ícone de UI é DESENHADO (`ui/Icons.tsx`), nunca emoji — a primeira versão da
+barra de gestos usou emoji e saiu com seis quadradinhos vazios na captura de
+prova, porque o Chromium headless não tem a fonte.
+
+`node tools/social-check.mjs` prova as duas direções da rede: Ana gesticula e a
+prova é lida no estado que o BETO recebe; Beto gesticula e a prova é lida no
+corpo que a ANA desenha. Um gesto que só o próprio jogador vê é o defeito
+clássico desta feature.
+
+`AvatarLike.anim` existe por causa dessa prova: `World.stats().anim` perguntava
+ao `Animator`, que só o corpo procedural tem, e respondia `'idle'` para todo
+mundo desde a migração v2 — com o avatar dançando na tela.
+
 ## Portas e onde se nasce
 
 Duas tabelas em `packages/shared`: `portals.ts` (onde estão as portas) e os

@@ -9,6 +9,8 @@ import { useSessionStore } from '../state/useSessionStore.js';
 import { LiveView } from './LiveView.js';
 import { LoadingScreen } from './LoadingScreen.js';
 import { WorldChat } from './chat/WorldChat.js';
+import { EmoteBar } from './EmoteBar.js';
+import { RosterPanel } from './RosterPanel.js';
 import { PortalPrompt } from './PortalPrompt.js';
 import type { LoadReport } from '../game/assets/loading.js';
 import type { Portal } from '@streampolis/shared';
@@ -28,6 +30,8 @@ export interface WorldViewProps {
    * dona da navegação; aqui só se sabe que o jogador pisou no portal.
    */
   onTravel?: (portal: Portal) => void;
+  /** Abrir o perfil de alguém que está na sala. */
+  onOpenProfile?: (userId: string) => void;
 }
 
 /**
@@ -173,6 +177,21 @@ export function WorldView(props: WorldViewProps) {
           cima da loja é uma barra de digitar flutuando sobre outra interface,
           e ele ainda rouba o Enter de quem está preenchendo um formulário. */}
       <WorldChat world={ready} hidden={inLive || props.paused === true || status === 'loading'} />
+
+      {/* Saber QUEM está por perto é a primeira metade de "encontrar
+          jogadores": sem isto, a única forma de descobrir era virar a câmera e
+          ler as placas sobre as cabeças ao alcance. */}
+      {props.onOpenProfile && (
+        <RosterPanel
+          onOpenProfile={props.onOpenProfile}
+          hidden={props.paused === true || status === 'loading'}
+        />
+      )}
+
+      {/* Gesticular é a outra metade de "encontrar jogadores": um mundo em que
+          só se pode digitar não é um mundo social. Escondido enquanto uma tela
+          cobre o mundo — os atalhos 1..6 pertencem ao jogo, não à loja. */}
+      <EmoteBar world={ready} hidden={props.paused === true || status === 'loading'} />
 
       {/* "Acessar outros locais" é outra delas. Numa live não: quem está
           transmitindo não atravessa uma porta sem querer. */}

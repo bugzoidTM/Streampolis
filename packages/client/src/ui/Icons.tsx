@@ -219,3 +219,48 @@ export const IconFrameRoom = svg(
     <path d="M3.5 15.6h17M8.2 15.6v-3.4h3.1v3.4M14 15.6v-5.2h2.7v5.2" />
   </>,
 );
+
+/*
+ * Gestos (a barra de emotes).
+ *
+ * Desenhados aqui, e não com emoji, pelo motivo que abre este arquivo: emoji
+ * renderiza diferente em cada plataforma — e nas que não têm a fonte, não
+ * renderiza nada. A primeira versão desta barra usou emoji e saiu com seis
+ * quadradinhos vazios na captura de prova.
+ *
+ * Todos são a mesma figura de traço: cabeça, tronco, dois braços, duas pernas.
+ * A leitura vem da POSE, não do detalhe, porque a 20 px não há detalhe.
+ */
+export const IconStop = svg(<rect x="7" y="7" width="10" height="10" rx="2.2" />);
+export const IconWave = svg(
+  <>
+    <circle cx="10.5" cy="4.6" r="2.1" />
+    <path d="M10.5 6.9v7.2M10.5 9.4l-3 2.4M10.5 8.6l4.6-3.4M10.5 14.1l-2.4 6.3M10.5 14.1l2.6 6.3" />
+    <path d="M17.6 3.2a4.6 4.6 0 011.1 3.1M19.8 1.6a7 7 0 011.5 4.6" />
+  </>,
+);
+export const IconClap = svg(
+  <>
+    <rect x="3.4" y="9.6" width="5.4" height="10" rx="2.7" transform="rotate(-13 6.1 14.6)" />
+    <rect x="15.2" y="9.6" width="5.4" height="10" rx="2.7" transform="rotate(13 17.9 14.6)" />
+    <path d="M12 3.2v3.4M8.1 4.6l1.6 2.9M15.9 4.6l-1.6 2.9" />
+  </>,
+);
+export const IconDance = svg(
+  <>
+    <circle cx="13.2" cy="4.4" r="2.1" />
+    <path d="M13.2 6.7v6.4M13.2 8.9l4.4-3.1M13.2 10.1l-3.9 2.2M13.2 13.1l-3.3 7.3M13.2 13.1l3.6 7.3" />
+  </>,
+);
+export const IconCelebrate = svg(
+  <>
+    <circle cx="12" cy="4.4" r="2.1" />
+    <path d="M12 6.7v6.8M12 8.4L7.7 4.9M12 8.4l4.3-3.5M12 13.5l-2.9 6.9M12 13.5l2.9 6.9" />
+  </>,
+);
+export const IconSit = svg(
+  <>
+    <circle cx="9.4" cy="4.8" r="2.1" />
+    <path d="M9.4 7.1v6.2h6.1M15.5 13.3v6.4M9.4 13.3H6.2M6.2 9.6v10.1" />
+  </>,
+);

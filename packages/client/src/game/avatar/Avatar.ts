@@ -213,6 +213,10 @@ export class Avatar {
     }
   }
 
+  get anim(): AnimState {
+    return this.animator.current;
+  }
+
   /** What the world says this avatar is doing right now. */
   setAnim(state: AnimState) {
     this.animator.request(state);

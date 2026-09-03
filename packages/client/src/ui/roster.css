@@ -1,0 +1,105 @@
+/*
+ * Quem está aqui.
+ *
+ * Canto superior direito: o esquerdo é do chat e dos gestos, o centro é do
+ * personagem, e o rodapé é da navegação. Sobra este.
+ */
+
+.roster {
+  position: fixed;
+  top: max(env(safe-area-inset-top), 14px);
+  right: max(env(safe-area-inset-right), 14px);
+  z-index: 26;
+  width: 216px;
+  max-width: 46vw;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-md);
+  background: var(--sp-glass);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.roster__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sp-text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.roster__head strong { font-variant-numeric: tabular-nums; }
+
+/* Verde de presença, não de "ao vivo": o vermelho desta interface é reservado
+   para transmissão e usá-lo aqui faria a praça parecer uma live. */
+.roster__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sp-green);
+  box-shadow: 0 0 0 3px rgba(57, 217, 138, 0.16);
+}
+
+.roster__title { color: var(--sp-text-2); font-size: 12.5px; }
+.roster__chev { margin-left: auto; color: var(--sp-text-3); font-size: 11px; }
+
+.roster__list {
+  margin: 0;
+  padding: 0 6px 6px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Uma praça cheia não pode empurrar a lista até o rodapé: ela rola. */
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sp-line-2) transparent;
+}
+
+.roster__row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--sp-r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.roster__row:hover { background: var(--sp-surface-2); }
+.roster__row.is-self { background: rgba(124, 92, 255, 0.12); }
+
+.roster__mono {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sp-surface-3);
+  color: var(--sp-text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.roster__who { display: flex; flex-direction: column; min-width: 0; }
+.roster__name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster__who small { color: var(--sp-text-3); font-size: 11px; }
+
+@media (max-width: 620px) {
+  .roster { width: 176px; }
+}
