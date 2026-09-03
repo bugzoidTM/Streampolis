@@ -45,16 +45,38 @@ const onPlaza = (id: string, to: SceneId, label: string, angle: number, radius =
 });
 
 /**
+ * Raio de ativação de uma porta de interior.
+ *
+ * Menor que o da praça de propósito: lá fora 2,4 m é uma pisada em falso num
+ * descampado, aqui dentro é um quarto inteiro. Uma porta que dispara de longe
+ * num cômodo pequeno não é generosidade — é não conseguir andar perto da
+ * parede sem o jogo perguntar se você quer sair.
+ */
+const INDOOR_R = 1.4;
+
+/**
  * A porta de saída de um interior, encostada na abertura sul.
  *
  * Todo interior tem uma: é por onde se entrou. Deduzir do `shell` em vez de
  * escrever a coordenada à mão é o que impede a porta de sair do lugar quando
  * alguém mudar o tamanho da sala — e mudanças de sala acontecem.
+ *
+ * Deduzir a PROFUNDIDADE e chutar o X, porém, é meio caminho: a porta do
+ * apartamento fica em `x = -2,2` e o arco era desenhado em `x = 0`, dois metros
+ * ao lado dela, no meio da sala. Com raio de 2,2 m num estúdio de 7,2 × 8,4 a
+ * zona de saída cobria metade do cômodo — e o ponto de CHEGADA caía dentro
+ * dela. Quem entrava no próprio apartamento aparecia com "Sair" na tela e um
+ * segundo `E` o mandava de volta; no saguão, onde a saída dá na praça, o mesmo
+ * defeito devolvia à praça quem tinha ido buscar a própria casa.
+ *
+ * A porta é a abertura sul que chega ao CHÃO (`y === 0`). Uma janela também é
+ * um buraco na parede, e não se sai por ela.
  */
 const exitOf = (scene: SceneId, to: SceneId, label: string): Portal => {
   const shell = INTERIORS[scene]?.shell;
   const depth = shell?.depth ?? 18;
-  return { id: `${scene}_exit`, to, label, x: 0, z: depth / 2 - 1.5, ry: 0, r: 2.2 };
+  const door = shell?.openings.find((o) => o.side === 'south' && o.y === 0);
+  return { id: `${scene}_exit`, to, label, x: door?.x ?? 0, z: depth / 2 - 1.5, ry: 0, r: INDOOR_R };
 };
 
 export const PORTALS: Partial<Record<SceneId, Portal[]>> = {
@@ -70,7 +92,7 @@ export const PORTALS: Partial<Record<SceneId, Portal[]>> = {
   residential_lobby: [
     exitOf('residential_lobby', 'central_plaza', 'Voltar à praça'),
     // Junto dos elevadores do saguão, que é onde uma pessoa procuraria.
-    { id: 'lobby_home', to: 'home', label: 'Meu apartamento', x: 5.8, z: -8.2, ry: Math.PI, r: 2.2 },
+    { id: 'lobby_home', to: 'home', label: 'Meu apartamento', x: 5.8, z: -8.2, ry: Math.PI, r: INDOOR_R },
   ],
 
   apartment: [exitOf('apartment', 'residential_lobby', 'Sair')],

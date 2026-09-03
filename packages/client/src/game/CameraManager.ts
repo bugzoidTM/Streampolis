@@ -41,6 +41,15 @@ export interface CameraLimits {
   maxPitch: number;
 }
 
+/**
+ * Quanto um clique de roda muda o braço, em fração dele.
+ *
+ * 0,16 dá cerca de 17% por clique: uns doze cliques cobrem o curso inteiro de
+ * 1,4 m a 9 m — perto o bastante para o gesto parecer imediato, longe o
+ * bastante para dar para parar no meio.
+ */
+const ZOOM_POR_CLIQUE = 0.16;
+
 const WORLD_LIMITS: CameraLimits = {
   minDistance: 1.4, maxDistance: 9.0,
   minPitch: -0.52, maxPitch: 1.05,
@@ -129,10 +138,26 @@ export class CameraManager {
     }
   }
 
+  /**
+   * Gira e aproxima. `zoom` vem em CLIQUES de roda, não em metros.
+   *
+   * O zoom é MULTIPLICATIVO de propósito. O braço vai de 1,4 m a 9 m, e uma
+   * quantidade fixa em metros por clique é grosseira num extremo e lenta no
+   * outro: 40 cm colado no rosto é meio personagem, 40 cm a nove metros não se
+   * vê. Uma fração constante da distância dá o mesmo passo APARENTE em todo o
+   * curso, e é por isso que a conta é uma exponencial.
+   *
+   * (Aqui morava um defeito silencioso: quem chamava passava a roda crua
+   * multiplicada por 0,01, o que dava quatro MILÍMETROS por clique. O zoom
+   * existia, respondia, e não movia nada que o olho pudesse notar.)
+   */
   applyInput(lookYaw: number, lookPitch: number, zoom: number) {
     this.yaw += lookYaw;
     this.pitch = THREE.MathUtils.clamp(this.pitch + lookPitch, this.limits.minPitch, this.limits.maxPitch);
-    this.distance = THREE.MathUtils.clamp(this.distance + zoom, this.limits.minDistance, this.limits.maxDistance);
+    this.distance = THREE.MathUtils.clamp(
+      this.distance * Math.exp(zoom * ZOOM_POR_CLIQUE),
+      this.limits.minDistance, this.limits.maxDistance,
+    );
   }
 
   update(dt: number) {

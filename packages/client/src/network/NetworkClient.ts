@@ -102,7 +102,7 @@ export class NetworkClient {
       ...this.joinOptions(),
       apartmentId,
     });
-    return synced(new WorldConnection(room));
+    return synced(new WorldConnection(room, apartmentId));
   }
 
   /**

@@ -144,8 +144,12 @@ export const APARTMENT: SceneLayout = {
     { kind: 'pot_plant', x: 1.32, z: -3.82, y: 0.75, s: 0.8 },
     { kind: 'frame', x: 3.32, z: 0.15, ry: -PI / 2, y: 1.42 },
   ],
+  // Chegar é entrar pela porta, e não NA porta: os dois primeiros marcadores
+  // ficavam dentro do raio da saída (`portals.ts`), então quem entrava no
+  // próprio apartamento aparecia com "Sair" na tela — e um `E` o mandava de
+  // volta ao saguão. A regra virou teste em `game-server/test/world.test.ts`.
   spawns: [
-    { x: -1.9, z: 2.9 }, { x: -0.7, z: 3.0 }, { x: 0.5, z: 1.6 },
+    { x: -2.2, z: 0.9 }, { x: -0.2, z: 2.4 }, { x: 0.5, z: 1.6 },
     { x: -1.2, z: 0.2 }, { x: 1.4, z: -1.4 }, { x: -0.4, z: -2.2 },
   ],
 };
@@ -322,8 +326,11 @@ export const RESIDENTIAL_LOBBY: SceneLayout = {
     { kind: 'wall_art', x: -9.8, z: -3.0, ry: PI / 2, y: 2.0, w: 1.2, h: 1.6, color: 0x7f93b8 },
     { kind: 'wall_art', x: 9.8, z: -3.0, ry: -PI / 2, y: 2.0, w: 1.2, h: 1.6, color: 0xb88f7f },
   ],
+  // Ao lado da porta, fora do raio dela: ver a nota do apartamento. No saguão
+  // o defeito era o pior de todos, porque a saída daqui dá na PRAÇA — quem
+  // subia para buscar a própria casa reaparecia na praça.
   spawns: [
-    { x: -1.6, z: 8.0 }, { x: 1.6, z: 8.0 }, { x: 0, z: 5.5 },
+    { x: -2.2, z: 8.0 }, { x: 2.2, z: 8.0 }, { x: 0, z: 5.5 },
     { x: -3.4, z: 5.0 }, { x: 3.4, z: 5.0 }, { x: 0, z: -4.0 },
   ],
 };
@@ -369,7 +376,8 @@ export const STREAM_STORE: SceneLayout = {
     { kind: 'ceiling_lamp', x: 4.5, z: 4.5, y: 4.4 },
   ],
   spawns: [
-    { x: -1.4, z: 7.4 }, { x: 1.4, z: 7.4 }, { x: 0, z: 4.6 },
+    // Ao lado da porta, fora do raio dela: ver a nota do apartamento.
+    { x: -2.2, z: 7.4 }, { x: 2.2, z: 7.4 }, { x: 0, z: 4.6 },
     { x: -4.0, z: 4.0 }, { x: 4.0, z: 4.0 }, { x: 0, z: 0.4 },
   ],
 };
@@ -421,7 +429,8 @@ export const AGENCY_TOWER: SceneLayout = {
     { kind: 'wall_art', x: -11.8, z: 5.6, ry: PI / 2, y: 1.9, w: 1.1, h: 1.5, color: 0x8f7fb8 },
   ],
   spawns: [
-    { x: -1.4, z: 9.0 }, { x: 1.4, z: 9.0 }, { x: 0, z: 6.4 },
+    // Ao lado da porta, fora do raio dela: ver a nota do apartamento.
+    { x: -2.2, z: 9.0 }, { x: 2.2, z: 8.4 }, { x: 0, z: 6.4 },
     { x: -4.0, z: 6.6 }, { x: 4.0, z: 6.6 }, { x: 3.0, z: 0.5 },
   ],
 };

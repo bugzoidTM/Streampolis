@@ -94,7 +94,17 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
 
   private markReady: () => void = () => {};
 
-  constructor(readonly room: Room<S>) {
+  /**
+   * `apartmentId` é a casa em que esta conexão realmente entrou.
+   *
+   * Existe porque `me` não é um id: a URL e a porta do saguão dizem "a minha
+   * casa", e quem traduz isso para o id de verdade é `resolveApartment`, uma
+   * vez, antes de abrir a sala. Sem guardar a resposta aqui, a interface ficava
+   * com a palavra `me` na mão — e a barra de decoração perguntava `/homes/me`
+   * à API, levava 404, engolia o erro e concluía que a casa não era do
+   * jogador. O botão "Decorar" simplesmente não aparecia na própria casa.
+   */
+  constructor(readonly room: Room<S>, readonly apartmentId: string | null = null) {
     this.ready = new Promise<void>((resolve) => { this.markReady = resolve; });
     const sceneId = room.state?.sceneId ?? 'central_plaza';
     this.predictor = new Predictor(

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PORTALS, portalNear, type Portal, type SceneId } from '@streampolis/shared';
+import { INTERIORS, PORTALS, portalNear, type Portal, type SceneId } from '@streampolis/shared';
 import { makeCameraTransparent } from './CameraManager.js';
 
 /**
@@ -18,6 +18,17 @@ import { makeCameraTransparent } from './CameraManager.js';
 
 const CALM = 0x6f7cff;
 const HOT = 0xff5fa2;
+
+/**
+ * O raio para o qual o marcador foi desenhado.
+ *
+ * O anel e o pilar têm tamanho fixo, e isso era invisível enquanto todas as
+ * portas eram da praça. Numa sala pequena o mesmo marcador vira um disco rosa
+ * de quase três metros no meio do quarto e um pilar que atravessa o teto —
+ * exatamente o que o apartamento mostrava. Agora o corpo do marcador é
+ * ESCALADO pelo raio da porta, e a altura pelo pé-direito.
+ */
+const RAIO_BASE = 2.4;
 
 function label(text: string): THREE.Sprite {
   const FONT = 34;
@@ -69,6 +80,11 @@ export class Portals {
   private clock = 0;
 
   constructor(scene: THREE.Scene, private readonly sceneId: SceneId) {
+    // Pé-direito da sala, quando é uma sala. Ao ar livre não há teto e o pilar
+    // pode ter a altura inteira.
+    const teto = INTERIORS[sceneId]?.shell.height ?? Infinity;
+    const altura = Math.min(1, (teto - 0.15) / 3.6);
+
     const ringGeo = new THREE.RingGeometry(1.05, 1.35, 40);
     // Cone alto e aberto em cima: é a parte que se vê por cima dos bancos e
     // entre as árvores. O anel no chão só aparece de perto.
@@ -76,6 +92,7 @@ export class Portals {
     this.disposables.push(ringGeo, beamGeo);
 
     for (const portal of PORTALS[sceneId] ?? []) {
+      const largura = portal.r / RAIO_BASE;
       const ringMat = new THREE.MeshBasicMaterial({
         color: CALM, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false,
       });
@@ -91,10 +108,20 @@ export class Portals {
       const beam = new THREE.Mesh(beamGeo, beamMat);
       beam.position.y = 1.8;
 
+      // O corpo do marcador é um grupo à parte da PLACA: escalar tudo junto
+      // encolheria o texto, que é medido em metros e existe para ser lido de
+      // longe.
+      const corpo = new THREE.Group();
+      corpo.add(ring, beam);
+      corpo.scale.set(largura, altura, largura);
+
+      const placa = label(portal.label);
+      placa.position.y = Math.min(placa.position.y, teto - 0.5);
+
       const g = new THREE.Group();
       g.position.set(portal.x, 0, portal.z);
       g.rotation.y = portal.ry;
-      g.add(ring, beam, label(portal.label));
+      g.add(corpo, placa);
       makeCameraTransparent(g);
       this.group.add(g);
       this.markers.push({ portal, group: g, ring, beam });

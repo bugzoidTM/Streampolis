@@ -80,7 +80,16 @@ export function BuildBar({ world, apartmentId }: BuildBarProps) {
     mode.load(draft.list);
     mode.enable();
     modeRef.current = mode;
-    return () => { mode.dispose(); modeRef.current = null; };
+    // Enquanto se decora, o arrasto ESQUERDO é do móvel. Sem isto ele seria
+    // das duas coisas ao mesmo tempo e puxar o sofá giraria a sala junto. O
+    // botão direito continua orbitando — decorar é justamente quando mais se
+    // precisa olhar em volta.
+    world.input.orbitOnDrag = false;
+    return () => {
+      mode.dispose();
+      modeRef.current = null;
+      world.input.orbitOnDrag = true;
+    };
     // draft.list is intentionally not a dependency: the mode owns it once open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, world]);

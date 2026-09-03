@@ -99,6 +99,65 @@ desenvolver, proibido em produção (o próprio código recusa subir assim lá).
 `npm run e2e:api --workspace @streampolis/game-server` prova a integração
 inteira: token assinado, débito real na carteira, PK gravado no banco.
 
+## Câmera e mouse: o jogo é de computador
+
+A câmera é uma órbita de terceira pessoa (`game/CameraManager.ts`) e quem a
+alimenta é o `InputManager`. No computador:
+
+- **arrastar orbita** — com o botão esquerdo OU o direito. Só o direito era um
+  atalho que ninguém descobre, e a impressão que sobrava era a de um jogo que
+  se move em quatro direções;
+- **a roda aproxima**, e o passo é MULTIPLICATIVO (`ZOOM_POR_CLIQUE`): o braço
+  vai de 1,4 m a 9 m, e uma quantidade fixa em metros por clique é grosseira
+  num extremo e imperceptível no outro;
+- o `deltaY` da roda é normalizado em CLIQUES antes de sair do `InputManager`
+  (Chrome manda ≈100 por clique, Firefox manda linhas). Somar o número cru faz
+  o zoom ter velocidades diferentes por navegador;
+- `input.orbitOnDrag = false` entrega o botão esquerdo a quem precisa dele. O
+  modo de construção faz isso enquanto está aberto — lá o arrasto esquerdo
+  arrasta MÓVEL — e o direito continua orbitando.
+
+Uma armadilha já paga: o `World` multiplicava a roda por `0,01` antes de passar
+à câmera, o que dava **quatro milímetros por clique**. O zoom existia, respondia
+e não movia nada que o olho pudesse notar.
+
+`node tools/desktop-check.mjs` prova as três coisas com o ponteiro de verdade.
+
+## Portas e onde se nasce
+
+Duas tabelas em `packages/shared`: `portals.ts` (onde estão as portas) e os
+`spawns` de cada interior em `interiors.ts`. Elas têm de ser lidas JUNTAS, e a
+regra é uma só: **ninguém nasce dentro de uma porta**.
+
+Já nasceu. Três de quatro interiores punham o ponto de chegada dentro do raio
+da própria saída, e a saída de um interior é deduzida do casco: a profundidade
+vinha do `shell` e o X era chutado como 0 — no apartamento, cuja porta está em
+`x = -2,2`, o arco ficava dois metros ao lado dela, no meio do quarto, com raio
+de 2,2 m. Entrar na própria casa abria com "Sair" na tela; no saguão, cuja
+saída dá na PRAÇA, quem subia para buscar a própria casa reaparecia na praça.
+
+Hoje: a porta é a abertura sul que chega ao chão (`y === 0`), o raio de
+interior é 1,4 m, e `packages/game-server/test/world.test.ts` recusa qualquer
+planta em que uma chegada caia dentro de uma porta, fique rente à borda dela ou
+nasça dentro de um móvel. Mover um sofá ou uma porta roda contra esse teste.
+
+O marcador desenhado também é escalado pelo raio da porta e pelo pé-direito da
+sala (`game/Portals.ts`): com tamanho fixo, o anel da praça virava um disco
+rosa de quase três metros dentro de um estúdio e o pilar de luz atravessava o
+teto.
+
+## `me` não é um id
+
+`?apartment=me` e a porta do saguão dizem "a minha casa". Quem traduz isso para
+o id de verdade é `resolveApartment`, em `network/session.ts`, UMA vez — e a
+resposta fica guardada em `WorldConnection.apartmentId`, exposta como
+`World.apartmentId`. A interface pergunta ao mundo, nunca à intenção.
+
+Enquanto a `BuildBar` lia a intenção, ela pedia `/homes/me` à API, levava 404,
+engolia o erro e concluía que a casa era de outra pessoa: dentro do próprio
+apartamento não havia botão "Decorar" **e a mobília salva pelo jogador não
+carregava**.
+
 ## Onde a colisão mora
 
 Em `packages/shared/src/collision.ts`, e só ali. O servidor decide onde dá para

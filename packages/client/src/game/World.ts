@@ -137,6 +137,17 @@ export class World {
     return this.connection !== null;
   }
 
+  /**
+   * A casa em que este mundo entrou, com o id de verdade.
+   *
+   * A intenção do jogador pode dizer `me`; a conexão sabe qual casa isso virou.
+   * Quem pergunta é a barra de decoração, e perguntar à intenção era o que
+   * fazia o botão "Decorar" sumir dentro do próprio apartamento.
+   */
+  get apartmentId(): string | null {
+    return this.connection?.apartmentId ?? null;
+  }
+
   /** Disparado uma vez, quando o primeiro quadro chega à tela. */
   private onFirstFrame: (() => void) | null = null;
 
@@ -323,7 +334,10 @@ export class World {
     if (this.paused && this.frames >= REVEAL_FRAME) return;
     const input = this.input.poll();
 
-    this.camera.applyInput(input.lookYaw, input.lookPitch, input.zoom * 0.01);
+    // A roda chega em cliques e a câmera os interpreta; aqui não há conversão
+    // nenhuma a fazer. O `* 0.01` que havia neste lugar era o zoom inteiro
+    // virando quatro milímetros por clique.
+    this.camera.applyInput(input.lookYaw, input.lookPitch, input.zoom);
 
     // Movement is expressed against what the player actually sees, so it is
     // derived from the camera basis rather than from a yaw convention.
@@ -592,6 +606,14 @@ export class World {
         return me ? { x: me.avatar.root.position.x, z: me.avatar.root.position.z } : null;
       })(),
       portal: this.nearPortal?.id ?? null,
+      // As portas desta cena, com onde ficam e quanto alcançam.
+      //
+      // Publicado porque toda ferramenta que quis andar até uma porta acabou
+      // escrevendo a coordenada dela na mão — e uma coordenada copiada envelhece
+      // calada: `tools/travel-check.mjs` mediu distância até uma porta imaginária
+      // no meio da parede sul por semanas, enquanto a de verdade estava dois
+      // metros ao lado.
+      doors: (PORTALS[this.sceneId] ?? []).map((p) => ({ id: p.id, x: p.x, z: p.z, r: p.r })),
       // A roupa como a SALA a conhece, que é diferente do que a interface
       // desenha: é aqui que se prova que trocar de visual chegou ao servidor.
       // Publicado por este caminho, e não lido do objeto de conexão, porque em

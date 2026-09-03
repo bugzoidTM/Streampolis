@@ -10,9 +10,15 @@
  * A prova acontece DENTRO da loja, e não atravessando a praça, por um motivo
  * de medição: neste ambiente headless a cena da praça roda a poucos quadros
  * por segundo e andar dezesseis metros levaria minutos de teste. A porta de
- * saída da loja fica a dois passos de onde se nasce nela, o que exercita a
- * mesma cadeia inteira em segundos — e a proximidade ainda é medida de
- * verdade, andando para longe dela e voltando.
+ * saída da loja fica a poucos passos de onde se nasce nela, o que exercita a
+ * mesma cadeia inteira em segundos.
+ *
+ * O que este arquivo AFIRMAVA e passou a negar: que quem entra numa sala nasce
+ * ao alcance da porta de saída. Isso não era o desenho, era o defeito —
+ * três de quatro interiores punham o ponto de chegada dentro do raio da própria
+ * saída, e no saguão, cuja porta dá na praça, quem subia para buscar a própria
+ * casa reaparecia na praça. Agora a chegada é fora do alcance e a prova é
+ * ANDAR até a porta.
  *
  *   node tools/travel-check.mjs
  */
@@ -64,19 +70,19 @@ await page.waitForFunction(() => window.__ready === true, { timeout: 180_000 });
 await page.waitForTimeout(900);
 const store = await stats();
 check('a loja tem uma porta', store.portals === 1, `${store.portals}`);
-check('ela está ao alcance de quem acabou de entrar', store.portal === 'stream_store_exit',
+check('quem acaba de entrar NÃO está dentro dela', store.portal === null,
   store.portal ?? 'nenhuma');
-check('o aviso diz para onde leva', (await prompt()) === 'Voltar à praça');
 await page.screenshot({ path: 'shots/portal-loja.png', timeout: 120_000 });
 
 console.log('\n3) O alcance é distância, não estado');
-// Anda para longe da porta e o convite tem de sumir. É o que separa "existe um
-// portal" de "o portal reage ao corpo do jogador".
+// A porta vem do próprio jogo (`stats().doors`); escrever a coordenada aqui foi
+// o que deixou esta prova medindo, por semanas, a distância até uma porta
+// imaginária no meio da parede.
 //
 // Os tempos são generosos porque a medição é honesta sobre o ambiente: aqui o
 // jogo roda a poucos quadros por segundo sobre rasterização por software, e o
 // avatar anda muito mais devagar do que andaria num navegador com GPU.
-const DOOR = { x: 0, z: 18 / 2 - 1.5 };
+const DOOR = store.doors[0];
 const far = async () => {
   const s = await stats();
   return Math.hypot((s.player?.x ?? 0) - DOOR.x, (s.player?.z ?? 0) - DOOR.z);
@@ -92,22 +98,19 @@ let bestGain = 0;
 for (const key of ['w', 'a', 's', 'd']) {
   const before = await far();
   await hold(key, 1200);
-  const gain = (await far()) - before;
+  const gain = before - (await far());
   if (gain > bestGain) { bestGain = gain; bestKey = key; }
 }
-check('alguma direção afasta da porta', bestKey !== null, bestKey ?? 'nenhuma');
+check('alguma direção aproxima da porta', bestKey !== null, bestKey ?? 'nenhuma');
 
-for (let i = 0; i < 12 && (await far()) < 2.8 && bestKey; i++) await hold(bestKey, 1500);
+for (let i = 0; i < 12 && (await far()) > DOOR.r * 0.7 && bestKey; i++) await hold(bestKey, 1200);
 const d = await far();
-const aviso = await prompt();
 const estado = (await stats()).portal;
-check('longe da porta, o convite some', d <= 2.2 ? false : estado === null && aviso === null,
-  `${d.toFixed(2)} m do portal`);
+check('chegando perto, o convite aparece', estado === `${'stream_store'}_exit`,
+  `${d.toFixed(2)} m da porta (raio ${DOOR.r})`);
+check('e o aviso diz para onde leva', (await prompt()) === 'Voltar à praça');
 
 console.log('\n4) Entrar leva de volta à praça');
-await page.goto(`${CLIENT}/?scene=stream_store&token=${token}&tier=low`, { waitUntil: 'commit' });
-await page.waitForFunction(() => window.__ready === true, { timeout: 180_000 });
-await page.waitForTimeout(900);
 await page.keyboard.press('e');
 const voltou = await page
   .waitForFunction(() => window.__lab.stats()?.scene === 'central_plaza', null, { timeout: 180_000 })

@@ -183,7 +183,7 @@ export function WorldView(props: WorldViewProps) {
           mobília do anfitrião e nenhuma alça. */}
       <BuildBar
         world={ready}
-        apartmentId={props.intent.kind === 'apartment' && !inLive ? props.intent.apartmentId : null}
+        apartmentId={props.intent.kind === 'apartment' && !inLive ? ready?.apartmentId ?? null : null}
       />
       {/* A pílula do canto não fala mais de carregamento: quem faz isso é a
           tela cheia. Ela volta a ser só o que sempre deveria ter sido — o
