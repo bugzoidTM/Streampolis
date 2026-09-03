@@ -138,9 +138,14 @@ check('a casa é reconhecida como sua (botão Decorar)',
   (await page.locator('.build__open').count()) === 1);
 await page.locator('.build__open').click();
 await page.waitForTimeout(1_200);
-check('a paleta abre com o que o jogador possui',
-  (await page.locator('.build__item').count()) > 0,
-  `${await page.locator('.build__item').count()} peças`);
+// Paleta VAZIA é uma resposta legítima: quem ainda não comprou móvel não tem o
+// que pôr, e a barra diz isso. O que se prova aqui é que ela abriu lendo o
+// inventário do jogador — afirmar "tem peças" faria a prova depender de a
+// conta de teste ter ido às compras, e ela falharia num banco recém-semeado.
+const pecas = await page.locator('.build__item').count();
+const vazio = await page.locator('.build__empty').count();
+check('a paleta abre lendo o inventário do jogador', pecas > 0 || vazio === 1,
+  pecas > 0 ? `${pecas} peças` : 'sem móveis comprados, e a barra avisa');
 await page.screenshot({ path: `${dir}/apartamento.png` });
 
 await enter('scene=residential_lobby', '4) E no saguão, cuja saída dá na praça');
