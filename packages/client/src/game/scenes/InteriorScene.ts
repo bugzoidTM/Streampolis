@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  PLACEABLES, SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS,
+  PLACEABLES, SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS, placementColliders,
   type Fixture, type HomePlacement, type SceneId, type SceneLayout,
 } from '@streampolis/shared';
 import { makeCameraTransparent, type Framing } from '../CameraManager.js';
@@ -173,22 +173,11 @@ export class InteriorScene extends SceneBase {
     }
 
     // Walk-through items stay walk-through; the rest join the collider table
-    // so a sofa you placed is a sofa you bump into.
-    this.colliders = [
-      ...SCENE_COLLIDERS[this.id],
-      ...list.flatMap((p) => {
-        const def = PLACEABLES[p.itemId];
-        if (!def || def.hw === undefined || def.mount !== 'floor') return [];
-        const even = p.turn % 2 === 0;
-        return [{
-          kind: 'rect' as const,
-          x: p.x, z: p.z,
-          hw: even ? def.hw : (def.hd ?? def.hw),
-          hd: even ? (def.hd ?? def.hw) : def.hw,
-          ry: 0,
-        }];
-      }),
-    ];
+    // so a sofa you placed is a sofa you bump into. A conta é de `shared`: o
+    // servidor e o preditor do cliente fazem a MESMA a partir da mesma lista, e
+    // a versão que morava aqui era a única que existia — o resultado é que só
+    // o modo offline sabia da mobília do jogador.
+    this.colliders = [...SCENE_COLLIDERS[this.id], ...placementColliders(list)];
   }
 
   /** World-space nodes of the placed furniture, for build-mode picking. */

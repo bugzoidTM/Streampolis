@@ -10,9 +10,13 @@
  * passava a vida inteira prevendo com a planta da praça, e o monumento dela é
  * um cilindro de 5,26 m no centro do mundo: o apartamento cabe DENTRO dele.
  *
- * Por isso a prova tem duas metades, e as duas importam:
+ * Por isso a prova tem três metades, e as três importam:
  *   1. a cena desenhada e a cena em que se colide são a mesma;
- *   2. andar em todas as direções não põe ninguém fora da planta.
+ *   2. andar em todas as direções não põe ninguém fora da planta;
+ *   3. no apartamento, a mobília do DONO é obstáculo — ela chega pelo estado da
+ *      sala, que é a mesma lista com que o servidor decide. Enquanto a conta
+ *      morava só na cena do cliente, o servidor resolvia o movimento num
+ *      cômodo vazio e o jogador atravessava o próprio sofá.
  *
  * Precisa da API (:8787), do game server (:2567) e do Vite (:5273) no ar.
  *
@@ -47,6 +51,15 @@ const browser = await chromium.launch({
          '--ignore-gpu-blocklist', '--enable-webgl', '--no-sandbox', '--disable-dev-shm-usage'],
 });
 
+/** O ponto está DENTRO de um obstáculo? (o raio do jogador conta) */
+function insideAny(colliders, p, radius = 0.28) {
+  // Uma folga de 1 cm: a posição vem do preditor e oscila no último milímetro.
+  const slack = 0.01;
+  return (colliders ?? []).some((c) => c.kind === 'rect'
+    && Math.abs(p.x - c.x) < c.hw + radius - slack
+    && Math.abs(p.z - c.z) < c.hd + radius - slack);
+}
+
 /** Fora da planta, com a folga do raio do jogador já descontada. */
 function outside(area, p) {
   if (!area) return false;
@@ -55,7 +68,7 @@ function outside(area, p) {
 }
 
 const salas = [
-  { nome: 'apartamento', query: `apartment=me` },
+  { nome: 'apartamento', query: `apartment=me`, mobiliado: true },
   { nome: 'saguão', query: `scene=residential_lobby` },
   { nome: 'loja', query: `scene=stream_store` },
   { nome: 'agência', query: `scene=agency_tower` },
@@ -87,17 +100,35 @@ for (const sala of salas) {
     check('a chegada é dentro da planta', !outside(area, s0.player),
       `(${s0.player.x.toFixed(2)}, ${s0.player.z.toFixed(2)})`);
 
+    const moveis = s0.collision?.furniture ?? [];
+    if (sala.mobiliado) {
+      check('o preditor conhece a mobília do dono', moveis.length > 0, `${moveis.length} obstáculos`);
+      check('e a chegada não é dentro de um móvel', !insideAny(moveis, s0.player));
+    }
+
     let pior = null;
+    let dentroDeMovel = null;
     for (const key of ['KeyW', 'KeyA', 'KeyS', 'KeyD']) {
       await page.keyboard.down(key);
-      await page.waitForTimeout(HOLD_MS);
+      // Amostrado DURANTE a caminhada, e não só no fim: atravessar um sofá e
+      // sair do outro lado deixa a posição final impecável.
+      for (let i = 0; i < 4; i++) {
+        await page.waitForTimeout(HOLD_MS / 4);
+        const p = (await stats()).player;
+        if (outside(area, p)) pior = { key, p };
+        if (insideAny(moveis, p)) dentroDeMovel = { key, p };
+      }
       await page.keyboard.up(key);
-      await page.waitForTimeout(400);
-      const p = (await stats()).player;
-      if (outside(area, p)) pior = { key, p };
+      await page.waitForTimeout(300);
     }
     check('andar em toda direção não atravessa a parede', pior === null,
       pior ? `${pior.key} levou a (${pior.p.x.toFixed(2)}, ${pior.p.z.toFixed(2)})` : '');
+    if (sala.mobiliado) {
+      check('nem entra dentro de um móvel', dentroDeMovel === null,
+        dentroDeMovel
+          ? `${dentroDeMovel.key} levou a (${dentroDeMovel.p.x.toFixed(2)}, ${dentroDeMovel.p.z.toFixed(2)})`
+          : '');
+    }
     if (errs.length) check('sem erro de página', false, errs[0]);
   } catch (err) {
     check(`${sala.nome} abriu`, false, String(err).slice(0, 120));

@@ -1,5 +1,6 @@
 import { PLAZA } from './layout.js';
-import { INTERIORS, type Fixture, type SceneLayout } from './interiors.js';
+import { HOME_BOUNDS, INTERIORS, type Fixture, type SceneLayout } from './interiors.js';
+import { PLACEABLES, placementFits, type HomePlacement } from './placeables.js';
 import type { SceneId } from './types.js';
 
 /**
@@ -224,6 +225,47 @@ export const SCENE_AREA: Partial<Record<SceneId, Area>> = {
   stream_store: interiorArea('stream_store'),
   agency_tower: interiorArea('agency_tower'),
 };
+
+/**
+ * Blockers a DECORATED room contributes, on top of its layout's own.
+ *
+ * Mora aqui, e não na cena, porque a mobília que o jogador colocou é chão
+ * ocupado igual à que veio com a planta — e três lados precisam da mesma
+ * resposta: a sala (que decide), o preditor do cliente (que prevê) e a cena
+ * (que desenha e resolve o modo offline). Enquanto esta conta existia só
+ * dentro de `InteriorScene`, o servidor não sabia do sofá do jogador e o
+ * apartamento decorado era um cômodo vazio para quem andava nele.
+ *
+ * Tapete e quadro continuam atravessáveis: só o que declara `hw` E fica no
+ * CHÃO ocupa espaço. A meia-volta ímpar troca as meias-extensões, exatamente
+ * como em `placementFits` — se as duas contas divergirem, o servidor recusa
+ * uma colocação que ele mesmo desenha.
+ *
+ * Peça que não cabe na sala não vira obstáculo. Isso não é zelo: as medidas
+ * que valeram até agora deixavam arrastar um sofá para DENTRO da parede leste
+ * (ver `HOME_BOUNDS`), e um caroço dentro da parede não é chão ocupado, é
+ * armadilha. O filtro mora AQUI, e não em quem chama, porque servidor, preditor
+ * e cena precisam descartar exatamente as mesmas peças — um filtro copiado é o
+ * mesmo desencontro que esta função existe para acabar.
+ */
+export function placementColliders(list: readonly HomePlacement[]): Collider[] {
+  const out: Collider[] = [];
+  for (const p of list) {
+    const def = PLACEABLES[p.itemId];
+    if (!def || def.hw === undefined || def.mount !== 'floor') continue;
+    if (!placementFits(p, HOME_BOUNDS)) continue;
+    const even = p.turn % 2 === 0;
+    out.push({
+      kind: 'rect',
+      x: p.x,
+      z: p.z,
+      hw: even ? def.hw : (def.hd ?? def.hw),
+      hd: even ? (def.hd ?? def.hw) : def.hw,
+      ry: 0,
+    });
+  }
+  return out;
+}
 
 /**
  * Spawn markers per scene, in one place because two authorities need them: the

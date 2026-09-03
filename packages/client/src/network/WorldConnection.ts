@@ -5,12 +5,15 @@ import {
   SCENE_AREA,
   SCENE_COLLIDERS,
   TICK_MS,
+  placementColliders,
   type AnimState,
   type Area,
   type ChatMessage,
+  type Collider,
   type FollowEvent,
   type GiftEvent,
   type LikeTotals,
+  type HomePlacement,
   type MoveCorrection,
   type PKResult,
   type SceneId,
@@ -19,7 +22,9 @@ import {
 } from '@streampolis/shared';
 import { RemoteBuffer } from './Interpolation.js';
 import { Predictor } from './Predictor.js';
-import type { LiveStateView, PlayerView, RenderPose, WorldStateView } from './types.js';
+import type {
+  ApartmentStateView, LiveStateView, PlayerView, RenderPose, WorldStateView,
+} from './types.js';
 
 export interface WorldEvents {
   chat: (message: ChatMessage) => void;
@@ -75,6 +80,10 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   readonly predictor: Predictor;
   /** Cena cuja planta o preditor está usando agora. Ver `adoptScene`. */
   private scene: SceneId = 'central_plaza';
+  /** Mobília que a SALA publicou. Some com ela no preditor e o sofá é fumaça. */
+  private decor: HomePlacement[] = [];
+  /** Assinatura da mobília: um patch por movimento não pode remontar a mesa. */
+  private decorSignature = '';
   /**
    * Resolve no primeiro patch de estado.
    *
@@ -136,10 +145,41 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   private adoptScene(sceneId: SceneId): void {
     if (sceneId === this.scene) return;
     this.scene = sceneId;
+    this.applyPlan();
+  }
+
+  /**
+   * A mobília que o DONO pôs, vinda da sala.
+   *
+   * Chega no estado, e não pela API, porque colidir e desenhar são perguntas
+   * diferentes: o navegador lê `/homes/:id` para DESENHAR (e o modo de
+   * construção mexe num rascunho que ainda não é verdade), mas a mesa de
+   * colisão do preditor precisa ser a MESMA da sala. Enquanto ela não era, o
+   * jogador atravessava o próprio sofá — o servidor resolvia o movimento num
+   * apartamento vazio e nunca discordava, porque correção só sai quando ELE
+   * recusa alguma coisa.
+   */
+  private adoptDecor(state: WorldStateView): void {
+    const list = (state as Partial<ApartmentStateView>).decor;
+    if (!list) return;
+    const next: HomePlacement[] = [];
+    let signature = '';
+    for (const p of list) {
+      next.push({ itemId: p.itemId, x: p.x, z: p.z, turn: p.turn });
+      signature += `${p.itemId}@${p.x},${p.z}/${p.turn};`;
+    }
+    if (signature === this.decorSignature) return;
+    this.decorSignature = signature;
+    this.decor = next;
+    this.applyPlan();
+  }
+
+  /** A planta que o preditor usa: a da cena MAIS a mobília desta casa. */
+  private applyPlan(): void {
     this.predictor.setArea(
-      PLAY_AREA[sceneId],
-      SCENE_COLLIDERS[sceneId],
-      SCENE_AREA[sceneId] ?? null,
+      PLAY_AREA[this.scene],
+      [...SCENE_COLLIDERS[this.scene], ...placementColliders(this.decor)],
+      SCENE_AREA[this.scene] ?? null,
     );
   }
 
@@ -155,8 +195,16 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
    * que eu colido" não tem sintoma nenhum até o jogador andar — e aí ele
    * atravessa uma parede. `tools/room-walls-check.mjs` compara as duas.
    */
-  get collision(): { scene: SceneId; area: Area | null } {
-    return { scene: this.scene, area: SCENE_AREA[this.scene] ?? null };
+  get collision(): { scene: SceneId; area: Area | null; furniture: Collider[] } {
+    return {
+      scene: this.scene,
+      area: SCENE_AREA[this.scene] ?? null,
+      // Os obstáculos que a MOBÍLIA do dono acrescenta. Publicados inteiros, e
+      // não contados, porque a pergunta que a ferramenta faz é "o jogador
+      // chegou a ficar DENTRO de um deles?" — e para isso é preciso saber onde
+      // eles estão. São poucas dezenas, e só quem abre o painel de depuração lê.
+      furniture: placementColliders(this.decor),
+    };
   }
 
   get state(): S {
@@ -195,6 +243,7 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
       // Antes de qualquer previsão: em que cena esta sala está. O primeiro
       // patch é quem responde, e é ele quem dá a mesa de colisão ao preditor.
       this.adoptScene(state.sceneId ?? 'central_plaza');
+      this.adoptDecor(state);
       const now = performance.now();
       state.players?.forEach((player, sessionId) => {
         if (sessionId === this.room.sessionId) {
@@ -222,6 +271,19 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
 
     this.room.onLeave((code) => { this.disposed = true; this.emit('left', code); });
     this.room.onError((code, message) => this.emit('error', code, message));
+  }
+
+  /**
+   * "Redecorei": a sala que releia a planta na API.
+   *
+   * O navegador não manda os móveis. Quem confere posse, encaixe e sobreposição
+   * é a API (SPECs §68 regra 6), e a sala vai buscar lá — este aviso só diz
+   * QUANDO. Sem ele, quem acabasse de arrastar o sofá continuaria atravessando
+   * o lugar velho dele até sair e voltar.
+   */
+  redecorated(): void {
+    if (this.disposed) return;
+    this.room.send(MSG.redecorate, {});
   }
 
   /**

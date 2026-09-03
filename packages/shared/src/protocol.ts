@@ -241,6 +241,13 @@ export const MSG = {
    * assinada, como no join — o navegador nunca manda `avatar`.
    */
   restyle: 'restyle',
+  /**
+   * "Acabei de redecorar": o DONO avisa que a planta da casa mudou, e a sala
+   * relê a lista na API. O navegador não manda os móveis — ele nunca mandou, e
+   * não é por descuido: quem decide onde o sofá cabe é a API, que confere posse
+   * e sobreposição (SPECs §68). O aviso é só isto: vá perguntar de novo.
+   */
+  redecorate: 'redecorate',
   // server -> client
   correction: 'correction',
   chatMessage: 'chatMessage',

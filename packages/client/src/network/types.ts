@@ -30,11 +30,36 @@ export interface PlayerView {
   avatar: AvatarConfig;
 }
 
+export interface ListLike<V> extends Iterable<V> {
+  readonly length: number;
+}
+
 export interface WorldStateView {
   sceneId: SceneId;
   shard: string;
   tick: number;
   players: MapLike<PlayerView>;
+}
+
+/** Um móvel colocado pelo dono, como a SALA o publica (schema `PlacedItem`). */
+export interface PlacedItemView {
+  itemId: string;
+  x: number;
+  z: number;
+  turn: number;
+}
+
+/**
+ * O apartamento. A mobília chega por aqui — e não pela API — para uma coisa
+ * só: COLIDIR. Quem desenha continua lendo `/homes/:id`, porque o modo de
+ * construção mexe numa lista de rascunho que ainda não é verdade nenhuma; mas
+ * a mesa de colisão do preditor tem de ser a mesma da sala, ou o jogador
+ * atravessa o próprio sofá de um lado e bate nele do outro.
+ */
+export interface ApartmentStateView extends WorldStateView {
+  ownerId: string;
+  ownerName: string;
+  decor: ListLike<PlacedItemView>;
 }
 
 export interface PKView {

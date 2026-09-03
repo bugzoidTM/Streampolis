@@ -1,6 +1,6 @@
 import { pool } from '../db/pool.ts';
 import { withTransaction } from '../db/tx.ts';
-import { PLACEABLES, placementFits, placementsOverlap, type HomePlacement } from '../shared.ts';
+import { HOME_BOUNDS, PLACEABLES, placementFits, placementsOverlap, type HomePlacement } from '../shared.ts';
 
 /**
  * Apartamentos (PRD §8).
@@ -26,8 +26,13 @@ export interface HomeSnapshot {
   decor: HomePlacement[];
 }
 
-/** Metade da largura/profundidade da planta, para validar colocação. */
-export const ROOM_BOUNDS = { halfW: 4.4, halfD: 3.4 };
+/**
+ * Metade da largura/profundidade da planta, para validar colocação.
+ *
+ * Vem de `shared`, derivada do próprio desenho do apartamento: a medida
+ * escrita à mão aqui descrevia uma sala que não existe (ver `HOME_BOUNDS`).
+ */
+export const ROOM_BOUNDS = HOME_BOUNDS;
 
 interface HomeRow {
   id: string;

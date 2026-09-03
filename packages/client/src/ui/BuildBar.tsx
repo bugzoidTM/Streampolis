@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ITEM_CATALOG, PLACEABLES, type HomePlacement } from '@streampolis/shared';
+import { HOME_BOUNDS, ITEM_CATALOG, PLACEABLES, type HomePlacement } from '@streampolis/shared';
 import { BuildMode } from '../game/BuildMode.js';
 import type { World } from '../game/World.js';
 import { useAccountStore } from '../state/useAccountStore.js';
@@ -74,7 +74,7 @@ export function BuildBar({ world, apartmentId }: BuildBarProps) {
       canvas: target.canvas,
       camera: target.camera,
       scene: target.scene,
-      bounds: { halfW: 4.4, halfD: 3.4 },
+      bounds: HOME_BOUNDS,
       onChange: (list, selected) => setDraft({ list, selected }),
     });
     mode.load(draft.list);
@@ -106,6 +106,10 @@ export function BuildBar({ world, apartmentId }: BuildBarProps) {
       setSaved(home.decor);
       setStatus('Salvo');
       world?.applyHomeLayout(home.decor);
+      // A sala ainda tem a planta de antes na mão. Avisar é o que faz o sofá
+      // novo virar obstáculo agora, e não só na próxima vez que se entra em
+      // casa — o aviso não LEVA os móveis, ele manda a sala reler da API.
+      world?.redecorated();
     } catch (err) {
       // The server refuses for reasons the client already checks, so this is
       // a real disagreement and worth showing verbatim rather than "erro".

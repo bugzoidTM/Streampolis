@@ -14,5 +14,6 @@
  * do índice.
  */
 export * from '../../shared/src/placeables.ts';
+export { HOME_BOUNDS } from '../../shared/src/interiors.ts';
 export { ITEM_CATALOG, BODY_ITEM } from '../../shared/src/items.ts';
 export type { ItemDef, ItemType } from '../../shared/src/items.ts';

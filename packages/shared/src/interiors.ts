@@ -1,5 +1,6 @@
 import type { SceneId } from './types.js';
 import type { Placement } from './layout.js';
+import type { RoomBounds } from './placeables.js';
 
 /**
  * Interior layouts as DATA, for the same reason `layout.ts` exists: the server
@@ -449,6 +450,26 @@ function deskRow(x0: number, z: number, count: number, pitch: number, ry: number
 }
 
 /** Every scene that is a room. The plaza is authored in `layout.ts` instead. */
+/**
+ * Até onde um móvel pode ir dentro do apartamento.
+ *
+ * Derivado da PLANTA, e não escrito à mão. Escrito à mão estava, do lado da
+ * API — `halfW 4,4`, `halfD 3,4` — e não descrevia sala nenhuma: o estúdio tem
+ * 7,2 × 8,4, isto é, 3,6 de meia-largura por 4,2 de meia-profundidade. As duas
+ * metades erravam, para lados opostos, e as duas apareciam: dava para arrastar
+ * o sofá 80 cm ATRAVÉS da parede leste, e não dava para encostar nada no metro
+ * final do quarto, onde fica a cama. Enquanto a mobília era só desenho isso
+ * era feiúra; virando colisão, um sofá dentro da parede vira caroço no caminho.
+ *
+ * Mora aqui, junto do desenho de que sai, e não em `placeables.ts`: aquele
+ * arquivo é importado pela API, que roda TypeScript cru no Node e não resolve
+ * `import` de VALOR entre módulos compartilhados (ver `packages/api/src/shared.ts`).
+ */
+export const HOME_BOUNDS: RoomBounds = {
+  halfW: APARTMENT.shell.width / 2,
+  halfD: APARTMENT.shell.depth / 2,
+};
+
 export const INTERIORS: Partial<Record<SceneId, SceneLayout>> = {
   apartment: APARTMENT,
   live_room: LIVE_ROOM,

@@ -1,10 +1,13 @@
 import { ServerError, type Client } from '@colyseus/core';
-import { ITEM_BY_ID, type SceneId } from '../shared.js';
+import {
+  MSG, PLACEABLES, SCENE_COLLIDERS, placementColliders,
+  type Collider, type HomePlacement, type SceneId,
+} from '../shared.js';
 import { AuthError, type AuthIdentity } from '../auth/AuthProvider.js';
 import { defaultApiGateway, type ApiGateway, type HomeSnapshot } from '../api/ApiGateway.js';
 import { config } from '../config.js';
 import { BaseWorldRoom, type RoomCreateOptions } from './BaseWorldRoom.js';
-import { ApartmentState, type RoomRole } from './schema.js';
+import { ApartmentState, PlacedItem, type RoomRole } from './schema.js';
 
 /**
  * What the browser may say to enter a home: WHICH home.
@@ -53,12 +56,59 @@ export class ApartmentRoom extends BaseWorldRoom<ApartmentState> {
 
     this.state.ownerId = home.ownerId;
     this.state.ownerName = home.ownerName;
-    for (const id of home.decor) {
-      // Unknown ids are dropped rather than rendered: the client has no mesh
-      // for an item this build does not ship.
-      if (ITEM_BY_ID.has(id)) this.state.decor.push(id);
-    }
+    this.publishDecor(home.decor);
     this.setMetadata({ sceneId: this.sceneId, apartmentId, ownerId: home.ownerId });
+  }
+
+  /**
+   * A mobília do dono, como ESTADO da sala.
+   *
+   * Ela chega da API com posição — foi para isso que `getHome` passou a
+   * carregar `HomePlacement` inteiro em vez de uma lista de ids. Publicá-la no
+   * estado é o que dá a MESMA mesa de colisão às duas autoridades: o preditor
+   * do cliente lê daqui e o `colliders()` abaixo lê da mesma lista. Ler a
+   * decoração pela API no navegador serve para DESENHAR; para colidir, a
+   * palavra é da sala.
+   *
+   * Peça que este build não conhece é descartada, e não desenhada torta: sem
+   * `PLACEABLES` não há nem geometria nem meia-extensão para ela.
+   */
+  private publishDecor(list: readonly HomePlacement[]): void {
+    this.state.decor.splice(0, this.state.decor.length);
+    for (const p of list) {
+      if (!PLACEABLES[p.itemId]) continue;
+      this.state.decor.push(new PlacedItem().apply(p));
+    }
+  }
+
+  /** A planta do estúdio MAIS a mobília que o dono pôs nele. */
+  protected override colliders(): readonly Collider[] {
+    return [...SCENE_COLLIDERS[this.sceneId], ...placementColliders([...this.state.decor])];
+  }
+
+  protected override onRoomCreated(options: RoomCreateOptions): void {
+    super.onRoomCreated(options);
+    // "Redecorei": o dono avisa, a sala RELÊ da API. O navegador não manda os
+    // móveis — quem confere posse, encaixe e sobreposição é a API (SPECs §68),
+    // e uma sala que aceitasse a lista do cliente seria uma sala em que o sofá
+    // vai para dentro da parede porque o cliente disse que vai.
+    this.onMessage(MSG.redecorate, (client) => {
+      void this.reloadDecor(client);
+    });
+  }
+
+  private async reloadDecor(client: Client): Promise<void> {
+    const home = this.home;
+    const identity = this.identityOf(client);
+    if (!home || !identity || identity.userId !== home.ownerId) return;
+
+    const fresh = await this.api.getHome(home.apartmentId);
+    // API fora do ar: a mobília de antes continua valendo. Esvaziar a sala
+    // porque uma chamada falhou seria transformar um erro de rede em mudança.
+    if (!fresh) return;
+    this.home = fresh;
+    this.publishDecor(fresh.decor);
+    this.refreshColliders();
   }
 
   /**

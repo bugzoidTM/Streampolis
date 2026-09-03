@@ -669,6 +669,17 @@ export class World {
     return true;
   }
 
+  /**
+   * Avisa a SALA de que a planta da casa mudou, para ela reler da API.
+   *
+   * Separado de `applyHomeLayout` de propósito: aquele é o desenho (e roda
+   * também com o rascunho do modo de construção, que ainda não é verdade
+   * nenhuma); este é a colisão, e só depois de a API ter aceitado.
+   */
+  redecorated(): void {
+    this.connection?.redecorated();
+  }
+
   /** Handles build mode needs to drive picking against this world. */
   get editable(): { canvas: HTMLCanvasElement; camera: THREE.Camera; scene: InteriorScene } | null {
     const scene = this.scene;

@@ -226,6 +226,17 @@ solver, o jogador atravessa a fonte de um lado e bate nela do outro. As
 posições dos props vêm de `packages/shared/src/layout.ts` pelo mesmo motivo: a
 cena desenha a partir da tabela de onde os colliders são gerados.
 
+A mobília que o JOGADOR colocou é chão ocupado igual à que veio com a planta,
+e por isso `placementColliders()` também mora lá. A sala publica a decoração no
+estado (`ApartmentState.decor`, com posição — era uma lista de ids, e uma lista
+de ids não vira colisão nenhuma), o servidor soma isso à mesa da cena e o
+preditor do cliente lê a MESMA lista do mesmo estado. Ler `/homes/:id` no
+navegador continua servindo para DESENHAR — inclusive o rascunho do modo de
+construção, que ainda não é verdade. Quando o dono salva, ele manda
+`redecorate`: um aviso, não uma lista. Quem confere posse, encaixe e
+sobreposição é a API, e a sala vai reler lá. `npm run e2e:decor` prova o
+conjunto sem navegador — inclusive que o aviso de um VISITANTE não mexe em nada.
+
 Uma tabela só não basta: é preciso pegar a tabela DA CENA CERTA. O preditor do
 cliente escolhia a dele no construtor de `WorldConnection`, antes do primeiro
 patch — quando `room.state.sceneId` ainda é o default do schema. Ele previa a

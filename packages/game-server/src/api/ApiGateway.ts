@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import type { PKResult, PresenceSnapshot } from '../shared.js';
+import type { HomePlacement, PKResult, PresenceSnapshot } from '../shared.js';
 
 /**
  * Boundary with packages/api for everything that is NOT money (that one has its
@@ -22,7 +22,13 @@ export interface HomeSnapshot {
   ownerName: string;
   layoutId: string;
   visibility: HomeVisibility;
-  decor: string[];
+  /**
+   * Móveis colocados, COM posição. Já era isto que `/internal/homes/:id`
+   * respondia; era este tipo que dizia `string[]` e fazia a sala tratar cada
+   * objeto como se fosse um id — nenhum casava com o catálogo, e a decoração
+   * chegava vazia do lado do servidor.
+   */
+  decor: HomePlacement[];
 }
 
 export interface OpenLiveInput {

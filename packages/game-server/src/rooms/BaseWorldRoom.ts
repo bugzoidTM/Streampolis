@@ -7,6 +7,7 @@ import {
   TICK_MS,
   type AnimState,
   type ChatMessage,
+  type Collider,
   type MoveCorrection,
   type PresenceKind,
   type SceneId,
@@ -86,6 +87,33 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
   /** Hook for subclasses; runs after state, tick loop and handlers are up. */
   protected onRoomCreated(_options: RoomCreateOptions): void {}
 
+  /**
+   * Onde não se pisa nesta sala.
+   *
+   * O default é a planta da cena e nada mais. O apartamento soma a mobília que
+   * o DONO colocou: ela é chão ocupado igual à que veio com a planta, e sem
+   * isto o servidor resolvia o movimento num cômodo vazio enquanto o jogador
+   * via um cômodo cheio.
+   */
+  protected colliders(): readonly Collider[] {
+    return SCENE_COLLIDERS[this.sceneId];
+  }
+
+  /**
+   * Reapresenta a mesa de colisão a quem já está dentro.
+   *
+   * Chamado quando a sala MUDA de mobília no meio da sessão. Quem estiver
+   * dentro do móvel novo é empurrado para fora no primeiro passo, pelo solver
+   * de sempre — não há teleporte aqui.
+   */
+  protected refreshColliders(): void {
+    const colliders = this.colliders();
+    const area = SCENE_AREA[this.sceneId] ?? null;
+    for (const session of this.sessions.values()) {
+      session.movement.setArea(PLAY_AREA[this.sceneId], colliders, area);
+    }
+  }
+
   override async onAuth(_client: Client, options: WorldJoinOptions): Promise<AuthIdentity> {
     try {
       return await this.auth.authenticate(options?.token ?? '');
@@ -117,7 +145,7 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
         spawn,
         PLAY_AREA[this.sceneId],
         Date.now,
-        SCENE_COLLIDERS[this.sceneId],
+        this.colliders(),
         SCENE_AREA[this.sceneId] ?? null,
       ),
       lastEmoteAt: 0,

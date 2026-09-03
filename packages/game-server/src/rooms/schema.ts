@@ -1,5 +1,5 @@
 import { ArraySchema, MapSchema, Schema, type } from '@colyseus/schema';
-import type { AnimState, AvatarConfig, PKPhase, SceneId } from '../shared.js';
+import type { AnimState, AvatarConfig, HomePlacement, PKPhase, SceneId } from '../shared.js';
 
 /**
  * Synchronised state (SPECs §19). Two rules shape everything here:
@@ -93,11 +93,35 @@ export class WorldState extends Schema {
   @type('uint32') tick = 0;
 }
 
+/**
+ * Um móvel colocado pelo dono, COM onde ele está (PRD §8).
+ *
+ * Antes isto era uma lista de ids, e a consequência não era estética: sem
+ * posição, a sala não tinha como transformar a mobília em colisão, então o
+ * servidor resolvia o movimento num apartamento VAZIO enquanto o jogador via
+ * um cômodo mobiliado. Quem decorava atravessava o próprio sofá.
+ */
+export class PlacedItem extends Schema {
+  @type('string') itemId = '';
+  @type('float32') x = 0;
+  @type('float32') z = 0;
+  /** 0..3, quartos de volta — a mesma unidade do `HomePlacement` (SPECs §68). */
+  @type('uint8') turn = 0;
+
+  apply(p: HomePlacement): this {
+    this.itemId = p.itemId;
+    this.x = p.x;
+    this.z = p.z;
+    this.turn = p.turn;
+    return this;
+  }
+}
+
 export class ApartmentState extends WorldState {
   @type('string') ownerId = '';
   @type('string') ownerName = '';
-  /** Item ids placed by the owner, in placement order (PRD §8). */
-  @type(['string']) decor = new ArraySchema<string>();
+  /** Móveis colocados pelo dono, na ordem em que foram postos (PRD §8). */
+  @type([PlacedItem]) decor = new ArraySchema<PlacedItem>();
 }
 
 /**
