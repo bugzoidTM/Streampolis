@@ -207,6 +207,66 @@ export function facadeBuilding(lib: MatLib, opts: BuildingOpts): Prop {
 }
 
 /**
+ * Quarteirão de bairro: a cidade que se vê PELOS VÃOS do anel da praça.
+ *
+ * Entre a fachada detalhada e a silhueta pura falta um degrau, e é ele que dá
+ * profundidade: a trinta metros de distância um caixilho de janela tem menos de
+ * um pixel, mas a FAIXA de vidro de cada andar continua legível — é ela que
+ * separa "prédio" de "caixa". Então aqui a janela é uma faixa por andar, e não
+ * uma grade de aberturas: um quarteirão custa uma dúzia de geometrias em vez de
+ * centenas, e a diferença some antes dos vinte metros.
+ *
+ * Autorado olhando para +Z, origem no chão, como `facadeBuilding`.
+ */
+export function cityBlock(lib: MatLib, opts: BuildingOpts): Prop {
+  const { width: W, depth: D, floors, style, seed } = opts;
+  const rnd = mulberry32(seed * 2246822519);
+  const H = GROUND_H + floors * FLOOR_H;
+  const front = D / 2;
+
+  const wall = [place(box(W, H, D), 0, H / 2, 0)];
+  const trim = [
+    place(box(W + 0.3, 0.4, D + 0.3), 0, H + 0.2, 0),          // coroamento
+    place(box(W + 0.16, 0.45, D + 0.16), 0, GROUND_H - 0.1, 0), // marquise do térreo
+  ];
+  const glass: THREE.BufferGeometry[] = [];
+
+  // Recuo do último terço em metade dos casos: uma rua inteira com a mesma
+  // altura de platibanda lê como muro, não como quarteirão.
+  if (floors > 4 && rnd() > 0.5) {
+    const setback = 0.62 + rnd() * 0.16;
+    const extra = (1 + Math.floor(rnd() * 3)) * FLOOR_H;
+    wall.push(place(box(W * setback, extra, D * setback), 0, H + extra / 2, 0));
+    trim.push(place(box(W * setback + 0.24, 0.34, D * setback + 0.24), 0, H + extra + 0.17, 0));
+  }
+
+  const band = (y: number, h: number) => {
+    for (const [w, d, ry] of [[W - 1.0, front + 0.05, 0], [D - 1.0, W / 2 + 0.05, Math.PI / 2]] as const) {
+      const pane = new THREE.PlaneGeometry(w, h);
+      if (ry) pane.rotateY(ry);
+      glass.push(place(pane, ry ? d : 0, y, ry ? 0 : d));
+    }
+  };
+  for (let f = 0; f < floors; f++) {
+    band(GROUND_H + f * FLOOR_H + FLOOR_H * 0.52, style === 'tower' ? FLOOR_H * 0.72 : 1.5);
+  }
+  band(0.62 + 1.3, 2.6); // vitrine do térreo
+
+  const wallGeo = merge(wall);
+  boxUV(wallGeo, style === 'townhouse' ? 2.4 : 3.0);
+  const trimGeo = merge(trim);
+  boxUV(trimGeo, 1.2);
+  return [
+    {
+      geo: wallGeo,
+      mat: style === 'townhouse' ? lib.brick(opts.wallTint ?? '#9c5340') : lib.plaster(opts.wallTint ?? '#cfc7ba'),
+    },
+    { geo: trimGeo, mat: lib.concrete('#cdc7bc') },
+    { geo: merge(glass), mat: lib.glass(style === 'tower' ? 0x24384a : 0x1b2733), cast: false },
+  ];
+}
+
+/**
  * Distant filler blocks: silhouettes only, no windows, no shadow casting.
  * They exist to close the skyline above the perimeter roofline.
  */

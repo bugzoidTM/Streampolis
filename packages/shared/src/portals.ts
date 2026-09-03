@@ -35,7 +35,12 @@ export interface Portal {
 const TAU = Math.PI * 2;
 
 /** Uma porta na praça, colocada a `radius` metros do centro num ângulo. */
-const onPlaza = (id: string, to: SceneId, label: string, angle: number, radius = 22): Portal => ({
+/**
+ * `radius` acompanha o disco andável: com a praça a 40 m, portas a 22 m ficavam
+ * no meio do caminho, longe de qualquer fachada — uma porta tem de estar ONDE
+ * está o prédio a que ela leva.
+ */
+const onPlaza = (id: string, to: SceneId, label: string, angle: number, radius = 34): Portal => ({
   id, to, label,
   x: Math.cos(angle) * radius,
   z: Math.sin(angle) * radius,

@@ -7,7 +7,7 @@ import { GOLDEN_HOUR } from '../Environment.js';
 import {
   bakeProps, boxUV, disposeProp, instanceProp, ringSlab, singleProp, xform, type Prop,
 } from '../props/Geometry.js';
-import { facadeBuilding } from '../props/Buildings.js';
+import { backdropBlock, cityBlock, facadeBuilding } from '../props/Buildings.js';
 import { VideoWall } from '../props/Screen.js';
 import {
   awning, banner, bench, bollard, flowerBush, fountain, kiosk, lampPost, litterBin, palm, planter, shrub, stairRing, tree,
@@ -97,6 +97,7 @@ export class PlazaScene extends SceneBase {
     this.buildFurniture();
     this.buildGreenery();
     this.buildPerimeter();
+    this.buildOutskirts();
     this.buildScreen();
 
     // The spawn markers ARE the server's: shared table, one ring, no drift. A
@@ -139,7 +140,9 @@ export class PlazaScene extends SceneBase {
   private buildGround(): void {
     // Two discs instead of one: the pavement reads as a designed square and the
     // asphalt beyond it keeps the horizon from ending in void under the fog.
-    const outer = new THREE.CircleGeometry(120, 8);
+    // O asfalto tem de chegar mais longe do que o horizonte construído, ou os
+    // últimos quarteirões ficam pousados no vazio.
+    const outer = new THREE.CircleGeometry(300, 10);
     const asphalt = new THREE.Mesh(outer, this.mats.asphalt());
     asphalt.rotation.x = -Math.PI / 2;
     asphalt.position.y = -0.04;
@@ -158,6 +161,45 @@ export class PlazaScene extends SceneBase {
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.add(floor);
+
+    // Caminhos radiais: uma faixa de pedra mais clara do adro até a borda,
+    // apontando para as portas. Custam seis quads e são o que impede o
+    // calçamento novo de ler como um pátio — e são desenho, não colisão:
+    // atravessar um caminho a pé tem de ser possível.
+    const pathMat = this.mats.paving('#c3bbac', '#8f8778', 0.2);
+    const pathLen = PLAZA.radius + 2.5 - PLAZA.apron;
+    for (const angle of PLAZA.paths) {
+      const strip = new THREE.PlaneGeometry(3.4, pathLen);
+      boxUV(strip, this.lib ? 4.0 : 1.6);
+      const mesh = new THREE.Mesh(strip, pathMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.rotation.z = -angle;
+      mesh.position.set(
+        Math.cos(angle) * (PLAZA.apron + pathLen / 2),
+        0.012,
+        Math.sin(angle) * (PLAZA.apron + pathLen / 2),
+      );
+      mesh.receiveShadow = true;
+      this.add(mesh);
+    }
+
+    // E a RUA, saindo pela boca aberta no anel de fachadas: o caminho de pedra
+    // vira asfalto na borda da praça e segue por entre os quarteirões. Sem
+    // ela, a fatia vazia do anel é um buraco na fileira; com ela, é uma rua —
+    // e é a rua que faz a cidade continuar em vez de acabar.
+    const streetMat = this.mats.asphalt();
+    for (const angle of PLAZA.paths.slice(0, 3)) {
+      const len = 58;
+      const strip = new THREE.PlaneGeometry(10, len);
+      boxUV(strip, 6);
+      const mesh = new THREE.Mesh(strip, streetMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.rotation.z = -angle;
+      const mid = PLAZA.radius + 2.5 + len / 2;
+      mesh.position.set(Math.cos(angle) * mid, 0.008, Math.sin(angle) * mid);
+      mesh.receiveShadow = true;
+      this.add(mesh);
+    }
 
     // Inner apron. Kept close in value to the pavement and finished with a
     // stone kerb: a disc that contrasts reads as a stain on the ground, not as
@@ -351,6 +393,38 @@ export class PlazaScene extends SceneBase {
     this.add(singleProp(baked));
     for (const s of stamps) disposeProp(s);
     this.stamps.push(baked);
+  }
+
+  /**
+   * A cidade além do anel: bairros pelos vãos e horizonte ao fundo.
+   *
+   * Assada em UM prop por camada. São sessenta e oito volumes a mais e menos de
+   * dez chamadas de desenho, porque o que custa numa cidade de fundo não é o
+   * número de prédios — é o número de materiais.
+   */
+  private buildOutskirts(): void {
+    const tints = ['#c9a184', '#d8bc94', '#b4a894', '#a8b3a2', '#c98f70', '#bcae9c'];
+    const blocks = PLAZA.districts.map((b, i) => {
+      const prop = cityBlock(this.mats, {
+        width: b.width, depth: b.depth, floors: b.floors, style: b.style, seed: b.seed,
+        wallTint: tints[(i * 5) % tints.length],
+      });
+      return { prop, matrix: xform(b.x, 0, b.z, b.ry) };
+    });
+    const bakedBlocks = bakeProps(blocks);
+    this.add(singleProp(bakedBlocks));
+    for (const b of blocks) disposeProp(b.prop);
+    this.stamps.push(bakedBlocks);
+
+    const far = PLAZA.skyline.map((b) => {
+      // `floors` é altura em metros no horizonte (ver `skylineRing`).
+      const prop = backdropBlock(this.mats, b.width, b.floors, b.depth, b.seed);
+      return { prop, matrix: xform(b.x, 0, b.z, b.ry) };
+    });
+    const bakedFar = bakeProps(far);
+    this.add(singleProp(bakedFar));
+    for (const b of far) disposeProp(b.prop);
+    this.stamps.push(bakedFar);
   }
 
   /** The plaza's live billboard (PRD §6): the feed, visible from the ground. */

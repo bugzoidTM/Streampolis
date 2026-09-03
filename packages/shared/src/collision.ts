@@ -279,8 +279,10 @@ function plazaSpawns(): SpawnPoint[] {
   const out: SpawnPoint[] = [];
   for (let i = 0; i < 12; i++) {
     const a = i * 2.399963229728653; // ~137.5°, spreads sequential joins evenly
-    const x = Math.cos(a) * 6;
-    const z = Math.sin(a) * 6;
+    // Fora do monumento e dentro do adro: com a praça a 40 m, um anel de 6 m
+    // punha todo mundo em cima da fonte.
+    const x = Math.cos(a) * 10;
+    const z = Math.sin(a) * 10;
     out.push({ x, z, yaw: Math.atan2(-x, -z) });
   }
   return out;

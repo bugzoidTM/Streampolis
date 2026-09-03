@@ -134,7 +134,7 @@ export interface Bounds {
  * packages/client/src/game/scenes — these are conservative rectangles.
  */
 export const PLAY_AREA: Record<SceneId, Bounds> = {
-  central_plaza:     { minX: -40, maxX: 40, minZ: -40, maxZ: 40 },
+  central_plaza:     { minX: -62, maxX: 62, minZ: -62, maxZ: 62 },
   residential_lobby: { minX: -14, maxX: 14, minZ: -14, maxZ: 14 },
   apartment:         { minX: -8,  maxX: 8,  minZ: -8,  maxZ: 8 },
   stream_store:      { minX: -12, maxX: 12, minZ: -12, maxZ: 12 },
