@@ -5,6 +5,7 @@ import type { AvatarLike } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
 import { FaceV2 } from './FaceV2.js';
 import { MouthV2, type MouthState } from './MouthV2.js';
+import { isSkinMaterial, smoothNormals, smoothSkinAngle } from './SmoothSkin.js';
 import {
   characterOf, clipToBands, columnGaps, dominantBones, findAllSkinned, findSkinned,
   instantiate, LINING, loadClips, loadPart, outfitClearance, posed, rigOf, shrink,
@@ -301,6 +302,21 @@ export class AvatarV2 implements AvatarLike {
     await this.line(host, present);
     if (this.disposed) return;
 
+    // EXPERIMENTO, desligado por padrão (`?smoothskin=1`): normal suave só na
+    // pele da CABEÇA. A geometria é clonada antes porque ela vem do protótipo
+    // em cache, compartilhado com todo avatar que veste a mesma cabeça —
+    // suavizar no lugar suavizaria a praça inteira, inclusive quem está
+    // desenhando o lado A da comparação. Se um dia virar decisão, o lugar certo
+    // é o protótipo, uma vez, e não uma cópia por avatar.
+    const anguloSuave = smoothSkinAngle();
+    if (anguloSuave > 0) {
+      for (const mesh of bySlot.get('head') ?? []) {
+        if (!isSkinMaterial(mesh.material)) continue;
+        mesh.geometry = mesh.geometry.clone();
+        this.suavizados += smoothNormals(mesh.geometry, anguloSuave);
+      }
+    }
+
     this.skeleton = host.skeleton;
     // O rosto DEPOIS do tingimento: ele toma a geometria do olho para si, e o
     // tom de pele mexe em material, não em vértice — as duas coisas não se
@@ -567,13 +583,16 @@ export class AvatarV2 implements AvatarLike {
 
   private readonly origem = new Map<THREE.SkinnedMesh, string>();
 
+  /** Quantos vértices o experimento de normal suave mexeu. Zero é experimento desligado. */
+  private suavizados = 0;
+
   /** O que o rosto achou na cabeça — nulo quando não há rosto (figurante, capacete). */
   faceReport(): Record<string, unknown> | null {
     const face = this.face?.describe();
     if (!face) return null;
     // A boca junto: uma boca que não foi criada e uma boca posta atrás da pele
     // dão a mesma imagem, e é este relatório que as separa.
-    return { ...face, boca: this.mouth?.describe() ?? null };
+    return { ...face, boca: this.mouth?.describe() ?? null, suavizados: this.suavizados };
   }
 
   pinBlink(value: number | null): void {

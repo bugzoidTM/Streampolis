@@ -717,6 +717,35 @@ Duas coisas do v2 que valem para qualquer corpo comprado:
   devolve um nó vazio e adota o kit quando ele chega, guardando a animação
   pedida no meio do caminho.
 
+## Normal suave na pele da cabeça: um experimento COM interruptor
+
+`?smoothskin=0` (padrão) desenha a cabeça chapada como o pacote a entrega;
+`?smoothskin=45` suaviza só o que se encontra em ângulo raso; `?smoothskin=180`
+suaviza tudo o que ocupa o mesmo ponto. `node tools/v2-skin-ab.mjs` põe os três
+lado a lado, de frente e de três quartos, em `shots/v2-skin-ab/sheet.jpg`.
+
+O que a folha mostra, e por que a pergunta não era "suavizar ou não":
+
+- **chapado** tem uma COSTURA no meio da cara. A frente do rosto são dois
+  quadriláteros grandes com normais diferentes, e o resultado é meio rosto mais
+  escuro que o outro — não é estilo, é defeito;
+- **total** conserta a costura e come o nariz junto: a aresta que faz o nariz
+  ser um nariz vira um morro;
+- **45°** conserta a costura e mantém a aresta do nariz e a linha do queixo. É o
+  que qualquer pacote de modelagem faz, e é o que a folha recomenda.
+
+Fica DESLIGADO por padrão até alguém olhar a folha e decidir — a troca é uma
+linha. Duas notas para o dia de adotar: a suavização hoje clona a geometria POR
+AVATAR (a do protótipo é compartilhada por todo mundo que veste a mesma cabeça,
+e suavizar no lugar suavizaria a praça inteira, inclusive o lado A da
+comparação); adotando, o lugar certo é o protótipo, uma vez. E o brilho de testa
+que o rosto suave ganha é assunto do MATERIAL, não da normal.
+
+`mergeVertices` não serve para isto: ele só funde vértices iguais em todos os
+atributos, e numa malha chapada a normal é justamente o que difere — não fundiria
+nada. E se fundisse, mexeria no índice de uma malha com pele, que é onde
+`skinIndex` e `skinWeight` moram. O que se faz é reescrever SÓ a normal.
+
 ## O olho do corpo v2: um cubo escuro que virou olhar
 
 O pacote dá UM cubo escuro por olho — 2,5 cm de aresta, quase cúbico, quase todo
