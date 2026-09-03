@@ -741,12 +741,17 @@ Três coisas que a boca custou a aprender e valem para a próxima peça:
   toda animação sem uma linha por quadro; costurada na malha pediria peso de
   pele numa geometria que o pacote não tem.
 
-`npm run gate:mouth` prova as três em onze personagens, e mede o que uma captura
-não responde: os três jeitos de a boca estar errada — não criada, criada atrás
-da pele, ou solta do osso — dão a mesma imagem, um rosto sem boca. Capacete
-(astronauta, tático) não ganha boca, e é o certo: sem olho não há de onde tirar
-medida. Barba na frente da boca é dito no relatório, não reprovado — o operário
-tem bigode e a boca sai por baixo dele.
+`npm run gate:mouth` prova as três no ELENCO INTEIRO — as 21 cabeças saem do
+catálogo, não de uma lista escrita no tool, que envelheceria calada na vigésima
+segunda. Ele mede o que uma captura não responde (os três jeitos de a boca estar
+errada dão a mesma imagem, um rosto sem boca) e fotografa cada cabeça de FRENTE
+e de TRÊS QUARTOS, porque metade dos defeitos de uma peça de rosto só aparece de
+lado: de frente, uma boca meio centímetro à frente da cara ainda é uma boca; de
+três quartos, é um degrau. Sai uma folha de contato em `shots/v2-mouth/`.
+
+Capacete (astronauta, tático) não ganha boca, e é o certo: sem olho não há de
+onde tirar medida. Barba na frente da boca é dita no relatório, não reprovada —
+o rei, o operário e o aventureiro têm barba, e a boca sai por baixo dela.
 
 `window.__lab.headProfile(look)` é o instrumento que mediu tudo isso: varre o
 rosto com um feixe de RAIOS e devolve a pele em espaço da cabeça. Amostrar
