@@ -17,12 +17,13 @@
     "assets:fetch": "node tools/assets/fetch.mjs",
     "assets": "node tools/assets/fetch.mjs && node tools/assets/pass.mjs",
     "plaza:ab": "node tools/scene-ab.mjs --query=scene=central_plaza --out=shots/ab-praca",
-    "home:ab": "node tools/scene-ab.mjs --out=shots/ab-apto",
+    "home:ab": "node tools/scene-ab.mjs --query=apartment=me --out=shots/ab-apto",
     "gate:face": "node tools/v2-face.mjs",
     "gate:wardrobe": "node tools/v2-matrix.mjs",
     "gate:lining": "node tools/v2-lining.mjs",
     "gate:cards": "node tools/store-cards.mjs",
-    "gate:walls": "node tools/room-walls-check.mjs"
+    "gate:walls": "node tools/room-walls-check.mjs",
+    "gate:plan": "node tools/room-plan-check.mjs"
   },
   "engines": {
     "node": ">=22"

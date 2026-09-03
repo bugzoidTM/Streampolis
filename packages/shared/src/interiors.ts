@@ -91,67 +91,121 @@ export interface SceneLayout {
 const PI = Math.PI;
 
 // ---------------------------------------------------------------------------
-// Apartment — the studio every player starts with (PRD §14).
+// Apartment — a casa de todo jogador (PRD §14).
+//
+// Era um estúdio de 7,2 × 8,4: um corredor de 60 m² com móvel encostado nas
+// duas paredes longas e nada no meio. Dava para atravessar a casa inteira em
+// seis passos, o sofá ficava a um metro da cama, e a metade da sala que o
+// jogador MOBILIA — a razão de existir da loja e do modo de construção — era o
+// tapete entre um e outro.
+//
+// Agora são 10,4 × 11,8 (123 m², 2,05 vezes a área) com pé-direito de 3,05 m, e
+// o que mudou não foi só o número: a planta ganhou ZONAS, que é o que separa um
+// apartamento de um quarto grande. Dormir a noroeste, transmitir a nordeste,
+// receber no meio-leste, cozinhar e comer ao sul, entrar a sudoeste. Cada zona
+// encosta numa parede e as costas de uma nunca são a frente de outra.
+//
+// O MEIO fica vazio de propósito. Numa casa que o dono decora, chão livre não é
+// falta de mobília — é onde a mobília dele cabe; `HOME_BOUNDS` sai desta planta,
+// então a sala que cresce é a área de construção que cresce junto.
 // ---------------------------------------------------------------------------
 export const APARTMENT: SceneLayout = {
   shell: {
-    width: 7.2, depth: 8.4, height: 2.85, wall: 0.18, ceiling: true,
+    width: 10.4, depth: 11.8, height: 3.05, wall: 0.18, ceiling: true,
     openings: [
-      // The window is off-centre and large: a studio lit from one corner reads
-      // as a lived-in flat, a symmetric one reads as a showroom.
-      { side: 'north', x: 0.7, y: 0.95, w: 3.2, h: 1.45, glazed: true },
-      { side: 'west', x: -1.2, y: 1.0, w: 1.4, h: 1.3, glazed: true },
-      { side: 'south', x: -2.2, y: 0, w: 0.95, h: 2.1 },
+      // A luz continua entrando por UM canto (norte-oeste): um cômodo iluminado
+      // por igual não tem profundidade e parece fundo de menu. O que era uma
+      // janela de 3,2 m virou uma faixa de duas, separadas por um pilar estreito
+      // — a parede norte de 10,4 m com um buraco só no meio pareceria um erro de
+      // desenho, e é atrás desse pilar que o canto de transmissão se apoia.
+      { side: 'north', x: -2.3, y: 0.85, w: 3.8, h: 1.8, glazed: true },
+      { side: 'north', x: 2.4, y: 0.85, w: 3.4, h: 1.8, glazed: true },
+      { side: 'west', x: -2.6, y: 1.0, w: 1.8, h: 1.4, glazed: true },
+      { side: 'south', x: -2.6, y: 0, w: 1.05, h: 2.2 },
     ],
   },
   fixtures: [
-    { kind: 'bed', x: -2.45, z: -2.9, ry: PI / 2, hw: 0.7, hd: 1.05 },
-    { kind: 'rug', x: -1.75, z: 1.5, ry: PI / 2, w: 2.6, d: 1.9, tint: '#7c5f56' },
-    { kind: 'sofa', x: -3.05, z: 1.5, ry: PI / 2, hw: 0.96, hd: 0.44, w: 1.92, tint: '#46566f' },
-    { kind: 'coffee_table', x: -1.5, z: 1.5, ry: PI / 2, hw: 0.55, hd: 0.3, w: 1.1, d: 0.6 },
-    { kind: 'tv', x: 3.5, z: 1.5, ry: -PI / 2, y: 1.0, w: 1.7, h: 0.96 },
-    { kind: 'shelf', x: 3.38, z: -0.9, ry: -PI / 2, hw: 0.6, hd: 0.16, w: 1.2, h: 1.9 },
+    // --- Dormir (noroeste) -------------------------------------------------
+    { kind: 'bed', x: -4.25, z: -4.7, ry: 0, hw: 0.72, hd: 1.05, w: 1.44, d: 2.1 },
+    { kind: 'cabinet', x: -3.2, z: -5.45, ry: 0, hw: 0.3, hd: 0.22, w: 0.6, h: 0.62, d: 0.44 },
+    { kind: 'table_lamp', x: -3.2, z: -5.45, ry: 0.4, y: 0.62 },
+    { kind: 'pillow', x: -4.55, z: -5.35, ry: 0.25, y: 0.5 },
+    { kind: 'pillow', x: -3.95, z: -5.35, ry: -0.3, y: 0.5 },
+    { kind: 'rug', x: -3.5, z: -3.0, ry: 0, w: 2.4, d: 1.7, tint: '#6d5a52' },
+    // Guarda-roupa longe da janela oeste (z -3,5 a -1,7): dois metros de móvel
+    // na frente do vidro apagam o único ponto de luz deste lado.
+    { kind: 'shelf', x: -5.0, z: 0.5, ry: PI / 2, hw: 0.8, hd: 0.18, w: 1.6, h: 2.05 },
+    { kind: 'pot_plant', x: -4.9, z: -1.3, r: 0.26, s: 0.9 },
 
-    // Streaming corner: desk under the window, gear on top, neon behind it.
-    { kind: 'desk', x: 1.95, z: -3.72, ry: 0, hw: 0.7, hd: 0.34, w: 1.4, d: 0.68 },
-    { kind: 'monitor', x: 1.95, z: -3.86, ry: 0, y: 0.763, w: 0.62, h: 0.36 },
-    { kind: 'desk_gear', x: 1.95, z: -3.7, ry: 0, y: 0.763 },
-    { kind: 'desk_chair', x: 1.95, z: -2.95, ry: PI, r: 0.3 },
-    { kind: 'ring_light', x: 0.85, z: -3.3, ry: 0.5, r: 0.2 },
-    { kind: 'wall_neon', x: 3.48, z: -2.5, ry: -PI / 2, y: 1.8, color: 0xff3d9a },
+    // --- Transmitir (nordeste) ---------------------------------------------
+    { kind: 'desk', x: 2.5, z: -5.4, ry: 0, hw: 0.9, hd: 0.36, w: 1.8, d: 0.72 },
+    { kind: 'monitor', x: 2.5, z: -5.55, ry: 0, y: 0.78, w: 0.72, h: 0.42 },
+    { kind: 'desk_gear', x: 2.5, z: -5.3, ry: 0, y: 0.78 },
+    { kind: 'mic_boom', x: 1.75, z: -5.42, ry: 0, y: 0.78 },
+    { kind: 'desk_chair', x: 2.5, z: -4.6, ry: PI, r: 0.32 },
+    { kind: 'pc_tower', x: 3.75, z: -5.5, ry: 0, hw: 0.14, hd: 0.26 },
+    { kind: 'ring_light', x: 1.15, z: -4.85, ry: 0.55, r: 0.22 },
+    { kind: 'wall_neon', x: 5.1, z: -4.4, ry: -PI / 2, y: 1.95, color: 0xff3d9a },
+    { kind: 'shelf', x: 4.99, z: -2.6, ry: -PI / 2, hw: 0.75, hd: 0.18, w: 1.5, h: 1.95 },
+    { kind: 'frame', x: 5.1, z: -0.9, ry: -PI / 2, y: 1.5 },
 
-    { kind: 'kitchenette', x: 1.85, z: 3.8, ry: PI, hw: 1.2, hd: 0.32, w: 2.4 },
-    { kind: 'stool', x: 0.4, z: 2.95, r: 0.2 },
-    { kind: 'stool', x: 1.15, z: 2.95, r: 0.2 },
+    // --- Receber (leste) ---------------------------------------------------
+    { kind: 'rug', x: 2.9, z: 0.8, ry: 0, w: 3.6, d: 3.2, tint: '#7c5f56' },
+    { kind: 'sofa', x: 1.5, z: 0.8, ry: PI / 2, hw: 1.05, hd: 0.44, w: 2.1, tint: '#46566f' },
+    { kind: 'pillow', x: 1.6, z: 0.15, ry: PI / 2 + 0.3, y: 0.46 },
+    { kind: 'pillow', x: 1.6, z: 1.45, ry: PI / 2 - 0.35, y: 0.46 },
+    { kind: 'coffee_table', x: 3.0, z: 0.8, ry: PI / 2, hw: 0.6, hd: 0.33, w: 1.2, d: 0.66 },
+    { kind: 'books', x: 3.0, z: 0.95, ry: 0.4, y: 0.44, s: 0.85 },
+    { kind: 'armchair', x: 2.9, z: 3.0, ry: -2.5, hw: 0.44, hd: 0.44, tint: '#6b4f7c' },
+    { kind: 'cabinet', x: 4.96, z: 0.8, ry: -PI / 2, hw: 0.55, hd: 0.22, w: 1.1, h: 0.55, d: 0.44 },
+    { kind: 'tv', x: 5.04, z: 0.8, ry: -PI / 2, y: 1.15, w: 1.9, h: 1.06 },
+    { kind: 'floor_lamp', x: 4.6, z: -1.4, r: 0.22, h: 1.6 },
+    { kind: 'pot_plant', x: 4.8, z: 2.9, r: 0.3, s: 1.2 },
 
-    { kind: 'pot_plant', x: 3.05, z: 3.3, r: 0.28, s: 1.15 },
-    { kind: 'pot_plant', x: -3.05, z: -0.3, r: 0.24, s: 0.85 },
-    { kind: 'floor_lamp', x: -3.15, z: 3.2, r: 0.2, h: 1.55 },
-    { kind: 'ceiling_lamp', x: -1.5, z: 1.5, y: 2.85 },
-    { kind: 'ceiling_lamp', x: 1.6, z: 3.0, y: 2.85 },
-    { kind: 'wall_art', x: -3.49, z: 0.4, ry: PI / 2, y: 1.6, w: 0.7, h: 0.9, color: 0x8ea9c4 },
-    { kind: 'wall_art', x: -3.49, z: -0.9, ry: PI / 2, y: 1.55, w: 0.55, h: 0.7, color: 0xc48ea0 },
+    // --- Cozinhar e comer (sul) --------------------------------------------
+    { kind: 'kitchenette', x: 2.6, z: 5.55, ry: PI, hw: 1.6, hd: 0.32, w: 3.2 },
+    { kind: 'table', x: 0.0, z: 4.4, ry: 0, hw: 0.9, hd: 0.5, w: 1.8, d: 1.0 },
+    // Três bancos, e o lado sul da mesa fica vazio: é por ele que se serve, e
+    // um quarto banco fechava a mesa contra a parede da cozinha num bolso de
+    // 40 cm — largura em que um corpo de 56 cm não passa. Bolso de chão não é
+    // detalhe de planta: é o canto em que alguém entra e não sai.
+    { kind: 'stool', x: -0.65, z: 3.5, r: 0.2 },
+    { kind: 'stool', x: 0.65, z: 3.5, r: 0.2 },
+    { kind: 'stool', x: 1.35, z: 4.4, r: 0.2 },
+    { kind: 'pot_plant', x: 4.85, z: 5.5, r: 0.3, s: 1.15 },
 
-    // Miudezas. Uma sala com sofá, mesa e estante está MOBILIADA; o que a faz
-    // parecer HABITADA é o que ninguém arruma — uma almofada torta, livros
-    // largados na mesa de centro, um abajur ao lado da cama. Só desenham com o
-    // passe de assets ligado: são exatamente o tipo de peça que não vale
-    // modelar à mão e que um pacote entrega às dúzias.
-    { kind: 'cabinet', x: -3.16, z: -1.65, ry: PI / 2, hw: 0.23, hd: 0.55, w: 1.1, h: 0.85, d: 0.45 },
-    { kind: 'table_lamp', x: -3.16, z: -1.65, ry: 0.5, y: 0.85 },
-    { kind: 'pillow', x: -3.0, z: 2.02, ry: PI / 2 + 0.3, y: 0.46 },
-    { kind: 'pillow', x: -3.0, z: 0.98, ry: PI / 2 - 0.4, y: 0.46 },
-    { kind: 'books', x: -1.46, z: 1.62, ry: 0.35, y: 0.42, s: 0.85 },
-    { kind: 'pot_plant', x: 1.32, z: -3.82, y: 0.75, s: 0.8 },
-    { kind: 'frame', x: 3.32, z: 0.15, ry: -PI / 2, y: 1.42 },
+    // --- Entrar (sudoeste) -------------------------------------------------
+    // Longe do raio da porta (1,4 m em torno de x -2,6, z 4,4): um aparador
+    // dentro dele é um móvel que dispara o convite de sair quando se passa
+    // raspando nele.
+    { kind: 'cabinet', x: -4.9, z: 4.6, ry: PI / 2, hw: 0.55, hd: 0.22, w: 1.1, h: 0.85, d: 0.45 },
+    { kind: 'plant_tall', x: -4.75, z: 2.5, hw: 0.3, hd: 0.3, h: 1.5 },
+    { kind: 'wall_art', x: -5.09, z: 3.2, ry: PI / 2, y: 1.65, w: 0.75, h: 0.95, color: 0x8ea9c4 },
+    { kind: 'wall_art', x: -5.09, z: 1.9, ry: PI / 2, y: 1.6, w: 0.6, h: 0.75, color: 0xc48ea0 },
+    { kind: 'frame', x: -1.4, z: 5.79, ry: PI, y: 1.55 },
+    // O pilar estreito entre as duas janelas do norte é a única parede cheia
+    // daquele lado; deixá-lo vazio faria a faixa de vidro parecer interrompida
+    // por acaso.
+    { kind: 'wall_art', x: 0.15, z: -5.79, ry: 0, y: 1.7, w: 0.5, h: 0.7, color: 0xb8a98e },
+
+    // --- Luz do teto -------------------------------------------------------
+    { kind: 'ceiling_lamp', x: -3.8, z: -3.6, y: 3.05 },
+    { kind: 'ceiling_lamp', x: 2.6, z: -4.2, y: 3.05 },
+    { kind: 'ceiling_lamp', x: 3.0, z: 0.8, y: 3.05 },
+    { kind: 'ceiling_lamp', x: 0.0, z: 4.4, y: 3.05 },
   ],
   // Chegar é entrar pela porta, e não NA porta: os dois primeiros marcadores
   // ficavam dentro do raio da saída (`portals.ts`), então quem entrava no
   // próprio apartamento aparecia com "Sair" na tela — e um `E` o mandava de
   // volta ao saguão. A regra virou teste em `game-server/test/world.test.ts`.
+  //
+  // E longe da parede, o que é a segunda regra de um ponto de chegada: a
+  // câmera nasce ATRÁS do corpo, com um braço de até 6,6 m. Uma chegada
+  // encostada no canto sudoeste punha a lente dentro do vaso de planta — a
+  // primeira imagem da própria casa era uma folha em tela cheia.
   spawns: [
-    { x: -2.2, z: 0.9 }, { x: -0.2, z: 2.4 }, { x: 0.5, z: 1.6 },
-    { x: -1.2, z: 0.2 }, { x: 1.4, z: -1.4 }, { x: -0.4, z: -2.2 },
+    { x: -1.6, z: 2.6 }, { x: 0.4, z: 2.4 }, { x: -2.2, z: 1.2 },
+    { x: -0.6, z: 0.4 }, { x: 1.2, z: -1.2 }, { x: 2.4, z: -2.8 },
   ],
 };
 
@@ -193,7 +247,7 @@ export const LIVE_ROOM: SceneLayout = {
     { kind: 'rug', x: 3.2, z: -0.6, ry: -PI / 2, w: 2.6, d: 2.0, tint: '#3b2f45' },
     { kind: 'stool', x: -4.0, z: -1.4, r: 0.2 },
     { kind: 'stool', x: -4.0, z: -0.2, r: 0.2 },
-    { kind: 'pot_plant', x: -4.3, z: -4.3, r: 0.3, s: 1.25 },
+    { kind: 'pot_plant', x: -4.35, z: -3.2, r: 0.3, s: 1.25 },
     { kind: 'pot_plant', x: 4.3, z: 3.9, r: 0.3, s: 1.1 },
     { kind: 'wall_neon', x: -4.55, z: 1.2, ry: PI / 2, y: 2.1, color: 0xffcc33 },
   ],
@@ -400,10 +454,13 @@ export const AGENCY_TOWER: SceneLayout = {
 
     // Two rows of workstations. Desks back to back, which is how a floor of
     // people who talk to each other all day is actually laid out.
-    ...deskRow(-6.4, -3.5, 4, 2.6, 0),
-    ...deskRow(-6.4, -1.6, 4, 2.6, PI),
-    ...deskRow(-6.4, 3.0, 4, 2.6, 0),
-    ...deskRow(-6.4, 4.9, 4, 2.6, PI),
+    // 2,4 m entre uma fileira e a de trás, e não 1,9: com 1,9 as duas cadeiras
+    // de costas uma para a outra ocupavam o mesmo chão — dezesseis cadeiras
+    // desenhadas dentro de outras oito.
+    ...deskRow(-6.4, -3.6, 4, 2.6, 0),
+    ...deskRow(-6.4, -1.2, 4, 2.6, PI),
+    ...deskRow(-6.4, 2.9, 4, 2.6, 0),
+    ...deskRow(-6.4, 5.3, 4, 2.6, PI),
 
     { kind: 'table', x: 7.4, z: -4.5, ry: 0, hw: 1.6, hd: 0.9, w: 3.2, d: 1.8 },
     { kind: 'desk_chair', x: 5.4, z: -4.5, ry: -PI / 2, r: 0.3 },

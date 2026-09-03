@@ -3,7 +3,9 @@ import { PORTALS, SCENE_AREA, type ChatMessage, type HomePlacement, type Portal 
 import { InteriorScene } from './scenes/InteriorScene.js';
 import {
   DEFAULT_AVATAR,
+  FixedStep,
   GIFT_BY_ID,
+  MAX_FRAME_SECONDS,
   PLAY_AREA,
   applyMoveIntent,
   type AnimState,
@@ -126,6 +128,12 @@ export class World {
   /** Offline pose, integrated locally with the server's own function. */
   private solo = { x: 0, z: 6, yaw: Math.PI, moving: false };
   private soloSeq = 0;
+  /**
+   * O relógio do movimento offline. É o MESMO da conexão de propósito: sem ele
+   * o modo offline integrava um passo fixo por QUADRO, então a velocidade do
+   * avatar era a taxa de quadros — 6 m/s a 144 Hz, câmera lenta a 15.
+   */
+  private readonly soloClock = new FixedStep();
 
   constructor(private opts: WorldOptions) {
     this.renderer = new Renderer(opts.canvas, opts.tier);
@@ -336,7 +344,15 @@ export class World {
   private loop = (): void => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
-    const dt = Math.min(0.05, this.clock.getDelta());
+    // Um corte só, e é o mesmo do relógio do movimento (`MAX_FRAME_SECONDS`).
+    // Eram DOIS, e o menor vencia sempre: aqui o quadro era cortado em 50 ms e
+    // o acumulador da conexão só recebia isso, então qualquer quadro mais longo
+    // que 50 ms — um engasgo de compilação, uma coleta de lixo, uma máquina
+    // modesta na praça nova — virava UM passo de 41,7 ms. O corpo parava com a
+    // tecla apertada, e quem andava a 10 quadros por segundo andava a 40% da
+    // velocidade. Acima do corte o tempo se perde para todos ao mesmo tempo
+    // (movimento, animação, efeitos), que é o que mantém tudo em fase.
+    const dt = Math.min(MAX_FRAME_SECONDS, this.clock.getDelta());
     // Pausado só DEPOIS de existir imagem. O mundo entra pausado sempre que o
     // jogador abre outra aba da casca enquanto ele carrega, e um laço que sai
     // aqui no primeiro quadro nunca desenha, nunca chega ao quarto quadro e
@@ -373,7 +389,7 @@ export class World {
       this.connection.update(dt, { dx: dir.x, dz: dir.z, yaw, run: input.run });
       this.syncActors(this.connection.poses(), dt);
     } else {
-      this.stepSolo(dir.x, dir.z, yaw, input.run);
+      this.stepSolo(dt, dir.x, dir.z, yaw, input.run);
       this.syncActors([this.soloPose()], dt);
     }
 
@@ -421,23 +437,31 @@ export class World {
     return this.connection ? this.connection.sessionId : LOCAL_ID;
   }
 
-  /** Offline integration — same function and same fixed step as the server. */
-  private stepSolo(dx: number, dz: number, yaw: number, run: boolean): void {
-    const next = applyMoveIntent(
-      this.solo,
-      { dx, dz, yaw, run, seq: ++this.soloSeq },
-      PLAY_AREA[this.sceneId],
-    );
-    const clamped = this.scene?.clamp(
-      new THREE.Vector3(this.solo.x, 0, this.solo.z),
-      new THREE.Vector3(next.x, 0, next.z),
-    );
-    this.solo = {
-      x: clamped ? clamped.x : next.x,
-      z: clamped ? clamped.z : next.z,
-      yaw: next.yaw,
-      moving: next.moving,
-    };
+  /**
+   * Integração offline: a mesma função, o mesmo passo fixo e o MESMO relógio
+   * que a conexão usa. O passo é fixo; quantos deles cabem no quadro é o tempo
+   * real que decide. Um passo por quadro — o que havia aqui — amarrava a
+   * velocidade do avatar à taxa de quadros nos dois sentidos.
+   */
+  private stepSolo(dt: number, dx: number, dz: number, yaw: number, run: boolean): void {
+    const steps = this.soloClock.advance(dt);
+    for (let i = 0; i < steps; i++) {
+      const next = applyMoveIntent(
+        this.solo,
+        { dx, dz, yaw, run, seq: ++this.soloSeq },
+        PLAY_AREA[this.sceneId],
+      );
+      const clamped = this.scene?.clamp(
+        new THREE.Vector3(this.solo.x, 0, this.solo.z),
+        new THREE.Vector3(next.x, 0, next.z),
+      );
+      this.solo = {
+        x: clamped ? clamped.x : next.x,
+        z: clamped ? clamped.z : next.z,
+        yaw: next.yaw,
+        moving: next.moving,
+      };
+    }
   }
 
   private soloPose(): RenderPose {

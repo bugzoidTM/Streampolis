@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MovementController, sanitizeIntent, SPEED_AUDIT_WINDOW_MS } from '../src/sim/Movement.js';
 import {
-  applyMoveIntent, FIXED_DT, INTENT_QUEUE_LIMIT, MAX_SPEED, PLAYER_RADIUS, PLAY_AREA,
-  PLAZA, SCENE_AREA, SCENE_COLLIDERS,
+  applyMoveIntent, FIXED_DT, FixedStep, INTENT_QUEUE_LIMIT, MAX_CATCHUP_STEPS,
+  MAX_FRAME_SECONDS, MAX_INTENTS_PER_TICK, MAX_SPEED, PLAYER_RADIUS, PLAY_AREA,
+  PLAZA, SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS, TICK_HZ,
+  penetrates, resolveCollision, type Collider, type SceneId,
 } from '../src/shared.js';
 
 const AREA = PLAY_AREA.central_plaza;
@@ -151,5 +153,162 @@ describe('MovementController', () => {
     const out = mc.step();
     assert.equal(out.corrected, true);
     assert.equal(out.pose.x, 5);
+  });
+});
+
+/**
+ * O relógio que decide QUANTOS passos cabem num quadro.
+ *
+ * Estes casos existem porque o defeito que eles trancam não aparecia em
+ * captura nenhuma: o avatar parava com a tecla apertada. A causa era o tempo do
+ * quadro ser cortado em 50 ms antes de virar passo, então todo quadro mais
+ * longo que isso rendia um passo só — e um passo é 1/24 de segundo.
+ */
+describe('FixedStep', () => {
+  it('um segundo de tempo real dá um segundo de passos, seja qual for o quadro', () => {
+    for (const fps of [15, 24, 30, 60, 144]) {
+      const clock = new FixedStep();
+      let steps = 0;
+      for (let i = 0; i < fps; i++) steps += clock.advance(1 / fps);
+      assert.ok(Math.abs(steps - TICK_HZ) <= 1,
+        `a ${fps} qps saíram ${steps} passos, e um segundo tem ${TICK_HZ}`);
+    }
+  });
+
+  it('engasgo de um quadro é recuperado, não descartado', () => {
+    const clock = new FixedStep();
+    // 250 ms num quadro só: é o engasgo de uma compilação de shader.
+    assert.equal(clock.advance(0.25), 6);
+  });
+
+  it('aba em segundo plano não devolve a caminhada inteira', () => {
+    const clock = new FixedStep();
+    assert.equal(clock.advance(30), MAX_CATCHUP_STEPS);
+    // E a dívida não fica guardada para a rajada seguinte.
+    assert.equal(clock.advance(1 / 60), 0);
+  });
+
+  it('a rajada máxima cabe na fila do servidor', () => {
+    // O teto de recuperação não é um número escolhido à toa: é o que o
+    // servidor engole. Se algum dos dois lados mudar sem o outro, o jogador
+    // que se recupera de um engasgo bate no guarda de enxurrada — que é o
+    // mesmo travamento por outro caminho.
+    assert.ok(MAX_CATCHUP_STEPS <= INTENT_QUEUE_LIMIT - MAX_INTENTS_PER_TICK,
+      'uma rajada de recuperação encheria a fila de intenções');
+    assert.equal(MAX_FRAME_SECONDS, (MAX_CATCHUP_STEPS / TICK_HZ));
+  });
+
+  it('o servidor drena a rajada de um engasgo sem recusar nada', () => {
+    const mc = controller();
+    const clock = new FixedStep();
+    let seq = 0;
+    let sent = 0;
+    let refused = 0;
+    // Dez quadros de 250 ms — 2,5 s de tecla apertada a 4 quadros por segundo.
+    for (let frame = 0; frame < 10; frame++) {
+      const steps = clock.advance(0.25);
+      for (let i = 0; i < steps; i++) {
+        sent++;
+        if (mc.enqueue({ dx: 0, dz: 1, yaw: 0, run: false, seq: ++seq })) refused++;
+      }
+      // O servidor tiquetaqueia enquanto o quadro seguinte não vem.
+      for (let t = 0; t < steps; t++) mc.step();
+    }
+    assert.equal(refused, 0, `o servidor recusou ${refused} de ${sent} intenções`);
+    assert.ok(Math.abs(mc.current.z - sent * MAX_SPEED.walk * FIXED_DT) < 1e-6);
+  });
+});
+
+/**
+ * O poço: dois obstáculos cuja folga não cabe num corpo.
+ *
+ * Uma cadeira encostada na mesa é o caso de todo dia. As duas saídas do
+ * resolvedor se anulam — a mesa empurra para fora, a cadeira empurra de volta
+ * — e o ponto resolvido é ele mesmo, DENTRO da mesa. Quem cai ali não sai por
+ * direção nenhuma, e o servidor não discorda de nada, porque para ele o corpo
+ * está exatamente onde ele o pôs. Era este o "às vezes o avatar trava".
+ */
+describe('resolveCollision: poço entre dois obstáculos', () => {
+  const mesa: Collider = { kind: 'rect', x: 0, z: -0.4, hw: 0.9, hd: 0.36, ry: 0 };
+  const cadeira: Collider = { kind: 'circle', x: 0, z: 0.4, r: 0.32 };
+  const moveis = [mesa, cadeira];
+
+  it('existe, e o resolvedor sozinho não sai dele', () => {
+    const poco = resolveCollision({ x: 0, z: 0 }, moveis, null);
+    assert.ok(penetrates(poco, moveis), 'o ponto resolvido deveria estar dentro da mesa');
+    const outra = resolveCollision(poco, moveis, null);
+    assert.ok(Math.hypot(outra.x - poco.x, outra.z - poco.z) < 1e-9,
+      'e resolver de novo devolve o mesmo ponto — é um ponto fixo, não um empurrão');
+  });
+
+  it('mas o passo que cairia nele não acontece', () => {
+    const de = { x: 0, z: 1.4 };
+    const saida = resolveCollision({ x: 0, z: 0 }, moveis, null, PLAYER_RADIUS, de);
+    assert.deepEqual(saida, de, 'o corpo tem de ficar onde estava');
+  });
+
+  it('e quem JÁ está dentro não sai andando — por isso a sala desencalha', () => {
+    // Recusar o passo protege quem está de fora; não liberta quem já está
+    // dentro, e nenhuma conta de empurrão liberta: as duas saídas continuam se
+    // anulando a cada passo. Só se entra num poço destes por um caminho que
+    // não é o movimento — o dono redecorando em cima de quem está na sala —, e
+    // é lá que a sala devolve o jogador ao ponto de chegada
+    // (`BaseWorldRoom.refreshColliders`).
+    const preso = resolveCollision({ x: 0, z: 0 }, moveis, null);
+    for (let d = 0; d < 8; d++) {
+      const ang = (d / 8) * Math.PI * 2;
+      const passo = { x: preso.x + Math.cos(ang) * 0.1, z: preso.z + Math.sin(ang) * 0.1 };
+      const saida = resolveCollision(passo, moveis, null, PLAYER_RADIUS, preso);
+      assert.ok(penetrates(saida, moveis), `a direção ${d} teria saído sozinha do poço`);
+    }
+  });
+});
+
+describe('andar pelas salas não prende ninguém', () => {
+  /** Anda `ticks` passos numa direção e devolve a pose final. */
+  function caminhada(scene: SceneId, from: { x: number; z: number }, ang: number, ticks = 72) {
+    const colliders = SCENE_COLLIDERS[scene];
+    const area = SCENE_AREA[scene] ?? null;
+    const bounds = PLAY_AREA[scene];
+    let pose = { x: from.x, z: from.z, yaw: 0, moving: false };
+    let dentro = false;
+    for (let i = 0; i < ticks; i++) {
+      const next = applyMoveIntent(pose, { dx: Math.cos(ang), dz: Math.sin(ang), yaw: 0, run: false, seq: i + 1 }, bounds);
+      const solved = resolveCollision(next, colliders, area, PLAYER_RADIUS, pose);
+      pose = { x: solved.x, z: solved.z, yaw: next.yaw, moving: next.moving };
+      if (penetrates(pose, colliders)) dentro = true;
+    }
+    return { pose, dentro };
+  }
+
+  const salas: SceneId[] = ['apartment', 'live_room', 'residential_lobby', 'stream_store', 'agency_tower', 'central_plaza'];
+
+  it('sai de toda chegada em toda direção sem entrar num móvel', () => {
+    for (const scene of salas) {
+      for (const spawn of SCENE_SPAWNS[scene] ?? []) {
+        for (let d = 0; d < 16; d++) {
+          const { dentro } = caminhada(scene, spawn, (d / 16) * Math.PI * 2);
+          assert.equal(dentro, false,
+            `${scene}: andando de (${spawn.x}, ${spawn.z}) na direção ${d} o corpo entrou num obstáculo`);
+        }
+      }
+    }
+  });
+
+  it('e volta a andar depois de bater em tudo', () => {
+    // Ir contra um canto por três segundos e depois virar as costas: se o corpo
+    // ficou preso, a volta não anda.
+    for (const scene of salas) {
+      const spawn = (SCENE_SPAWNS[scene] ?? [])[0];
+      if (!spawn) continue;
+      for (let d = 0; d < 8; d++) {
+        const ang = (d / 8) * Math.PI * 2;
+        const { pose } = caminhada(scene, spawn, ang);
+        const volta = caminhada(scene, pose, ang + Math.PI, 24);
+        const andou = Math.hypot(volta.pose.x - pose.x, volta.pose.z - pose.z);
+        assert.ok(andou > 0.5,
+          `${scene}: depois de encostar no obstáculo da direção ${d}, a volta andou só ${andou.toFixed(2)} m`);
+      }
+    }
   });
 });

@@ -24,6 +24,26 @@ export const PLAYER_RADIUS = 0.28;
 
 export interface Point2 { x: number; z: number }
 
+/** O ponto está DENTRO de algum obstáculo, contando o raio do corpo? */
+export function penetrates(
+  p: Point2,
+  colliders: readonly Collider[],
+  radius = PLAYER_RADIUS,
+): boolean {
+  for (const c of colliders) {
+    if (c.kind === 'circle') {
+      if (Math.hypot(p.x - c.x, p.z - c.z) < c.r + radius - 1e-9) return true;
+    } else {
+      const cos = Math.cos(-c.ry);
+      const sin = Math.sin(-c.ry);
+      const rx = (p.x - c.x) * cos - (p.z - c.z) * sin;
+      const rz = (p.x - c.x) * sin + (p.z - c.z) * cos;
+      if (Math.abs(rx) < c.hw + radius - 1e-9 && Math.abs(rz) < c.hd + radius - 1e-9) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Pushes `to` out of every blocker and back inside the area.
  *
@@ -31,12 +51,32 @@ export interface Point2 { x: number; z: number }
  * neighbour — a bench next to a planter would otherwise let you tunnel in the
  * gap. Two is enough for the box-and-cylinder world of the MVP and cheap
  * enough to run per player per tick.
+ *
+ * `from` é de onde o corpo saiu, e é a rede de segurança das duas passadas.
+ * Entre dois obstáculos cuja folga não cabe num corpo — uma cadeira encostada
+ * numa mesa é o caso clássico — as duas saídas se anulam: a mesa empurra para
+ * fora e a cadeira empurra de volta para dentro, e o ponto que sobra é ele
+ * mesmo. Um poço desses não é rubber band, é PAREDE: quem cai nele fica preso
+ * de verdade, porque todas as direções voltam ao mesmo lugar e o servidor não
+ * discorda de nada — para ele o corpo está exatamente onde ele o pôs. Era este
+ * o "às vezes o avatar trava" que não aparecia em captura nenhuma.
+ *
+ * A regra que fecha o buraco: passo que TERMINARIA dentro de alguma coisa
+ * simplesmente não acontece. O corpo fica onde estava, que é o único lugar que
+ * já se sabia bom — e o jogador vê o que via em qualquer jogo, um móvel que
+ * não deixa passar. Sem `from` o comportamento é o antigo, porque quem chama
+ * sem ele (uma sonda, um teste de planta) não tem posição anterior nenhuma.
+ *
+ * Se `from` também estiver dentro de algo — o dono redecorou e o sofá caiu em
+ * cima de alguém — a saída volta a ser a resolvida: presa por presa, a que
+ * empurra para fora é a que acaba livre.
  */
 export function resolveCollision(
   to: Point2,
   colliders: readonly Collider[],
   area: Area | null,
   radius = PLAYER_RADIUS,
+  from?: Point2,
 ): Point2 {
   let x = to.x;
   let z = to.z;
@@ -92,6 +132,9 @@ export function resolveCollision(
     }
   }
 
+  if (from && penetrates({ x, z }, colliders, radius) && !penetrates(from, colliders, radius)) {
+    return { x: from.x, z: from.z };
+  }
   return { x, z };
 }
 

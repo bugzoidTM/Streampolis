@@ -4,6 +4,7 @@ import {
   PLAY_AREA,
   SCENE_AREA,
   SCENE_COLLIDERS,
+  penetrates,
   TICK_MS,
   type AnimState,
   type ChatMessage,
@@ -100,17 +101,29 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
   }
 
   /**
-   * Reapresenta a mesa de colisão a quem já está dentro.
+   * Reapresenta a mesa de colisão a quem já está dentro, e desencalha quem a
+   * mobília nova pegou embaixo.
    *
-   * Chamado quando a sala MUDA de mobília no meio da sessão. Quem estiver
-   * dentro do móvel novo é empurrado para fora no primeiro passo, pelo solver
-   * de sempre — não há teleporte aqui.
+   * Chamado quando a sala MUDA de mobília no meio da sessão. Andar para dentro
+   * de um móvel não é mais possível — o passo que terminaria dentro de um
+   * bloqueador não acontece (ver `resolveCollision`) —, mas redecorar é o
+   * caminho que sobra: o sofá aparece em cima de quem já estava ali. E de
+   * dentro não se sai andando; entre dois móveis encostados as saídas do
+   * resolvedor se anulam e todas as direções voltam ao mesmo ponto.
+   *
+   * Então quem desencalha é a SALA, com o ponto de chegada — que a planta prova
+   * estar livre (`game-server/test/world.test.ts`). É teleporte, sim, e é o
+   * único: o preço de um corpo aparecer dois metros ao lado é muito menor que o
+   * de um jogador preso dentro do próprio sofá até recarregar a página.
    */
   protected refreshColliders(): void {
     const colliders = this.colliders();
     const area = SCENE_AREA[this.sceneId] ?? null;
     for (const session of this.sessions.values()) {
       session.movement.setArea(PLAY_AREA[this.sceneId], colliders, area);
+      if (penetrates(session.movement.current, colliders)) {
+        session.movement.place(spawnFor(this.sceneId, this.joinCounter++));
+      }
     }
   }
 

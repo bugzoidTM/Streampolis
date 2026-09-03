@@ -1,10 +1,10 @@
 import type { Room } from 'colyseus.js';
 import {
+  FixedStep,
   MSG,
   PLAY_AREA,
   SCENE_AREA,
   SCENE_COLLIDERS,
-  TICK_MS,
   placementColliders,
   type AnimState,
   type Area,
@@ -100,7 +100,12 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
     notice: new Set(), pkResult: new Set(), stageInvite: new Set(),
     state: new Set(), left: new Set(), error: new Set(),
   };
-  private accumulator = 0;
+  /**
+   * O relógio do movimento. Mora fora desta classe porque o modo offline
+   * precisa do MESMO — lá o mundo integrava um passo por QUADRO, o que fazia o
+   * avatar andar a 6 m/s num monitor de 144 Hz e em câmera lenta num de 20.
+   */
+  private readonly clock = new FixedStep();
   private lastSentYaw = 0;
   private wasMoving = false;
   private disposed = false;
@@ -287,17 +292,20 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   }
 
   /**
-   * Advances the intent clock. Call once per rendered frame with the real
-   * frame time; the fixed accumulator does the rest.
+   * Advances the intent clock. Call once per rendered frame with the real frame
+   * time — o `FixedStep` faz o resto. Cortar esse tempo antes de chegar aqui é
+   * o defeito que já custou o "às vezes o avatar trava" (ver `World.loop`).
    */
   update(dtSeconds: number, input: MoveInput): void {
     if (this.disposed) return;
-    // A tab that was backgrounded returns with a huge dt. Replaying it would
-    // fire a burst the server's flood guard rejects — drop the debt instead.
-    this.accumulator = Math.min(this.accumulator + dtSeconds * 1000, TICK_MS * 4);
+    // O tempo que chega aqui é o REAL do quadro, e é o `FixedStep` quem decide
+    // quantos passos cabem nele (e joga fora o que passar de `MAX_CATCHUP_STEPS`
+    // — uma aba que voltou do segundo plano não devolve a caminhada inteira).
+    // Enquanto o laço do mundo cortava o quadro em 50 ms antes de chamar aqui,
+    // todo engasgo virava um passo só e o corpo PARAVA com a tecla apertada.
+    const steps = this.clock.advance(dtSeconds);
 
-    while (this.accumulator >= TICK_MS) {
-      this.accumulator -= TICK_MS;
+    for (let i = 0; i < steps; i++) {
       const moving = Math.hypot(input.dx, input.dz) > 1e-3;
       const turned = Math.abs(input.yaw - this.lastSentYaw) > YAW_EPSILON;
 

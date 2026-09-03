@@ -129,7 +129,9 @@ export abstract class SceneBase implements GameScene {
    * every visible avatar (SPECs §15).
    */
   clamp(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3 {
-    const solved = resolveCollision({ x: to.x, z: to.z }, this.colliders, this.bounds);
+    const solved = resolveCollision(
+      { x: to.x, z: to.z }, this.colliders, this.bounds, undefined, { x: from.x, z: from.z },
+    );
     return new THREE.Vector3(solved.x, to.y, solved.z);
   }
 

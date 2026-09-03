@@ -105,7 +105,11 @@ export class Predictor {
   private integrate(from: Kinematic, intent: MoveIntent): Kinematic {
     const next = applyMoveIntent(from, intent, this.area);
     if (this.colliders.length === 0 && !this.walkable) return next;
-    const solved = resolveCollision(next, this.colliders, this.walkable);
+    // `from` vai junto pela mesma razão do lado do servidor: um passo que
+    // terminaria dentro de um móvel não acontece. Se só um dos dois lados
+    // passasse a posição anterior, os dois integradores deixariam de ser o
+    // mesmo — e é essa igualdade que faz a previsão não precisar de correção.
+    const solved = resolveCollision(next, this.colliders, this.walkable, undefined, from);
     return { x: solved.x, z: solved.z, yaw: next.yaw, moving: next.moving };
   }
 }

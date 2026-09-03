@@ -10,6 +10,7 @@
  *
  *   node tools/scene-ab.mjs [--query=scene=central_plaza] [--out=shots/ab]
  *                           [--walk=2600] [--look=yaw,pitch,dist] [--tier=high]
+ *                           [--free=true] [--fov=48]
  */
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -88,12 +89,18 @@ for (const [name, assets] of [['hoje', '0'], ['pass', '1']]) {
   // Uma segunda vista, olhando para o anel de prédios: o enquadramento padrão
   // é o do jogador, e o horizonte é justamente o que a experiência mudou.
   if (args.look) {
+    // `--free` desliga a colisão do braço e solta o limite de distância: é o
+    // único jeito de fotografar a PLANTA de um cômodo de cima. No jogo a
+    // colisão é o que impede a câmera de sair pela parede, então isto é para
+    // revisão e nada mais.
     const [yaw, pitch, dist] = args.look.split(',').map(Number);
-    await page.evaluate(([y, p, d]) => {
+    await page.evaluate(([y, p, d, livre, fov]) => {
       const cam = window.__world?.camera;
       if (!cam) return;
+      if (livre) { cam.obstacles = []; cam.setLimits({ maxDistance: 40 }); }
+      if (fov) { cam.camera.fov = fov; cam.camera.updateProjectionMatrix(); }
       cam.yaw = y; cam.pitch = p; cam.distance = d;
-    }, [yaw, pitch, dist]);
+    }, [yaw, pitch, dist, args.free === 'true', Number(args.fov ?? 0)]);
     await page.waitForTimeout(2500);
   }
 

@@ -6,6 +6,7 @@ import {
   MAX_INTENTS_PER_TICK,
   MAX_SPEED,
   maxStepDistance,
+  PLAYER_RADIUS,
   resolveCollision,
   type Area,
   type Bounds,
@@ -190,8 +191,10 @@ export class MovementController {
         continue;
       }
 
+      // `this.pose` vai junto: passo que terminaria DENTRO de um móvel não
+      // acontece, e o corpo fica onde estava. Ver `resolveCollision`.
       const solved = this.colliders.length > 0 || this.walkable
-        ? resolveCollision(next, this.colliders, this.walkable)
+        ? resolveCollision(next, this.colliders, this.walkable, PLAYER_RADIUS, this.pose)
         : next;
 
       moved = moved || next.moving;

@@ -251,6 +251,68 @@ primeiro patch (`adoptScene`), e `node tools/room-walls-check.mjs`
 desenhada é a cena em que se colide, e que andar em toda direção não põe
 ninguém fora da planta.
 
+## O relógio do movimento não é o relógio do desenho
+
+O corpo anda em passos FIXOS (`TICK_MS`, 24 por segundo) porque servidor e
+preditor precisam integrar exatamente a mesma coisa. O navegador desenha quando
+consegue. Quem faz a ponte é `FixedStep` (`packages/shared/src/step.ts`): recebe
+o tempo REAL do quadro e devolve quantos passos cabem nele, guardando o resto.
+
+Três regras, e cada uma paga uma dívida:
+
+- **Um corte só.** `World.loop` corta o quadro em `MAX_FRAME_SECONDS`, que é o
+  mesmo teto da dívida do `FixedStep`. Eram DOIS cortes diferentes — 50 ms no
+  laço, 4 passos no acumulador da conexão — e o menor vencia sempre: todo quadro
+  mais longo que 50 ms virava UM passo de 41,7 ms. A 10 quadros por segundo o
+  jogador andava a 40% da velocidade, e num engasgo de 300 ms o avatar PARAVA
+  com a tecla apertada. Era este o "às vezes o avatar trava".
+- **O teto de recuperação é o que o servidor engole.** `MAX_CATCHUP_STEPS` sai
+  de `INTENT_QUEUE_LIMIT` e `MAX_INTENTS_PER_TICK`: uma rajada de 6 esvazia em
+  dois tiques e ainda deixa meia fila. Recuperar mais não seria andar mais
+  rápido, seria bater no guarda de enxurrada e voltar corrigido.
+- **O modo offline usa o mesmo relógio.** Ele integrava um passo por QUADRO, o
+  que amarrava a velocidade à taxa de quadros nos dois sentidos: 6 m/s num
+  monitor de 144 Hz, câmera lenta num de 20.
+
+`packages/game-server/test/movement.test.ts` prova o conjunto sem navegador: um
+segundo de tempo real dá 24 passos a 15, 24, 30, 60 e 144 quadros por segundo, e
+a rajada de um engasgo passa pelo servidor sem uma recusa.
+
+## O poço: dois móveis encostados prendem um corpo
+
+`resolveCollision` empurra para fora de cada obstáculo, em duas passadas. Entre
+dois cuja folga não cabe num corpo — uma cadeira encostada na mesa é o caso de
+todo dia — as duas saídas se ANULAM: a mesa empurra para fora, a cadeira empurra
+de volta, e o ponto resolvido é ele mesmo, dentro da mesa. Quem cai ali não sai
+por direção nenhuma e o servidor não discorda de nada, porque para ele o corpo
+está exatamente onde ele o pôs.
+
+A regra que fecha o buraco: **passo que terminaria dentro de alguma coisa não
+acontece**. `resolveCollision` recebe `from` — de onde o corpo saiu — e devolve
+`from` quando a resolvida ainda penetra. Os dois integradores passam `from` (o
+servidor em `MovementController.step`, o cliente em `Predictor.integrate`), e
+têm de continuar passando: se só um deles passar, os dois deixam de ser a mesma
+função e a previsão volta a precisar de correção.
+
+De DENTRO não se sai andando, e nenhuma conta de empurrão liberta. Só se entra
+num poço por um caminho que não é o movimento — o dono redecorando em cima de
+quem está na sala —, e é lá que `BaseWorldRoom.refreshColliders` devolve o
+jogador ao ponto de chegada. É o único teleporte do jogo, e é mais barato que um
+jogador preso dentro do próprio sofá até recarregar a página.
+
+## A planta de um interior é conferível sem navegador
+
+`npm run gate:plan` (`tools/room-plan-check.mjs`) lê os seis interiores e
+pergunta cinco coisas: móvel dentro da parede, dois móveis no mesmo chão,
+chegada dentro de obstáculo ou rente à porta, ponto de chão de onde nenhuma das
+16 direções sai, e bolso de chão em que uma pessoa cabe e de onde não se sai.
+Ele nasceu junto com a sala nova e já encontrou defeito em sala que ninguém
+tinha mexido: as fileiras de mesas da agência desenhavam dezesseis cadeiras
+dentro de outras oito.
+
+É a metade de mesa do `gate:walls`, que faz a pergunta do navegador (a cena
+desenhada é a cena em que se colide).
+
 ## Quem entra na sala (e por quê o World não decide isso)
 
 ```
@@ -418,6 +480,11 @@ devolve a cena daquele id e a tabela é exaustiva por tipo — um `SceneId` novo
 sem cena quebra o build em vez de cair na praça calada.
 
 - A praça (`PlazaScene`) é autoral: geometria escrita à mão a partir de `PLAZA`.
+- O apartamento é 10,4 × 11,8 m com zonas (dormir a noroeste, transmitir a
+  nordeste, receber a leste, cozinhar e comer ao sul, entrar a sudoeste) e o
+  MEIO vazio de propósito: numa casa que o dono decora, chão livre é onde a
+  mobília dele cabe. `HOME_BOUNDS` sai desta planta, então crescer a sala é
+  crescer a área de construção junto.
 - Todo interior é `InteriorScene`, dirigida por dados: casco + fixtures +
   iluminação vêm de `packages/shared/src/interiors.ts`, e cada sala
   (`ApartmentScene`, `LiveRoomScene`, `PkArenaScene`, `PublicScenes`) só escolhe
