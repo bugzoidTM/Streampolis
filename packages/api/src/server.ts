@@ -5,7 +5,10 @@ import { config } from './config.ts';
 import { pool, closePool } from './db/pool.ts';
 import { EconomyError } from './economy/errors.ts';
 import { getBalances, listTransactions, sendGift } from './economy/EconomyService.ts';
-import { loadIdentity, signSessionToken } from './auth/identity.ts';
+import {
+  RefreshError, issueSessionTokens, loadIdentity, revokeSession, rotateSession,
+  signSessionToken,
+} from './auth/identity.ts';
 import { assertWearable, readAvatar, saveAvatar, validateAvatar } from './profile/AvatarService.ts';
 import { recordPKResult, listPKHistory } from './pk/PkRecords.ts';
 import { canEnter, getHome, getOrCreateHomeOf, saveLayout, setVisibility } from './world/Homes.ts';
@@ -84,7 +87,7 @@ app.post('/auth/login', rateLimit('auth'), async (req, res, next) => {
       res.status(403).json({ error: 'account_unavailable' });
       return;
     }
-    res.json({ ...signSessionToken(identity), identity });
+    res.json({ ...await issueSessionTokens(identity, req.get('user-agent')), identity });
   } catch (err) {
     next(err);
   }
@@ -151,7 +154,49 @@ app.post('/auth/dev-login', rateLimit('auth'), async (req, res, next) => {
       res.status(403).json({ error: 'account_unavailable' });
       return;
     }
-    res.json({ ...signSessionToken(identity), identity });
+    res.json({ ...await issueSessionTokens(identity, req.get('user-agent')), identity });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Renova a sessão (SPECs §36: "tokens curtos" + "refresh seguro").
+ *
+ * O access token vale 15 minutos e é isso que se quer — quem o roubar tem uma
+ * janela pequena e nenhuma forma de renová-lo sozinho. O preço disso é que
+ * alguém precisa renovar, e por muito tempo ninguém renovava: o cliente
+ * guardava o access no navegador e o reapresentava para sempre. Passados os 15
+ * minutos, a praça respondia `expired`, o jogo caía em "modo offline" e a porta
+ * do apartamento devolvia o jogador à praça — três sintomas, uma causa.
+ *
+ * Rotativo: o refresh apresentado morre aqui e sai um novo. Reapresentar um já
+ * rotacionado derruba a família inteira (ver `rotateSession`).
+ */
+app.post('/auth/refresh', rateLimit('auth'), async (req, res, next) => {
+  try {
+    const refreshToken = z.string().min(20).max(200).parse((req.body ?? {}).refreshToken);
+    const session = await rotateSession(refreshToken, req.get('user-agent'));
+    res.json(session);
+  } catch (err) {
+    if (err instanceof RefreshError) {
+      // 401 sempre, com o motivo: o cliente precisa distinguir "renove" de
+      // "acabou, peça para entrar de novo", e nada aqui vaza conta alheia.
+      res.status(401).json({ error: 'refresh_rejected', reason: err.code });
+      return;
+    }
+    next(err);
+  }
+});
+
+/** Sair de verdade: revoga a família inteira, não só apaga do navegador. */
+app.post('/auth/logout', rateLimit('auth'), async (req, res, next) => {
+  try {
+    const refreshToken = (req.body ?? {}).refreshToken;
+    if (typeof refreshToken === 'string' && refreshToken.length >= 20) {
+      await revokeSession(refreshToken);
+    }
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

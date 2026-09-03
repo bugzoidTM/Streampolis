@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AvatarConfig, Currency } from '@streampolis/shared';
 import { ApiClient, ApiError, type ApiLive, type PublicProfile, type Wallet } from '../network/api.js';
 import { activeConnection } from './useSessionStore.js';
+import { authSession } from '../network/authSession.js';
 
 /**
  * A conta do jogador, como o servidor a conhece.
@@ -138,7 +139,10 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     try {
       const result = await api.saveAvatar(avatar);
       // Token novo junto: o antigo ainda carrega a aparência anterior assinada,
-      // e é ele que entra nas salas.
+      // e é ele que entra nas salas. Adotado pela sessão, não só por este
+      // cliente HTTP — senão o relógio da renovação continuaria contando o
+      // vencimento do token anterior.
+      authSession.adoptAccess(result.token, result.expiresIn);
       api.setToken(result.token);
       set({ avatar: result.avatar, token: result.token });
       // E a sala repinta na hora. Sem isto o visual só aparecia para os outros

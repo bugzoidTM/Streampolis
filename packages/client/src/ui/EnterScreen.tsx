@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AvatarConfig } from '@streampolis/shared';
 import { ApiClient, type DemoAccount } from '../network/api.js';
+import { authSession } from '../network/authSession.js';
 import { usePoster } from './usePoster.js';
 import { Button } from './primitives/Controls.js';
 import './enter.css';
@@ -20,9 +21,15 @@ import './enter.css';
 
 export interface EnterScreenProps {
   onEnter: (token: string) => void;
+  /**
+   * Por que esta tela apareceu. Vazio na primeira visita; preenchido quando a
+   * sessão acabou — quem foi devolvido para cá merece saber que não foi um
+   * bug, e que basta entrar de novo.
+   */
+  aviso?: string | null;
 }
 
-export function EnterScreen({ onEnter }: EnterScreenProps) {
+export function EnterScreen({ onEnter, aviso }: EnterScreenProps) {
   const [api] = useState(() => new ApiClient(undefined));
   const [accounts, setAccounts] = useState<DemoAccount[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -39,6 +46,9 @@ export function EnterScreen({ onEnter }: EnterScreenProps) {
     setError(null);
     try {
       const session = await api.enterAs(username);
+      // O par inteiro: sem o refresh, esta sessão duraria 15 minutos e
+      // terminaria no mesmo "modo offline" de antes.
+      authSession.adopt(session);
       onEnter(session.token);
     } catch {
       setError('Não foi possível entrar agora. Tente de novo em instantes.');
@@ -56,6 +66,8 @@ export function EnterScreen({ onEnter }: EnterScreenProps) {
           você gosta.
         </p>
       </header>
+
+      {aviso && <p className="enter__error" role="status">{aviso}</p>}
 
       {accounts === null && <p className="enter__hint">Carregando personagens…</p>}
 
@@ -109,26 +121,24 @@ function CastCard(
   );
 }
 
-/** Onde o token da demonstração fica entre visitas. */
+/**
+ * Onde o token da demonstração fica entre visitas.
+ *
+ * Quem guarda de verdade é o `authSession`, que também guarda o refresh e sabe
+ * renovar. Estas três funções continuam existindo porque o resto da casca fala
+ * nesses termos — mas nenhuma delas toca em `localStorage` por conta própria,
+ * senão haveria dois donos do mesmo token.
+ */
 export const TOKEN_KEY = 'streampolis.token';
 
 export function savedToken(): string | undefined {
-  try {
-    return localStorage.getItem(TOKEN_KEY) ?? undefined;
-  } catch {
-    // Navegador com armazenamento bloqueado: a sessão dura só esta aba.
-    return undefined;
-  }
+  return authSession.token;
 }
 
-export function saveToken(token: string): void {
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch { /* sem persistência; segue em memória */ }
+export function saveToken(_token: string): void {
+  // No-op deliberado: `authSession.adopt()` já gravou o par ao entrar.
 }
 
 export function clearToken(): void {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch { /* nada a limpar */ }
+  void authSession.logout();
 }

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AvatarConfig } from '@streampolis/shared';
 import { useAccountStore } from '../state/useAccountStore.js';
 import { useSessionStore } from '../state/useSessionStore.js';
 import { intentFromQuery, type WorldIntent } from '../network/session.js';
 import type { ApiLive } from '../network/api.js';
 import { WorldView } from './WorldView.js';
-import { EnterScreen, clearToken, saveToken, savedToken } from './EnterScreen.js';
+import { EnterScreen, savedToken } from './EnterScreen.js';
+import { authSession } from '../network/authSession.js';
 import { FeedView } from './FeedView.js';
 import { ProfileView } from './ProfileView.js';
 import { StoreView } from './StoreView.js';
@@ -46,16 +47,59 @@ export function AppShell(props: AppShellProps) {
   const [intent, setIntent] = useState<WorldIntent>(props.intent);
   const [profileTarget, setProfileTarget] = useState<string | null>(null);
   const [goLiveOpen, setGoLiveOpen] = useState(false);
+  /** Por que a porta de entrada reapareceu, quando ela reaparece sozinha. */
+  const [aviso, setAviso] = useState<string | null>(null);
+  /** Recado do mundo para o jogador: a porta que não abriu, e por quê. */
+  const [recado, setRecado] = useState<string | null>(null);
 
   const connect = useAccountStore((s) => s.connect);
   const sessionKind = useSessionStore((s) => s.kind);
 
   useEffect(() => { connect(token); }, [connect, token]);
 
+  // A sessão se renova sozinha; quando ela é adotada ou perdida, a casca é
+  // quem precisa saber. Sem isto, a renovação trocaria o token no armazenamento
+  // e o React continuaria segurando o antigo — que é justamente o que entra nas
+  // salas.
+  useEffect(() => authSession.subscribe((fresh) => {
+    setToken(fresh);
+    if (!fresh) setAviso('Sua sessão expirou. Escolha um personagem para voltar.');
+  }), []);
+
+  /**
+   * De onde a viagem partiu. Uma ref, não estado: ela existe para DESFAZER uma
+   * viagem que falhou, e um render a mais por causa disso não muda nada na
+   * tela — mas ler `intent` na hora da falha leria o destino, não a origem, e
+   * "voltar" devolveria o jogador exatamente à porta que não abriu.
+   */
+  const origem = useRef<WorldIntent>(props.intent);
+
   /** Trocar de sala: o World remonta porque a chave muda. */
   const navigate = (next: WorldIntent) => {
-    setIntent(next);
+    setRecado(null);
+    setIntent((atual) => {
+      origem.current = atual;
+      return next;
+    });
     setTab('world');
+  };
+
+  /**
+   * A porta não abriu.
+   *
+   * Antes isto era invisível: falhar ao abrir o apartamento derrubava a
+   * conexão, o World nascia sem cena declarada e desenhava a praça — o jogador
+   * clicava em "Meu apartamento" e reaparecia na praça, sem uma palavra. Agora
+   * a viagem é DESFEITA (volta-se para de onde se partiu) e o motivo é dito.
+   */
+  const viagemFalhou = (motivo: string) => {
+    setRecado(motivo);
+    const volta = origem.current;
+    // Voltar para uma viagem é voltar para outra que também pode falhar; a
+    // praça é o único destino que o mundo sabe desenhar sem servidor nenhum.
+    setIntent(volta.kind === 'city' || volta.kind === 'offline'
+      ? volta
+      : { kind: 'city', sceneId: 'central_plaza' });
   };
 
   const openProfile = (userId: string | null) => {
@@ -71,8 +115,9 @@ export function AppShell(props: AppShellProps) {
   if (!token) {
     return (
       <EnterScreen
+        aviso={aviso}
         onEnter={(fresh) => {
-          saveToken(fresh);
+          setAviso(null);
           setToken(fresh);
           // A intenção foi calculada quando ainda não havia token, e sem token
           // ela só pode ser "offline". Agora que há, ela é recalculada com as
@@ -96,6 +141,8 @@ export function AppShell(props: AppShellProps) {
         endpoint={props.endpoint}
         paused={tab !== 'world'}
         onOpenProfile={openProfile}
+        onSessionLost={() => { authSession.esquecer(); }}
+        onFailed={viagemFalhou}
         onTravel={(portal) => navigate(
           // `home` não é uma cena: é uma pergunta que só a API responde, e a
           // resposta muda de pessoa para pessoa. As outras são cenas públicas
@@ -135,8 +182,10 @@ export function AppShell(props: AppShellProps) {
           onWatchLive={(roomId) => navigate({ kind: 'watch', roomId })}
           onEditLook={() => setTab('look')}
           onLeave={() => {
-            clearToken();
-            setToken(undefined);
+            // Revoga a família do refresh no servidor e avisa os ouvintes —
+            // que é quem devolve esta casca à porta de entrada.
+            void authSession.logout();
+            setAviso(null);
           }}
         />
       )}
@@ -149,6 +198,10 @@ export function AppShell(props: AppShellProps) {
             navigate({ kind: 'golive', title, category, sceneId: 'live_room' });
           }}
         />
+      )}
+
+      {recado && tab === 'world' && (
+        <p className="worldToast" role="alert" onClick={() => setRecado(null)}>{recado}</p>
       )}
 
       <nav className="nav" aria-label="Navegação principal">

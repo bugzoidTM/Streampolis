@@ -28,6 +28,19 @@ async function synced<S extends WorldStateView>(
   return connection;
 }
 
+/**
+ * O servidor recusou o crachá. Mesma forma do `ServerError` do Colyseus
+ * (`code` 401) para que quem trata a falha não precise saber se ela veio da
+ * sala ou da API.
+ */
+export class SessionRejected extends Error {
+  readonly code = 401;
+  constructor() {
+    super('expired');
+    this.name = 'SessionRejected';
+  }
+}
+
 export const ROOM_CITY = 'city';
 export const ROOM_APARTMENT = 'apartment';
 export const ROOM_LIVE = 'live';
@@ -130,16 +143,25 @@ export class NetworkClient {
     return synced(new WorldConnection(room));
   }
 
-  /** Qual apartamento é o do jogador (a API é dona dessa resposta). */
+  /**
+   * Qual apartamento é o do jogador (a API é dona dessa resposta).
+   *
+   * O 401 é DESTACADO dos demais erros de propósito. Ele não quer dizer "você
+   * não tem casa" — quer dizer "seu crachá venceu", e engolir os dois no mesmo
+   * `null` era o que fazia a porta de casa devolver o jogador à praça em vez de
+   * renovar a sessão.
+   */
   async myHome(): Promise<string | null> {
     try {
       const res = await fetch(`${this.apiBase}/me/home`, {
         headers: { authorization: `Bearer ${this.session.token}` },
       });
+      if (res.status === 401) throw new SessionRejected();
       if (!res.ok) return null;
       const body = (await res.json()) as { home?: { apartmentId?: string } };
       return body.home?.apartmentId ?? null;
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionRejected) throw err;
       return null;
     }
   }

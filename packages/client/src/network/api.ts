@@ -1,4 +1,5 @@
 import type { HomePlacement, AvatarConfig, Currency, LiveSummary } from '@streampolis/shared';
+import { authSession, type IssuedSession } from './authSession.js';
 
 /**
  * Cliente HTTP da API.
@@ -130,7 +131,7 @@ export class ApiClient {
     return Boolean(this.token);
   }
 
-  private async call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async call<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
     const res = await fetch(`${this.base}${path}`, {
       ...init,
       headers: {
@@ -139,6 +140,16 @@ export class ApiClient {
         ...(init.headers ?? {}),
       },
     });
+    // 401 com sessão no navegador é quase sempre o token de 15 minutos que
+    // venceu — não "você não tem permissão". Renova UMA vez e repete; só se a
+    // renovação também falhar é que isto vira erro para o jogador ver.
+    if (res.status === 401 && !retried && this.token && !path.startsWith('/auth/')) {
+      const fresh = await authSession.assegurar();
+      if (fresh && fresh !== this.token) {
+        this.token = fresh;
+        return this.call<T>(path, init, true);
+      }
+    }
     if (!res.ok) {
       // A API responde `{error, message}`; a mensagem é escrita para o jogador
       // ler, então ela sobe até a tela em vez de virar "erro 402".
@@ -167,7 +178,7 @@ export class ApiClient {
    * de produção — é uma porta aberta de propósito, e por isso ela não existe
    * onde houver dinheiro de verdade.
    */
-  async enterAs(username: string): Promise<{ token: string; identity: ApiIdentity }> {
+  async enterAs(username: string): Promise<IssuedSession & { identity: ApiIdentity }> {
     return this.call('/auth/dev-login', {
       method: 'POST',
       body: JSON.stringify({ username }),
@@ -269,7 +280,9 @@ export class ApiClient {
   }
 
   /** Salvar a aparência devolve um token novo: o antigo ainda veste a roupa velha. */
-  saveAvatar(avatar: AvatarConfig): Promise<{ avatar: AvatarConfig; token: string; rejected: unknown[] }> {
+  saveAvatar(avatar: AvatarConfig): Promise<{
+    avatar: AvatarConfig; token: string; expiresIn: number; rejected: unknown[];
+  }> {
     return this.call('/me/avatar', { method: 'PUT', body: JSON.stringify(avatar) });
   }
 }

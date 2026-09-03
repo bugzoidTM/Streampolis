@@ -457,6 +457,18 @@ segundo jogador não renderiza.
 
 Antes de terminar: `npx tsc --noEmit -p packages/client/tsconfig.json` limpo.
 
+## A API roda TypeScript sem compilar
+
+`node src/server.ts`, direto, em **strip-only mode**: o Node apaga os tipos e
+não transforma nada. Sintaxe de TypeScript que GERA código não existe ali —
+`constructor(public readonly x)`, `enum`, `namespace`, decorators. O `tsc
+--noEmit` aceita todas elas e o serviço morre no boot com
+`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`, que é um jeito caro de descobrir. Declare o
+campo à mão e atribua no corpo do construtor.
+
+O game server é o contrário: roda `dist/`, então mudar código lá exige
+`npm run build --workspace @streampolis/game-server` antes do `service update`.
+
 ## Limites e token (o que já está ligado)
 
 A API tem limitador de taxa por IP em quatro classes: `auth` (baixo — é onde se
@@ -478,6 +490,57 @@ existe.
 O game server exige do token, além da assinatura HS256: `iss` igual ao emissor
 configurado e `exp` PRESENTE. Um token sem validade é uma credencial eterna, e
 o mesmo segredo pode assinar outras coisas que não são sessão.
+
+### A sessão são DOIS tokens, e ela se renova sozinha
+
+O access token vale **15 minutos** (`JWT_ACCESS_TTL`) e não dá para revogar:
+quem o tem, entra até ele vencer. Por isso ele nunca vem sozinho — a entrada
+(`/auth/login`, `/auth/dev-login`) devolve também um **refresh** de 30 dias, que
+vive no banco só por hash (`refresh_tokens`) e some quando a sessão acaba.
+
+`POST /auth/refresh {refreshToken}` rotaciona: o refresh apresentado morre ali e
+sai um par novo. Reapresentar um já rotacionado não é engano de cliente, é o
+sintoma de token copiado — a **família inteira** cai e as duas pontas precisam
+entrar de novo. `POST /auth/logout {refreshToken}` revoga a família na saída.
+
+No cliente quem cuida disso é `network/authSession.ts`, e ele é o **único** dono
+do token no `localStorage`: guarda o par, renova com 90 s de folga, renova ao
+voltar para a aba, e compartilha uma promessa só entre chamadas concorrentes —
+duas renovações em paralelo apresentariam o mesmo refresh duas vezes, que o
+servidor leria como reúso. Quando não dá mais para renovar, ele declara a sessão
+PERDIDA e a casca devolve o jogador à porta de entrada **dizendo por quê**.
+
+Isso importa porque a alternativa já esteve no ar: o cliente guardava só o
+access e o reapresentava para sempre. Quinze minutos depois de entrar, a praça
+respondia `expired`, o jogo caía em "Modo offline — sem servidor de jogo" e a
+porta do apartamento — que pergunta à API qual é a casa do jogador — tomava 401 e
+o devolvia à praça. Três sintomas, uma causa, nenhuma palavra na tela.
+
+Duas regras que caíram junto com o bug:
+
+- **`expired` não é "servidor fora do ar".** Sala recusando crachá responde
+  `ServerError(401, <código>)`. O modo offline é para servidor ausente; usá-lo
+  para sessão vencida é mentir para quem está olhando.
+- **Viagem que falha não teleporta.** Sem conexão, um apartamento não existe, e
+  desenhar "a cena default" devolvia o jogador à praça. Agora a viagem é
+  desfeita e o motivo aparece na tela.
+
+A sessão é do NAVEGADOR, não da aba: `authSession` adota pelo evento `storage`
+o par que uma aba irmã gravou e usa uma trava com hora no `localStorage` para
+que só uma renove por vez. Sem isso, duas abas apresentariam o mesmo refresh e a
+segunda seria lida como reúso — as duas expulsas por uma proteção contra um
+roubo que ninguém sofreu.
+
+`node tools/session-check.mjs` prova tudo isso contra a produção: a rotação e o
+reúso pelo HTTP; o navegador com um access VENCIDO no `localStorage`, que
+precisa continuar online e abrir o apartamento; duas abas ao mesmo tempo, que
+precisam sobreviver às duas; e a sessão de fato morta, que precisa pedir
+personagem de novo DIZENDO por quê.
+
+Ao escrever teste de sessão com Playwright: plante os tokens com `evaluate`
+depois de abrir a origem, nunca com `addInitScript` — este roda a cada
+navegação e replanta o refresh ANTIGO, que o servidor lê como reúso. O teste
+mata a sessão que está medindo.
 
 ## Regras de arquitetura (SPECs §68 — não negociáveis)
 

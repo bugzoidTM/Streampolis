@@ -3,7 +3,8 @@ import type { AvatarConfig } from '@streampolis/shared';
 import { World } from '../game/World.js';
 import { BuildBar } from './BuildBar.js';
 import { NetworkClient } from '../network/NetworkClient.js';
-import { describeIntent, isLiveIntent, openWorld, type WorldIntent } from '../network/session.js';
+import { describeIntent, isLiveIntent, openWorld, type IntentKind, type WorldIntent } from '../network/session.js';
+import { authSession } from '../network/authSession.js';
 import type { AnyWorldConnection } from '../network/WorldConnection.js';
 import { useSessionStore } from '../state/useSessionStore.js';
 import { LiveView } from './LiveView.js';
@@ -32,6 +33,18 @@ export interface WorldViewProps {
   onTravel?: (portal: Portal) => void;
   /** Abrir o perfil de alguém que está na sala. */
   onOpenProfile?: (userId: string) => void;
+  /**
+   * O servidor recusou o token e não houve como renovar. Não é o servidor
+   * fora do ar: é a sessão que acabou, e quem manda o jogador entrar de novo
+   * é a casca — não este componente, que só desenha um mundo.
+   */
+  onSessionLost?: () => void;
+  /**
+   * Não deu para abrir a sala que a intenção pedia, com o motivo escrito para
+   * o jogador ler. Só para intenções de VIAGEM (apartamento, live): a praça
+   * sabe rodar offline, uma casa não.
+   */
+  onFailed?: (motivo: string) => void;
 }
 
 /**
@@ -76,12 +89,50 @@ export function WorldView(props: WorldViewProps) {
           if (cancelled) { void connection.leave(); return; }
           session.attach(connection, props.intent.kind);
         } catch (err) {
-          // Servidor fora do ar não pode apagar a tela: cai para o offline e a
-          // UI diz o que aconteceu.
           console.warn('[world] não foi possível abrir a sala:', err);
           connection = null;
-          session.goOffline(props.intent.kind);
-          setMessage('Sem servidor de jogo — modo offline');
+
+          // Token recusado: a sessão acabou. Antes isto virava "modo offline",
+          // que é uma mentira educada — o servidor estava de pé e respondeu
+          // `expired`. Renova uma vez; se nem assim, a sessão morreu e a casca
+          // devolve o jogador à porta de entrada.
+          if (recusaDeSessao(err)) {
+            const fresh = await authSession.assegurar();
+            if (cancelled) return;
+            if (fresh) {
+              // Renovou: a mesma intenção, com o crachá novo.
+              try {
+                const client = new NetworkClient({ token: fresh }, props.endpoint);
+                connection = await openWorld(client, props.intent);
+                if (cancelled) { void connection.leave(); return; }
+                session.attach(connection, props.intent.kind);
+              } catch (again) {
+                console.warn('[world] a sala recusou o token renovado:', again);
+                connection = null;
+              }
+            }
+            if (!connection && !fresh && props.onSessionLost) {
+              props.onSessionLost();
+              return;
+            }
+          }
+
+          if (!connection) {
+            // Uma viagem que falha não pode virar teletransporte: sem conexão,
+            // um apartamento não existe, e desenhar "a cena default" devolvia o
+            // jogador à praça sem explicação.
+            // O `return` depende do handler existir: sem alguém para desfazer
+            // a viagem, sair daqui deixaria a tela preta, que é pior do que a
+            // praça offline que se está tentando evitar.
+            if (props.intent.kind !== 'city' && props.onFailed) {
+              props.onFailed(motivoDaFalha(props.intent.kind));
+              return;
+            }
+            // Área pública o mundo sabe desenhar sozinho: cai para o offline e
+            // a UI diz o que aconteceu.
+            session.goOffline(props.intent.kind);
+            setMessage('Sem servidor de jogo — modo offline');
+          }
         }
       } else {
         session.goOffline('offline');
@@ -212,4 +263,28 @@ export function WorldView(props: WorldViewProps) {
       )}
     </>
   );
+}
+
+/**
+ * O servidor recusou o CRACHÁ, não a sala.
+ *
+ * As salas respondem `ServerError(401, <código>)` — `expired`, `bad_signature`,
+ * `missing_token`. É a diferença entre "sua sessão acabou" e "o servidor está
+ * fora do ar", e sem ela as duas viravam o mesmo "modo offline" na tela.
+ */
+function recusaDeSessao(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: unknown; message?: unknown };
+  if (e.code === 401) return true;
+  return typeof e.message === 'string'
+    && /expired|token|signature|auth/i.test(e.message);
+}
+
+function motivoDaFalha(kind: IntentKind): string {
+  switch (kind) {
+    case 'apartment': return 'Não foi possível abrir o apartamento agora.';
+    case 'watch': return 'Esta live não está mais no ar.';
+    case 'golive': return 'Não foi possível abrir sua live agora.';
+    default: return 'Não foi possível entrar nessa sala agora.';
+  }
 }

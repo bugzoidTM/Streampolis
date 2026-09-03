@@ -459,3 +459,31 @@
   .nav__item { width: 58px; }
   .screen__title { font-size: 22px; }
 }
+
+/* ---------------------------------------------------------------- recado */
+
+/*
+ * A porta que não abriu.
+ *
+ * Fica ACIMA da navegação e abaixo das telas: é um recado sobre o mundo, não
+ * uma tela. Some ao toque — quem já leu não deveria ter de conviver com ele.
+ */
+.worldToast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(max(env(safe-area-inset-bottom), 12px) + 76px);
+  transform: translateX(-50%);
+  z-index: 49;
+  max-width: min(92vw, 34rem);
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 12, 28, 0.92);
+  backdrop-filter: blur(8px);
+  color: #f3eaff;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+}
