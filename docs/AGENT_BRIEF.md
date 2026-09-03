@@ -44,7 +44,12 @@ Três processos, e só o primeiro é obrigatório para ver a cidade:
 npm run dev --workspace @streampolis/client        # Vite em :5273
 npm run dev --workspace @streampolis/game-server   # Colyseus em :2567
 npm run e2e --workspace @streampolis/game-server   # prova do §69, sem navegador
+npm run e2e:shard --workspace @streampolis/game-server  # prova do sharding (§17)
 ```
+
+O `e2e:shard` baixa a lotação da praça para 2 (`CITY_CAPACITY`) e põe 5
+jogadores para entrar: com a capacidade de produção o limite nunca é alcançado,
+então o comportamento de shard não apareceria em teste nenhum.
 
 Sem `?token=`, o cliente roda **offline**: mesma praça, mesma câmera, avatar
 local integrado pela mesma `applyMoveIntent` do servidor. Com o game server no
