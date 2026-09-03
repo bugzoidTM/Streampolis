@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PORTALS, type ChatMessage, type HomePlacement, type Portal } from '@streampolis/shared';
+import { PORTALS, SCENE_AREA, type ChatMessage, type HomePlacement, type Portal } from '@streampolis/shared';
 import { InteriorScene } from './scenes/InteriorScene.js';
 import {
   DEFAULT_AVATAR,
@@ -622,6 +622,16 @@ export class World {
         return me ? { x: me.avatar.root.position.x, z: me.avatar.root.position.z } : null;
       })(),
       portal: this.nearPortal?.id ?? null,
+      // A planta da sala DESENHADA — onde as paredes realmente estão.
+      area: SCENE_AREA[this.sceneId] ?? null,
+      // E a planta em que o corpo local é RESOLVIDO. NÃO é redundante com a de
+      // cima: a cena desenhada vem do estado da sala, a do preditor era
+      // escolhida no construtor da conexão — antes do primeiro patch, quando o
+      // estado ainda é o default. As duas divergiram, e o jogador atravessava
+      // a parede do próprio apartamento empurrado pelo monumento da praça.
+      collision: this.connection
+        ? this.connection.collision
+        : { scene: this.sceneId, area: SCENE_AREA[this.sceneId] ?? null },
       // As portas desta cena, com onde ficam e quanto alcançam.
       //
       // Publicado porque toda ferramenta que quis andar até uma porta acabou

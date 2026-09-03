@@ -6,12 +6,14 @@ import {
   SCENE_COLLIDERS,
   TICK_MS,
   type AnimState,
+  type Area,
   type ChatMessage,
   type FollowEvent,
   type GiftEvent,
   type LikeTotals,
   type MoveCorrection,
   type PKResult,
+  type SceneId,
   type StageInvite,
   type SystemNotice,
 } from '@streampolis/shared';
@@ -71,6 +73,8 @@ type Listener<K extends keyof WorldEvents> = WorldEvents[K];
  */
 export class WorldConnection<S extends WorldStateView = WorldStateView> {
   readonly predictor: Predictor;
+  /** Cena cuja planta o preditor está usando agora. Ver `adoptScene`. */
+  private scene: SceneId = 'central_plaza';
   /**
    * Resolve no primeiro patch de estado.
    *
@@ -106,18 +110,53 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
    */
   constructor(readonly room: Room<S>, readonly apartmentId: string | null = null) {
     this.ready = new Promise<void>((resolve) => { this.markReady = resolve; });
-    const sceneId = room.state?.sceneId ?? 'central_plaza';
     this.predictor = new Predictor(
       { x: 0, z: 0, yaw: 0, moving: false },
-      PLAY_AREA[sceneId],
-      SCENE_COLLIDERS[sceneId],
-      SCENE_AREA[sceneId] ?? null,
+      PLAY_AREA.central_plaza,
+      SCENE_COLLIDERS.central_plaza,
+      SCENE_AREA.central_plaza ?? null,
     );
     this.wire();
   }
 
+  /**
+   * Ensina ao preditor a PLANTA da cena em que esta sala realmente está.
+   *
+   * Existe separado do construtor porque ali a resposta ainda não chegou: o
+   * estado da sala só ganha valor no primeiro patch, e antes dele
+   * `room.state.sceneId` é o DEFAULT do schema — 'central_plaza'. O construtor
+   * lia esse default e o preditor passava a vida inteira prevendo com a mesa de
+   * colisão da praça. Dentro de um apartamento isso não é um detalhe: o
+   * monumento da praça é um cilindro de 5,26 m no centro do mundo, e o quarto
+   * inteiro cabe dentro dele — o primeiro passo empurrava o jogador para fora
+   * desse cilindro, ou seja, através da parede, e nada o trazia de volta,
+   * porque o servidor só manda correção quando ELE recusa alguma coisa, e ele
+   * não recusara nada: do lado de lá o corpo continuava na sala.
+   */
+  private adoptScene(sceneId: SceneId): void {
+    if (sceneId === this.scene) return;
+    this.scene = sceneId;
+    this.predictor.setArea(
+      PLAY_AREA[sceneId],
+      SCENE_COLLIDERS[sceneId],
+      SCENE_AREA[sceneId] ?? null,
+    );
+  }
+
   get sessionId(): string {
     return this.room.sessionId;
+  }
+
+  /**
+   * A planta com que o CORPO local é resolvido: a cena que o preditor adotou e
+   * o limite andável dela.
+   *
+   * Publicado porque a divergência entre "a cena que eu desenho" e "a cena em
+   * que eu colido" não tem sintoma nenhum até o jogador andar — e aí ele
+   * atravessa uma parede. `tools/room-walls-check.mjs` compara as duas.
+   */
+  get collision(): { scene: SceneId; area: Area | null } {
+    return { scene: this.scene, area: SCENE_AREA[this.scene] ?? null };
   }
 
   get state(): S {
@@ -153,6 +192,9 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
     let placed = false;
     this.room.onStateChange((state) => {
       this.markReady();
+      // Antes de qualquer previsão: em que cena esta sala está. O primeiro
+      // patch é quem responde, e é ele quem dá a mesa de colisão ao preditor.
+      this.adoptScene(state.sceneId ?? 'central_plaza');
       const now = performance.now();
       state.players?.forEach((player, sessionId) => {
         if (sessionId === this.room.sessionId) {

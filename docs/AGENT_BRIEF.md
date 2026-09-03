@@ -226,6 +226,20 @@ solver, o jogador atravessa a fonte de um lado e bate nela do outro. As
 posições dos props vêm de `packages/shared/src/layout.ts` pelo mesmo motivo: a
 cena desenha a partir da tabela de onde os colliders são gerados.
 
+Uma tabela só não basta: é preciso pegar a tabela DA CENA CERTA. O preditor do
+cliente escolhia a dele no construtor de `WorldConnection`, antes do primeiro
+patch — quando `room.state.sceneId` ainda é o default do schema. Ele previa a
+vida inteira com a planta da praça, e o monumento da praça é um cilindro de
+5,26 m no centro do mundo: o apartamento (7,2 × 8,4) cabe inteiro dentro dele.
+Quem entrava na própria casa nascia no lugar certo, dava um passo e era
+empurrado para fora — através da parede. E nada o trazia de volta, porque o
+servidor só manda correção quando ELE recusa alguma coisa, e ele não recusara
+nada: do lado de lá o corpo continuava na sala. A cena agora é adotada no
+primeiro patch (`adoptScene`), e `node tools/room-walls-check.mjs`
+(`npm run gate:walls`) prova as duas metades em quatro salas: que a cena
+desenhada é a cena em que se colide, e que andar em toda direção não põe
+ninguém fora da planta.
+
 ## Quem entra na sala (e por quê o World não decide isso)
 
 ```
@@ -246,10 +260,14 @@ Pela URL: `?watch=<roomId>` assiste, `?golive=1&title=` transmite,
 `?apartment=me` abre a própria casa (a API responde qual é), `?scene=` escolhe
 área pública. Sem `?token=` tudo isso é ignorado e o mundo roda offline.
 
-Uma armadilha já paga: `join()` devolve a sala ANTES do primeiro patch, e nesse
-instante `room.state` ainda tem os DEFAULTS do schema — perguntar a cena ali
-responde "central_plaza" dentro de uma live. Por isso o `NetworkClient` espera
-`connection.ready` antes de entregar a conexão.
+Uma armadilha já paga DUAS vezes: `join()` devolve a sala ANTES do primeiro
+patch, e nesse instante `room.state` ainda tem os DEFAULTS do schema —
+perguntar a cena ali responde "central_plaza" dentro de uma live. Por isso o
+`NetworkClient` espera `connection.ready` antes de entregar a conexão. A
+segunda vítima foi o próprio construtor da `WorldConnection`, que montava o
+preditor com a mesa de colisão dessa resposta falsa (ver "Onde a colisão
+mora"). A regra que sobra: dentro da conexão, cena é coisa que se ADOTA no
+patch, nunca que se lê no construtor.
 
 ## Presentes que aparecem
 

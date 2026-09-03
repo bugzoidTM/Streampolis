@@ -21,7 +21,8 @@
     "gate:face": "node tools/v2-face.mjs",
     "gate:wardrobe": "node tools/v2-matrix.mjs",
     "gate:lining": "node tools/v2-lining.mjs",
-    "gate:cards": "node tools/store-cards.mjs"
+    "gate:cards": "node tools/store-cards.mjs",
+    "gate:walls": "node tools/room-walls-check.mjs"
   },
   "engines": {
     "node": ">=22"
