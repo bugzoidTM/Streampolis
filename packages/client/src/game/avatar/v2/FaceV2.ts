@@ -55,6 +55,48 @@ const BROW_DRIFT = 0.10;
 /** O que sobra da altura do olho quando ele fecha. Zero é geometria degenerada — invisível. */
 const CLOSED = 0.08;
 
+/**
+ * A JOIA do olho: íris, pupila e catchlight.
+ *
+ * O pacote dá um cubo escuro por olho, e um cubo escuro é uma pupila gigante —
+ * o rosto fica com o olhar vazio de um boneco. O que separa um olhar de uma
+ * mancha preta são três coisas, nesta ordem de importância: o ponto de luz
+ * (catchlight), a pupila com contorno, e a íris que dá cor.
+ *
+ * Tudo em fração da MENOR aresta do cubo do olho, que é a altura dele: é a
+ * medida que limita, e um raio em fração da largura estouraria a pálpebra nas
+ * cabeças de olho comprido.
+ */
+const IRIS_R = 0.30;
+const PUPIL_R = 0.15;
+const LIGHT_R = 0.07;
+/** Onde o ponto de luz fica, em raios de íris. Alto e para fora, como toda luz de estúdio. */
+const LIGHT_AT: [number, number] = [0.40, 0.42];
+/**
+ * Quanto a joia se adianta ao cubo do olho, em frações da aresta.
+ *
+ * Um fio: ela precisa vencer o teste de profundidade contra a face frontal do
+ * cubo sem virar um botão saltado — o olho inteiro tem dois centímetros e meio.
+ */
+const GEM_PROUD = 0.035;
+/**
+ * Quanto a íris desliza ALÉM do olho na sacada, em frações do deslize do olho.
+ *
+ * O `gaze` do pacote move o olho inteiro dentro do rosto. Uma íris que se mexe
+ * um pouco mais dentro do próprio olho é o que transforma "a cara virou" em "a
+ * pessoa olhou" — e é pequena de propósito: passar disto e a íris encosta na
+ * borda do cubo, que é onde um olho vira estrábico.
+ */
+const GEM_GAZE = 0.35;
+
+/** Cores da joia. A íris é castanha para todo mundo: cor de olho ainda não é escolha do jogador. */
+const IRIS_COLOR = 0xb07a3c;
+const PUPIL_COLOR = 0x0d0a08;
+const LIGHT_COLOR = 0xf4f8ff;
+
+/** Lados do polígono da íris. Oito lê como círculo a esta escala e custa oito triângulos. */
+const GEM_SIDES = 10;
+
 /** Uma ilha grande demais não é olho: é cabelo, pele, capacete ou viseira. */
 const ISLAND_MAX = 64;
 const CANDIDATE_MAX = 600;
@@ -183,7 +225,26 @@ export class FaceV2 {
       for (const island of pair.islands) this.own(island.mesh);
     }
     this.frame = this.measureFrame(this.eyes);
+
+    // A JOIA do olho. Vem depois do quadro porque é dele que saem os eixos, e
+    // pendura-se no OSSO, como a boca: o cubo do olho é 100% do `Head`, então
+    // uma peça presa ao osso e uma escrita na malha andam exatamente juntas.
+    const bone = skeleton.bones[head];
+    if (bone) this.gems = buildGems(this.eyes, this.frame, bone);
+    // E escreve UMA vez agora: a malha nasce com todos os vértices na origem, e
+    // um quadro desenhado antes do primeiro `update` mostraria três discos
+    // amassados no meio do crânio.
+    this.placeGems(1, 0, 0, this.eyes.centre.getComponent(this.up));
   }
+
+  /**
+   * Íris, pupila e catchlight dos dois olhos, numa malha só.
+   *
+   * Uma malha e um material com cor por VÉRTICE, e não três meshes por olho:
+   * seis draw calls por avatar numa praça de trinta pessoas são cento e oitenta
+   * chamadas para desenhar seis milímetros de rosto. Com cor por vértice é uma.
+   */
+  private gems: Gems | null = null;
 
   /**
    * O sistema de coordenadas do rosto, a partir do par de olhos.
@@ -267,6 +328,10 @@ export class FaceV2 {
       piscar: this.eyes ? +this.reflex.blink.toFixed(3) : null,
       ilhas: this.found,
       indexadas: this.indexed,
+      // A joia do olho: existe? com quantos vértices? Um olho sem íris e um
+      // olho cuja íris nasceu dentro do crânio dão a mesma imagem.
+      joia: this.gems ? this.gems.geometry.getAttribute('position').count : null,
+      olhoTam: this.eyes ? this.eyes.islands[0].size.toArray().map((v) => +v.toFixed(6)) : null,
       // O sistema de coordenadas do rosto, que é o que a boca consome. Sai aqui
       // porque uma boca fora do lugar e uma boca posta a partir de eixos
       // trocados dão a mesma imagem, e só estes números as separam.
@@ -311,6 +376,11 @@ export class FaceV2 {
       out[this.side] += slideSide;
     });
 
+    // A joia sofre EXATAMENTE o mesmo achatamento, em torno da mesma linha: é o
+    // que a mantém colada ao olho quando ele fecha, em vez de ficar boiando
+    // sobre uma pálpebra fechada.
+    this.placeGems(shut, slideSide, slideUp, mid);
+
     if (this.brows) {
       // A sobrancelha DERIVA, devagar e de leve. Um rosto vivo nunca está
       // exatamente parado. A amplitude é minúscula de propósito: isto não pode
@@ -345,7 +415,44 @@ export class FaceV2 {
     }
   }
 
+  /**
+   * Põe a joia sobre os olhos: mesmo achatamento, mesmo deslize.
+   *
+   * O deslize da íris é o do olho MAIS um tanto (`GEM_GAZE`) — é ele que faz "a
+   * cara virou" virar "a pessoa olhou". A íris propriamente dita fica sem o
+   * extra para não descolar do próprio olho.
+   */
+  private placeGems(shut: number, slideSide: number, slideUp: number, mid: number): void {
+    const g = this.gems;
+    if (!g || !this.eyes) return;
+    const pos = g.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const fwd = this.forwardAxis();
+    for (let v = 0; v < pos.count; v++) {
+      const centre = this.eyes.islands[g.eye[v] as number].centre;
+      const extra = (g.kind[v] as number) === 0 ? 1 : 1 + GEM_GAZE;
+      this.out[this.side] = centre.getComponent(this.side) + (g.rest[v * 3] as number)
+        + slideSide * extra;
+      this.out[this.up] = mid
+        + (centre.getComponent(this.up) + (g.rest[v * 3 + 1] as number) - mid) * shut
+        + slideUp * extra;
+      this.out[fwd] = centre.getComponent(fwd) + (g.rest[v * 3 + 2] as number);
+      pos.setXYZ(v, this.out[0], this.out[1], this.out[2]);
+    }
+    pos.needsUpdate = true;
+  }
+
+  /** O eixo que sobra: nem cima, nem lado. */
+  private forwardAxis(): 0 | 1 | 2 {
+    return this.frame ? this.frame.forward : 2;
+  }
+
   dispose(): void {
+    if (this.gems) {
+      this.gems.mesh.parent?.remove(this.gems.mesh);
+      this.gems.geometry.dispose();
+      this.gems.material.dispose();
+      this.gems = null;
+    }
     for (const g of this.owned) g.dispose();
     this.owned.length = 0;
     this.rest.clear();
@@ -455,4 +562,117 @@ function mirrored(a: Island, b: Island): { pair: Pair; axis: 0 | 1 | 2 } | null 
     return { pair: { islands: [a, b], centre, edge }, axis };
   }
   return null;
+}
+
+/**
+ * A joia dos dois olhos: uma malha, um material, cor por vértice.
+ *
+ * `rest` guarda cada vértice em OFFSET a partir do centro do seu olho, nos
+ * eixos do rosto (lado, cima, frente) — e é por isso que a mesma malha serve
+ * aos dois olhos e a qualquer cabeça: o que muda é de onde se mede.
+ */
+interface Gems {
+  mesh: THREE.Mesh;
+  geometry: THREE.BufferGeometry;
+  material: THREE.MeshStandardMaterial;
+  /** Offset do vértice ao centro do olho, em (lado, cima, frente). */
+  rest: Float32Array;
+  /** 0 ou 1: de qual olho este vértice é. */
+  eye: Uint8Array;
+  /** 0 íris, 1 pupila, 2 catchlight. Só a íris não ganha o deslize extra. */
+  kind: Uint8Array;
+}
+
+function buildGems(eyes: Pair, frame: FaceFrame, head: THREE.Bone): Gems | null {
+  const a = eyes.islands[0];
+  // A régua é a MENOR aresta do cubo — a altura do olho. Em fração da largura,
+  // uma íris redonda estouraria a pálpebra nas cabeças de olho comprido.
+  const unit = Math.min(a.size.getComponent(frame.side), a.size.getComponent(frame.up));
+  if (!(unit > 0)) return null;
+  const depth = a.size.getComponent(frame.forward);
+
+  const rest: number[] = [];
+  const eye: number[] = [];
+  const kind: number[] = [];
+  const cor: number[] = [];
+  const pos: number[] = [];
+  const index: number[] = [];
+
+  /** Um disco chapado, virado para a frente do rosto, em offsets do centro do olho. */
+  const disc = (
+    olho: number, tipo: number, r: number, dx: number, dy: number, fwd: number, color: THREE.Color,
+  ) => {
+    const base = pos.length / 3;
+    const push = (x: number, y: number) => {
+      // O disco nasce no plano (lado, cima) e é empurrado para a frente do
+      // olho. Guardar em offsets é o que permite reposicionar tudo por quadro
+      // sem recalcular geometria nenhuma.
+      rest.push(x, y, fwd);
+      eye.push(olho);
+      kind.push(tipo);
+      cor.push(color.r, color.g, color.b);
+      pos.push(0, 0, 0);
+    };
+    push(dx, dy);
+    for (let i = 0; i < GEM_SIDES; i++) {
+      const t = (i / GEM_SIDES) * Math.PI * 2;
+      push(dx + Math.cos(t) * r, dy + Math.sin(t) * r);
+    }
+    for (let i = 0; i < GEM_SIDES; i++) {
+      index.push(base, base + 1 + i, base + 1 + ((i + 1) % GEM_SIDES));
+    }
+  };
+
+  const iris = new THREE.Color(IRIS_COLOR).convertSRGBToLinear();
+  const pupil = new THREE.Color(PUPIL_COLOR).convertSRGBToLinear();
+  const light = new THREE.Color(LIGHT_COLOR).convertSRGBToLinear();
+  // A frente do cubo do olho, mais um fio. Cada camada se adianta um pouquinho
+  // à anterior: sem isso as três disputam o mesmo plano e o z-fighting pinta a
+  // pupila de branco em quadros alternados.
+  const face = depth / 2 + unit * GEM_PROUD;
+  for (const olho of [0, 1]) {
+    // O lado do olho DIREITO é espelhado: o catchlight de cada olho tem de
+    // ficar do lado de fora, senão os dois apontam para a mesma parede e o
+    // rosto fica vesgo de luz.
+    const espelho = eyes.islands[olho].centre.getComponent(frame.side) < 0 ? -1 : 1;
+    disc(olho, 0, unit * IRIS_R, 0, 0, face, iris);
+    disc(olho, 1, unit * PUPIL_R, 0, 0, face + unit * 0.012, pupil);
+    disc(olho, 2, unit * LIGHT_R,
+      espelho * unit * IRIS_R * LIGHT_AT[0], unit * IRIS_R * LIGHT_AT[1],
+      face + unit * 0.024, light);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(cor, 3));
+  // A normal é CONSTANTE e escrita à mão: são discos planos virados para a
+  // frente do rosto, e `computeVertexNormals` numa geometria cujas posições só
+  // serão escritas no primeiro quadro devolveria normais de uma malha
+  // colapsada na origem — três discos pretos.
+  const normal = new Float32Array((pos.length / 3) * 3);
+  for (let v = 0; v < pos.length / 3; v++) normal[v * 3 + frame.forward] = frame.facing;
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  geometry.setIndex(index);
+
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.28, metalness: 0,
+    // Dos dois lados: o sentido da frente do rosto é DESCOBERTO, não fixo, e um
+    // disco com a face errada para a câmera é um olho que não existe.
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'EyeGemsV2';
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  // O olho viaja com a cabeça em qualquer gesto; culado, ele some no meio de
+  // uma dança.
+  mesh.frustumCulled = false;
+  head.add(mesh);
+
+  return {
+    mesh, geometry, material,
+    rest: Float32Array.from(rest),
+    eye: Uint8Array.from(eye),
+    kind: Uint8Array.from(kind),
+  };
 }

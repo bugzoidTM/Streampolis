@@ -717,6 +717,37 @@ Duas coisas do v2 que valem para qualquer corpo comprado:
   devolve um nó vazio e adota o kit quando ele chega, guardando a animação
   pedida no meio do caminho.
 
+## O olho do corpo v2: um cubo escuro que virou olhar
+
+O pacote dá UM cubo escuro por olho — 2,5 cm de aresta, quase cúbico, quase todo
+enterrado no crânio. Um cubo escuro é uma pupila gigante, e o rosto fica com o
+olhar vazio de um boneco. `FaceV2` pendura sobre ele três discos chapados:
+íris, pupila e um catchlight, numa malha só com cor por VÉRTICE (seis meshes por
+avatar seriam cento e oitenta draw calls numa praça de trinta pessoas).
+
+O que fazer e o que não fazer, aprendido no pixel:
+
+- A régua é a MENOR aresta do cubo (a altura do olho). Em fração da largura, uma
+  íris redonda estoura a pálpebra nas cabeças de olho comprido.
+- Íris a 40% da altura tapa o olho inteiro e o rosto ganha um botão preto; 30%
+  deixa o cubo escuro emoldurando a íris, que é o que lê como olho.
+- A íris é CLARA (âmbar) sobre o cubo escuro. Um marrom escuro sobre um cubo
+  escuro é a mesma mancha de antes com mais triângulos.
+- As três camadas se adiantam uma à outra por um fio. No mesmo plano, o
+  z-fighting pinta a pupila de branco em quadros alternados.
+- A normal é escrita à MÃO (a frente do rosto) e o material é `DoubleSide`: as
+  posições só existem no primeiro `update`, então `computeVertexNormals` na
+  construção devolveria normais de uma malha colapsada na origem.
+
+**Piscar e olhar continuam sendo do olho.** A joia sofre exatamente o mesmo
+achatamento em torno da mesma linha — é isso que a mantém colada quando o olho
+fecha, em vez de boiar sobre a pálpebra —, e desliza junto na sacada, com um
+tanto a mais só na pupila e no catchlight: é esse tanto que transforma "a cara
+virou" em "a pessoa olhou".
+
+`gate:face` passou a reprovar o olho sem íris: um olho que não ganhou joia e um
+olho cuja joia nasceu dentro do crânio dão a mesma imagem de longe.
+
 ## Uma peça nova no rosto do corpo v2
 
 `FaceV2` acha os olhos e, ao achar, descobre o SISTEMA DE COORDENADAS do rosto:

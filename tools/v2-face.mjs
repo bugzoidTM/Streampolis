@@ -63,7 +63,16 @@ for (const char of chars) {
     await writeFile(file, Buffer.from(res.png.split(',')[1], 'base64'));
     // O que o rosto ACHOU na cabeça: um olho que não fecha e um olho que
     // ninguém achou dão a mesma imagem, e só este relatório os separa.
-    if (blink === BLINKS[0]) console.log(char, JSON.stringify(res.face));
+    if (blink === BLINKS[0]) {
+      console.log(char, JSON.stringify(res.face));
+      // A JOIA do olho — íris, pupila e catchlight. Um olho sem ela e um olho
+      // cuja íris nasceu dentro do crânio dão a mesma imagem de longe, e é a
+      // contagem de vértices que separa "não foi criada" de "não aparece".
+      if (!res.face?.joia) {
+        console.error(`  ✗ ${char}: o olho não ganhou íris`);
+        process.exitCode = 1;
+      }
+    }
   }
 }
 
