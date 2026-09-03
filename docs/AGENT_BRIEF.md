@@ -11,7 +11,7 @@ packages/shared/src/      tipos, catálogos (gifts/items), protocolo de rede
 packages/client/src/
   game/                   engine Three.js (Renderer, Environment, QualityManager)
   game/avatar/            Skeleton, Loft, BodyBuilder, Wardrobe, Materials, Avatar
-  game/avatar/v2/         corpo de pacote (Kit, AvatarV2) — ver "Corpo do avatar"
+  game/avatar/v2/         corpo de pacote (AvatarV2, FaceV2, MouthV2) — ver "Corpo do avatar"
   game/materials/         Noise.ts, Textures.ts (PBR procedural)
   game/scenes/            cenas do mundo
   game/anim/              clipes e máquina de estados de animação
@@ -716,6 +716,42 @@ Duas coisas do v2 que valem para qualquer corpo comprado:
   pode virar assíncrono porque um corpo agora vem de um arquivo; o construtor
   devolve um nó vazio e adota o kit quando ele chega, guardando a animação
   pedida no meio do caminho.
+
+## Uma peça nova no rosto do corpo v2
+
+`FaceV2` acha os olhos e, ao achar, descobre o SISTEMA DE COORDENADAS do rosto:
+quais eixos são cima, lado e frente, para que lado a cara olha, onde está a
+linha dos olhos, a aresta de um olho e o vão entre eles. Isso é publicado como
+`FaceFrame` (`face.frame`) e é de onde toda peça de rosto se posiciona —
+`MouthV2` é a primeira. Ninguém deve redescobrir esses eixos: eles não são
+convenção de rig nenhuma, são deduzidos da simetria do par de olhos, e o resto
+do rosto não tem simetria própria de onde deduzir coisa alguma.
+
+Três coisas que a boca custou a aprender e valem para a próxima peça:
+
+- **A régua é o VÃO entre os olhos, não a aresta do olho.** As onze cabeças
+  masculinas têm olho de 0,000246 e as dez femininas de 0,00025, mas o vão é
+  0,00089 nas vinte e uma. Medir em arestas dá peças de tamanhos diferentes em
+  rostos do mesmo tamanho.
+- **O plano de apoio é a frente do OLHO**, que o pacote já põe à frente da pele.
+  A pele abaixo do nariz está a 0,00002 desse plano — dois milímetros no mundo
+  —, então qualquer recuo "de segurança" ENTERRA a peça. A primeira boca
+  aparecia só nas pontas, e o meio dela estava dentro da cara.
+- **A peça é filha do OSSO `Head`**, não da malha. Presa ao osso ela viaja em
+  toda animação sem uma linha por quadro; costurada na malha pediria peso de
+  pele numa geometria que o pacote não tem.
+
+`npm run gate:mouth` prova as três em onze personagens, e mede o que uma captura
+não responde: os três jeitos de a boca estar errada — não criada, criada atrás
+da pele, ou solta do osso — dão a mesma imagem, um rosto sem boca. Capacete
+(astronauta, tático) não ganha boca, e é o certo: sem olho não há de onde tirar
+medida. Barba na frente da boca é dito no relatório, não reprovado — o operário
+tem bigode e a boca sai por baixo dele.
+
+`window.__lab.headProfile(look)` é o instrumento que mediu tudo isso: varre o
+rosto com um feixe de RAIOS e devolve a pele em espaço da cabeça. Amostrar
+vértice não serve — abaixo do nariz a cara é um quadrilátero só, e no meio dele,
+que é exatamente onde a boca vai, não há vértice nenhum.
 
 ## Entrar no jogo: duas telas, porque são duas esperas
 

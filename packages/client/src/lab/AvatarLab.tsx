@@ -420,6 +420,84 @@ export function AvatarLab() {
          * grande e com o reflexo PRESO, porque um piscar dura 220 ms e nenhuma
          * captura o pega de propósito.
          */
+        /**
+         * O PERFIL do rosto, medido por raio, em espaço da cabeça.
+         *
+         * Existe porque uma peça de rosto nova — a boca foi a primeira — precisa
+         * saber onde a PELE está, e a pele destas cabeças não está nos vértices:
+         * abaixo do nariz o rosto é um quadrilátero só, e no meio dele, que é
+         * exatamente onde a boca vai, não há vértice nenhum para amostrar. Um
+         * feixe de raios contra a malha responde o que a malha realmente é.
+         *
+         * Devolve também para onde a boca foi, e a que distância do osso da
+         * cabeça ela fica em cada estado de animação: presa ao osso, essa
+         * distância não pode mudar — se mudar, ela não está presa, está sendo
+         * carregada por outra coisa.
+         */
+        headProfile: async (look: Partial<AvatarConfig>, states = ['idle', 'dance', 'walk']) => {
+          const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
+          await (avatar as { ready?: Promise<void> }).ready;
+          group.add(avatar.root);
+          try {
+            avatar.setAnim('idle' as never);
+            for (let i = 0; i < 20; i++) avatar.animate(0.05, 0);
+            group.updateMatrixWorld(true);
+            const face = (avatar as { faceReport?: () => unknown }).faceReport?.() ?? null;
+            const origins = (avatar as { origins?: () => Map<THREE.SkinnedMesh, string> }).origins?.();
+            const alvos: THREE.Object3D[] = [];
+            let bone: THREE.Bone | null = null;
+            let boca: THREE.Object3D | null = null;
+            avatar.root.traverse((o) => {
+              if ((o as THREE.SkinnedMesh).isSkinnedMesh) {
+                const id = origins?.get(o as THREE.SkinnedMesh) ?? '';
+                if (id.endsWith('_head')) alvos.push(o);
+              }
+              if ((o as THREE.Bone).isBone && o.name === 'Head' && !bone) bone = o as THREE.Bone;
+              if (o.name === 'MouthV2') boca = o;
+            });
+
+            // A pele, varrida em mundo e devolvida em espaço da cabeça.
+            const ray = new THREE.Raycaster();
+            const p = new THREE.Vector3();
+            const eixo = new THREE.Vector3(0, 0, -1);
+            const superficie: number[][] = [];
+            for (let iy = -22; iy <= 6; iy++) {
+              for (let ix = -8; ix <= 8; ix++) {
+                ray.set(new THREE.Vector3(ix * 0.006, avatar.stature * 0.933 + iy * 0.005, 1.2), eixo);
+                const hits = ray.intersectObjects(alvos, false);
+                if (!hits.length || !bone) continue;
+                p.copy(hits[0].point);
+                (bone as THREE.Bone).worldToLocal(p);
+                // Pele ou pelo: numa cabeça barbada o raio bate na BARBA, que
+                // fica na frente do rosto. Quem quiser saber onde a cara está
+                // precisa poder descartar o que é cabelo.
+                const mat = (hits[0].object as THREE.Mesh).material as THREE.Material;
+                const pele = /skin/i.test((Array.isArray(mat) ? mat[0]?.name : mat?.name) ?? '') ? 1 : 0;
+                superficie.push([+p.x.toFixed(6), +p.y.toFixed(6), +p.z.toFixed(6), pele]);
+              }
+            }
+
+            // E a prova de que a boca é do OSSO: a distância entre os dois não
+            // pode mudar de um gesto para outro.
+            const presa: Record<string, number> = {};
+            if (boca && bone) {
+              const a = new THREE.Vector3();
+              const b = new THREE.Vector3();
+              for (const state of states) {
+                avatar.setAnim(state as never);
+                for (let i = 0; i < 30; i++) avatar.animate(0.05, 1.4);
+                group.updateMatrixWorld(true);
+                (boca as THREE.Object3D).getWorldPosition(a);
+                (bone as THREE.Bone).getWorldPosition(b);
+                presa[state] = +a.distanceTo(b).toFixed(6);
+              }
+            }
+            return { face, superficie, presa };
+          } finally {
+            group.remove(avatar.root);
+            avatar.dispose();
+          }
+        },
         gameFace: async (look: Partial<AvatarConfig>, yaw = 0, blink = 0, zoom = 1) => {
           const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
           await (avatar as { ready?: Promise<void> }).ready;

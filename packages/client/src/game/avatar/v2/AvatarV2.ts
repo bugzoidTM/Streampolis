@@ -4,6 +4,7 @@ import type { AvatarOptions } from '../Avatar.js';
 import type { AvatarLike } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
 import { FaceV2 } from './FaceV2.js';
+import { MouthV2 } from './MouthV2.js';
 import {
   characterOf, clipToBands, columnGaps, dominantBones, findAllSkinned, findSkinned,
   instantiate, LINING, loadClips, loadPart, outfitClearance, posed, rigOf, shrink,
@@ -176,6 +177,14 @@ export class AvatarV2 implements AvatarLike {
    * nada a fechar, e fingir que há custaria uma deformação por quadro à toa.
    */
   private face: FaceV2 | null = null;
+  /**
+   * A boca, que o pacote não tem.
+   *
+   * Nasce das medidas que o `FaceV2` já descobriu, e por isso só existe onde
+   * existe rosto: cabeça sem olho — capacete, viseira — não tem de onde tirar
+   * eixo, escala nem altura, e ganharia uma boca no meio do vidro.
+   */
+  private mouth: MouthV2 | null = null;
 
   /**
    * Resolve quando as peças estão em cena.
@@ -301,6 +310,17 @@ export class AvatarV2 implements AvatarLike {
       if (head?.length) {
         this.face = new FaceV2(head, host.skeleton);
         if (this.pinnedBlink !== null) this.face.pinBlink(this.pinnedBlink);
+        // A boca vem DEPOIS e a partir do que o rosto achou: sem o par de olhos
+        // não há eixo, régua nem linha de altura de onde tirá-la. O osso é o do
+        // esqueleto DESTE avatar — pendurá-la no osso do protótipo em cache
+        // poria a boca de todo mundo na cabeça de quem carregou primeiro.
+        const frame = this.face.face;
+        const bone = host.skeleton.bones.find((b) => b.name === 'Head');
+        if (frame && bone) {
+          this.mouth = new MouthV2(
+            frame, bone, SKIN_TONES[this.config.skinTone % SKIN_TONES.length],
+          );
+        }
       }
     }
     this.mixer = new THREE.AnimationMixer(hostRoot);
@@ -546,7 +566,11 @@ export class AvatarV2 implements AvatarLike {
 
   /** O que o rosto achou na cabeça — nulo quando não há rosto (figurante, capacete). */
   faceReport(): Record<string, unknown> | null {
-    return this.face?.describe() ?? null;
+    const face = this.face?.describe();
+    if (!face) return null;
+    // A boca junto: uma boca que não foi criada e uma boca posta atrás da pele
+    // dão a mesma imagem, e é este relatório que as separa.
+    return { ...face, boca: this.mouth?.describe() ?? null };
   }
 
   pinBlink(value: number | null): void {
@@ -596,6 +620,10 @@ export class AvatarV2 implements AvatarLike {
     this.skeleton = null;
     this.face?.dispose();
     this.face = null;
+    // A boca é malha e material DESTE avatar — nada dela vem do protótipo em
+    // cache —, então ela é descartada de verdade, e não só solta do osso.
+    this.mouth?.dispose();
+    this.mouth = null;
     // Geometria e materiais originais são do PROTÓTIPO em cache, compartilhado
     // com todo avatar que veste a mesma peça: descartá-los aqui apagaria os
     // outros da tela.

@@ -74,6 +74,36 @@ interface Pair {
   edge: number;
 }
 
+/**
+ * O sistema de coordenadas do rosto, como ele foi DESCOBERTO nesta cabeça.
+ *
+ * Publicado porque descobrir isto é caro e ninguém deve descobrir de novo: os
+ * três eixos não são convenção nenhuma do rig, são deduzidos da simetria do par
+ * de olhos, e o resto do rosto — a boca, por exemplo — não tem simetria própria
+ * de onde deduzir coisa alguma. Quem quiser pôr uma peça no rosto pergunta aqui
+ * onde é para cima, onde é para o lado, onde é para a frente e qual o tamanho
+ * das coisas.
+ *
+ * Tudo em ESPAÇO DA CABEÇA (a inversa de bind do osso `Head`), que é o único
+ * espaço destes arquivos em que "para cima" quer dizer alguma coisa.
+ */
+export interface FaceFrame {
+  /** Índices de eixo, não vetores: o espaço da cabeça é alinhado aos eixos. */
+  up: 0 | 1 | 2;
+  side: 0 | 1 | 2;
+  forward: 0 | 1 | 2;
+  /** +1 ou -1: para que lado do osso o rosto olha. */
+  facing: 1 | -1;
+  /** Meio do par de olhos. */
+  eyes: THREE.Vector3;
+  /** Aresta de UM olho. É a régua de tudo o que se põe num rosto. */
+  edge: number;
+  /** Distância entre os centros dos dois olhos: a largura do rosto útil. */
+  span: number;
+  /** Onde a face frontal do olho está, no eixo da frente. A pele está logo atrás. */
+  front: number;
+}
+
 export class FaceV2 {
   private readonly reflex = new Reflex();
   private eyes: Pair | null = null;
@@ -152,6 +182,40 @@ export class FaceV2 {
       if (!pair) continue;
       for (const island of pair.islands) this.own(island.mesh);
     }
+    this.frame = this.measureFrame(this.eyes);
+  }
+
+  /**
+   * O sistema de coordenadas do rosto, a partir do par de olhos.
+   *
+   * O eixo da FRENTE é o que sobra dos três, e o sentido não é convenção: o
+   * olho está na frente do osso da cabeça, e por uma margem grande — o sinal da
+   * componente do centro do par resolve sozinho, sem tabela por personagem.
+   */
+  private measureFrame(eyes: Pair): FaceFrame {
+    const forward = ([0, 1, 2] as const).find((a) => a !== this.up && a !== this.side) as 0 | 1 | 2;
+    const facing = eyes.centre.getComponent(forward) >= 0 ? 1 : -1;
+    const [a, b] = eyes.islands;
+    return {
+      up: this.up,
+      side: this.side,
+      forward,
+      facing,
+      eyes: eyes.centre.clone(),
+      edge: eyes.edge,
+      span: Math.abs(a.centre.getComponent(this.side) - b.centre.getComponent(this.side)),
+      // A face frontal do olho, que é o plano em que uma peça de rosto tem de
+      // ficar para não afundar na pele — o olho já espeta uns milésimos à
+      // frente dela, e é justamente por isso que ele serve de referência.
+      front: eyes.centre.getComponent(forward) + facing * a.size.getComponent(forward) / 2,
+    };
+  }
+
+  private frame: FaceFrame | null = null;
+
+  /** O rosto que esta cabeça tem, ou nulo quando não há olho para deduzi-lo. */
+  get face(): FaceFrame | null {
+    return this.frame;
   }
 
   /** As posições de uma malha no espaço do osso da cabeça, guardadas como repouso. */
@@ -203,6 +267,20 @@ export class FaceV2 {
       piscar: this.eyes ? +this.reflex.blink.toFixed(3) : null,
       ilhas: this.found,
       indexadas: this.indexed,
+      // O sistema de coordenadas do rosto, que é o que a boca consome. Sai aqui
+      // porque uma boca fora do lugar e uma boca posta a partir de eixos
+      // trocados dão a mesma imagem, e só estes números as separam.
+      quadro: this.frame && {
+        cima: this.frame.up, lado: this.frame.side, frente: this.frame.forward,
+        olhando: this.frame.facing,
+        // Seis casas, e não quatro: neste espaço a cabeça inteira mede três
+        // milésimos, e arredondar na quarta casa apaga a diferença entre uma
+        // peça de rosto colada na pele e uma enterrada nela.
+        olhos: this.frame.eyes.toArray().map((v) => +v.toFixed(6)),
+        aresta: +this.frame.edge.toFixed(6),
+        vao: +this.frame.span.toFixed(6),
+        testa: +this.frame.front.toFixed(6),
+      },
     };
   }
 
