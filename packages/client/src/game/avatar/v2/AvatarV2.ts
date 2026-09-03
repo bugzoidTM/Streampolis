@@ -4,7 +4,7 @@ import type { AvatarOptions } from '../Avatar.js';
 import type { AvatarLike } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
 import { FaceV2 } from './FaceV2.js';
-import { MouthV2 } from './MouthV2.js';
+import { MouthV2, type MouthState } from './MouthV2.js';
 import {
   characterOf, clipToBands, columnGaps, dominantBones, findAllSkinned, findSkinned,
   instantiate, LINING, loadClips, loadPart, outfitClearance, posed, rigOf, shrink,
@@ -320,6 +320,9 @@ export class AvatarV2 implements AvatarLike {
           this.mouth = new MouthV2(
             frame, bone, SKIN_TONES[this.config.skinTone % SKIN_TONES.length],
           );
+          // Expressão pedida enquanto as peças ainda vinham: aplica-se agora,
+          // sem travessia — a boca nasce com ela, e não atravessando até ela.
+          if (this.pendingMouth !== 'neutral') this.mouth.setState(this.pendingMouth);
         }
       }
     }
@@ -590,10 +593,30 @@ export class AvatarV2 implements AvatarLike {
     this.play(state);
   }
 
+  /**
+   * A expressão da boca. Volta sozinha para `neutral` quem a pediu — aqui ela
+   * fica onde foi posta, porque este objeto não conhece o motivo da expressão.
+   *
+   * Guardado mesmo antes de as peças chegarem: o corpo v2 se monta depois, e um
+   * pedido feito no meio do carregamento não pode ser perdido pelo caminho —
+   * foi assim que o `pinBlink` teve de aprender a esperar.
+   */
+  setMouth(state: MouthState): void {
+    this.pendingMouth = state;
+    this.mouth?.setState(state);
+  }
+
+  get mouthState(): MouthState {
+    return this.mouth?.state ?? this.pendingMouth;
+  }
+
+  private pendingMouth: MouthState = 'neutral';
+
   animate(dt: number, speed: number): void {
     // O rosto avança MESMO SEM MIXER: ele não depende de clipe nenhum, e um
     // avatar que ainda não recebeu as animações precisa piscar do mesmo jeito.
     this.face?.update(dt);
+    this.mouth?.update(dt);
     if (!this.mixer) return;
     if (this.action) {
       // O ciclo é regido pela velocidade DESENHADA, como no v1: é a única coisa

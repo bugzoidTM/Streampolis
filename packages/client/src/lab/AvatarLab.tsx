@@ -498,10 +498,14 @@ export function AvatarLab() {
             avatar.dispose();
           }
         },
-        gameFace: async (look: Partial<AvatarConfig>, yaw = 0, blink = 0, zoom = 1) => {
+        gameFace: async (look: Partial<AvatarConfig>, yaw = 0, blink = 0, zoom = 1, mouth = '') => {
           const avatar = createAvatar({ ...DEFAULT_AVATAR, ...look });
           await (avatar as { ready?: Promise<void> }).ready;
           avatar.pinBlink(blink);
+          // A expressão é pedida ANTES dos quadros de acomodação abaixo: a boca
+          // atravessa de uma forma à outra em ~55 ms, e fotografá-la no meio da
+          // travessia é fotografar uma quinta expressão que não existe.
+          if (mouth) (avatar as { setMouth?: (s: string) => void }).setMouth?.(mouth);
           group.add(avatar.root);
           const prev = group.rotation.y;
           try {

@@ -73,20 +73,77 @@ const DEPTH = 0.15;
  * folga no canto.
  */
 const WRAP = 0.20;
-/**
- * Quanto os cantos sobem, em alturas de traço.
- *
- * NEUTRA quer dizer neutra: um traço reto lê como aborrecido e um sorriso lê
- * como uma expressão que o jogador não escolheu. O que se quer é o repouso —
- * uma curva pequena o bastante para não ser um sorriso, grande o bastante para
- * a boca não parecer um risco de régua.
- */
-const CURVE = 0.55;
-/** Quanto o traço afina nos cantos, em fração da altura. */
-const TAPER = 0.45;
-
 /** Em quantos blocos o traço é cortado. Ímpar, para haver um bloco no meio. */
-const SEGMENTS = 7;
+const SEGMENTS = 9;
+
+/**
+ * A FORMA da boca, em quatro números — e é só isto que um estado é.
+ *
+ * Guardar quatro geometrias e trocar entre elas seria o caminho óbvio e o
+ * errado: a troca ficaria seca (um quadro fechada, o seguinte escancarada) e
+ * cada avatar carregaria quatro buffers para usar um. Aqui a geometria é uma
+ * só, os quatro números são o que se interpola, e a boca ATRAVESSA de uma forma
+ * à outra — que é o que uma boca faz.
+ *
+ * Todos são frações da altura do traço neutro, e por isso valem em qualquer
+ * cabeça: quem dá a escala é sempre o vão entre os olhos.
+ */
+interface MouthShape {
+  /** Multiplica a largura. Uma boca surpresa é mais estreita que uma fechada. */
+  width: number;
+  /** Multiplica a espessura do traço. */
+  thick: number;
+  /**
+   * Curvatura dos cantos, em alturas de traço. Positivo levanta (sorriso),
+   * negativo derruba (tristeza). É uma parábola, não um levantamento de ponta:
+   * o que lê como sorriso é a LINHA inteira curvar.
+   */
+  curve: number;
+  /** Abertura no meio, em alturas de traço. É o que separa um traço de uma boca aberta. */
+  open: number;
+  /** Afinamento dos cantos, em fração da altura. */
+  taper: number;
+}
+
+export type MouthState = 'neutral' | 'smile' | 'surprise' | 'sad';
+
+/**
+ * As quatro formas.
+ *
+ * Números pequenos, e de propósito: este rosto tem duas barras pretas de olho e
+ * um traço de boca, e é dessa contenção que ele tira a expressão. Um sorriso de
+ * orelha a orelha num rosto de poucos polígonos não lê como alegria — lê como
+ * defeito de malha.
+ *
+ * `neutral` é exatamente a boca que existia antes dos estados: mesma largura,
+ * mesma espessura, mesma curva de repouso. Trocar de estado e voltar tem de
+ * devolver o rosto ao lugar de onde ele saiu, e um `neutral` "melhorado" seria
+ * uma expressão permanente que ninguém pediu.
+ */
+const SHAPES: Record<MouthState, MouthShape> = {
+  neutral: { width: 1.00, thick: 1.00, curve: 0.55, open: 0.00, taper: 0.45 },
+  // O sorriso curva a linha e abre um fio: boca fechada demais com os cantos
+  // para cima lê como quem está segurando o riso, não como quem está rindo.
+  smile: { width: 1.08, thick: 0.95, curve: 2.60, open: 0.45, taper: 0.55 },
+  // O "O". Estreita para não virar um bocejo, e a abertura é o número grande —
+  // é ela que faz a surpresa ser lida a três metros de distância.
+  surprise: { width: 0.64, thick: 1.00, curve: 0.00, open: 3.00, taper: 0.00 },
+  // A tristeza é o sorriso ao contrário e MENOS forte: um rosto de canto muito
+  // caído vira caricatura de choro. O traço também encolhe um pouco, que é o
+  // que dá o aperto de lábio.
+  sad: { width: 0.92, thick: 1.00, curve: -1.50, open: 0.00, taper: 0.50 },
+};
+
+/**
+ * Para onde a boca cresce ao abrir: quase tudo para BAIXO.
+ *
+ * O lábio de cima é preso ao crânio e o de baixo é que desce — abrir em torno
+ * do centro sobe a boca até a base do nariz, e o rosto fica com cara de focinho.
+ */
+const OPEN_DOWN = 0.72;
+
+/** Meia-vida da troca de estado, em segundos. Boca não muda de forma em salto. */
+const MORPH_HALFLIFE = 0.055;
 
 /**
  * A cor da boca, derivada do TOM DE PELE.
@@ -113,6 +170,23 @@ export class MouthV2 {
   private readonly geometry: THREE.BufferGeometry;
   private readonly material: THREE.MeshStandardMaterial;
   private readonly head: THREE.Bone;
+  private readonly frame: FaceFrame;
+  /**
+   * De que bloco e de que canto dele veio cada vértice.
+   *
+   * Três bytes por vértice — o índice do bloco e os três sinais do canto — e é
+   * com isso que a forma é recalculada: a posição de um vértice é uma FUNÇÃO do
+   * bloco a que ele pertence, e não um dado a ser deformado. É o que permite
+   * abrir a boca sem que a geometria se lembre de como ela era fechada.
+   */
+  private readonly bloco: Int8Array;
+  private readonly canto: Int8Array;
+
+  private alvo: MouthShape = SHAPES.neutral;
+  private atual: MouthShape = { ...SHAPES.neutral };
+  private estado: MouthState = 'neutral';
+  /** Falso quando `atual` já é `alvo`: aí não há o que reescrever por quadro. */
+  private mexendo = false;
 
   /**
    * @param frame o rosto descoberto pelo `FaceV2` — sem ele não há onde pôr boca.
@@ -120,7 +194,13 @@ export class MouthV2 {
    * @param skin o tom de pele do jogador, de onde sai a cor.
    */
   constructor(frame: FaceFrame, head: THREE.Bone, skin: THREE.ColorRepresentation) {
-    const geometry = buildMouth(frame);
+    this.frame = frame;
+    const built = buildMouth();
+    this.geometry = built.geometry;
+    this.bloco = built.bloco;
+    this.canto = built.canto;
+    this.write(this.atual);
+
     const material = new THREE.MeshStandardMaterial({
       color: mouthColor(skin),
       roughness: 0.62,
@@ -131,7 +211,7 @@ export class MouthV2 {
     });
     material.color.convertSRGBToLinear();
 
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Mesh(this.geometry, material);
     // Um traço de meio centímetro não projeta sombra em nada, e o mapa de
     // sombras é caro. Receber, sim: sem isso a boca ignora a luz do ambiente e
     // fica acesa num rosto na penumbra.
@@ -144,9 +224,47 @@ export class MouthV2 {
     head.add(mesh);
 
     this.mesh = mesh;
-    this.geometry = geometry;
     this.material = material;
     this.head = head;
+  }
+
+  get state(): MouthState {
+    return this.estado;
+  }
+
+  /**
+   * Pede uma forma. A boca ATRAVESSA até ela; não salta.
+   *
+   * Pedir o estado em que já se está é no-op de verdade — e isso importa:
+   * quem chama é o laço do jogo, todo quadro, e recalcular 216 vértices por
+   * avatar por quadro para escrever o mesmo número é o tipo de desperdício que
+   * só aparece com trinta pessoas na praça.
+   */
+  setState(state: MouthState): void {
+    if (state === this.estado) return;
+    this.estado = state;
+    this.alvo = SHAPES[state];
+    this.mexendo = true;
+  }
+
+  /** Avança a travessia. Barato quando não há travessia nenhuma. */
+  update(dt: number): void {
+    if (!this.mexendo || !this.mesh) return;
+    const k = 1 - Math.pow(2, -dt / MORPH_HALFLIFE);
+    let longe = 0;
+    for (const campo of ['width', 'thick', 'curve', 'open', 'taper'] as const) {
+      const d = this.alvo[campo] - this.atual[campo];
+      this.atual[campo] += d * k;
+      longe = Math.max(longe, Math.abs(this.alvo[campo] - this.atual[campo]));
+    }
+    // Encostou: escreve a forma EXATA e para. Sem este fecho a boca fica
+    // eternamente a um milésimo do destino, reescrevendo a geometria para
+    // sempre — o custo de uma expressão que já acabou.
+    if (longe < 0.002) {
+      this.atual = { ...this.alvo };
+      this.mexendo = false;
+    }
+    this.write(this.atual);
   }
 
   /** Onde a boca ficou, para quem precisa provar que ela existe e está no rosto. */
@@ -158,10 +276,34 @@ export class MouthV2 {
     const size = box.getSize(new THREE.Vector3());
     const centre = box.getCenter(new THREE.Vector3());
     return {
+      estado: this.estado,
       centro: centre.toArray().map((v) => +v.toFixed(5)),
       tamanho: size.toArray().map((v) => +v.toFixed(5)),
       blocos: SEGMENTS,
+      // Quanto os CANTOS estão acima do meio, em alturas de traço. É o número
+      // que separa um sorriso de uma tristeza — a caixa envolvente não separa,
+      // porque as duas curvam a mesma linha para lados opostos e ocupam a mesma
+      // caixa. Positivo é sorriso, negativo é tristeza.
+      cantos: +(this.cornerLift() / (this.frame.span * THICK)).toFixed(3),
     };
+  }
+
+  /** Altura média dos dois blocos das pontas menos a do bloco do meio. */
+  private cornerLift(): number {
+    const pos = this.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const eixo = this.frame.up;
+    let pontas = 0;
+    let pontasN = 0;
+    let meio = 0;
+    let meioN = 0;
+    const middle = (SEGMENTS - 1) / 2;
+    for (let v = 0; v < pos.count; v++) {
+      const i = this.bloco[v] as number;
+      const y = eixo === 0 ? pos.getX(v) : eixo === 1 ? pos.getY(v) : pos.getZ(v);
+      if (i === 0 || i === SEGMENTS - 1) { pontas += y; pontasN++; } else if (i === middle) { meio += y; meioN++; }
+    }
+    if (!pontasN || !meioN) return 0;
+    return pontas / pontasN - meio / meioN;
   }
 
   dispose(): void {
@@ -170,61 +312,93 @@ export class MouthV2 {
     this.material.dispose();
     this.mesh = null;
   }
+
+  /**
+   * Escreve a forma na geometria, em espaço da cabeça.
+   *
+   * Cada vértice é recalculado do zero a partir do bloco a que pertence — nada
+   * é deformado a partir do estado anterior, porque deformar acumula erro e uma
+   * boca que abre e fecha mil vezes numa sessão acabaria torta.
+   */
+  private write(shape: MouthShape): void {
+    const f = this.frame;
+    const width = f.span * WIDTH * shape.width;
+    const thick = f.span * THICK * shape.thick;
+    const base = f.span * THICK;
+    const depth = f.span * DEPTH;
+    const step = width / SEGMENTS;
+
+    const midSide = f.eyes.getComponent(f.side);
+    const midUp = f.eyes.getComponent(f.up) - f.span * DROP;
+    // A frente do traço fica no MESMO plano da frente do olho — o plano que o
+    // próprio pacote usa para pôr uma peça na cara sem que ela afunde. Ali a
+    // boca sobra dois milímetros da pele nos rostos masculinos e cinco nos
+    // femininos, que é a mesma ordem de grandeza com que o olho sobra. Recuar
+    // deste plano foi a primeira tentativa, e ela ENTERRAVA o meio da boca: a
+    // pele abaixo do nariz está a apenas 0,00002 dele.
+    const midFwd = f.front - f.facing * (depth / 2);
+
+    const pos = this.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const out = [0, 0, 0];
+    for (let v = 0; v < pos.count; v++) {
+      const i = this.bloco[v] as number;
+      const t = (i - (SEGMENTS - 1) / 2) / ((SEGMENTS - 1) / 2);
+      const away = Math.abs(t);
+      const side = t * (width / 2 - step / 2);
+      // Altura do bloco: afinando para os cantos e engordando no meio quando a
+      // boca abre. O `max` é o que faz a abertura ser um bojo central e não um
+      // retângulo — uma boca aberta é redonda.
+      // Meia-elipse, e não parábola: a parábola afina cedo demais e a boca
+      // aberta vira um V. O que se quer é um O — cheio no meio e fechando só
+      // perto do canto.
+      const alta = thick * (1 - shape.taper * away * away)
+        + shape.open * base * Math.sqrt(Math.max(0, 1 - away * away));
+      // A curva da linha, e a queda do centro conforme ela abre.
+      const lift = shape.curve * base * away * away;
+      const up = midUp + lift - (alta - thick) * OPEN_DOWN * 0.5;
+
+      out[f.side] = midSide + side + (this.canto[v * 3] as number) * (step * 0.55);
+      out[f.up] = up + (this.canto[v * 3 + 1] as number) * (alta / 2);
+      // O canto acompanha a bochecha para trás, senão a boca fica reta num rosto
+      // que não é.
+      out[f.forward] = midFwd - f.facing * WRAP * Math.abs(side)
+        + (this.canto[v * 3 + 2] as number) * (depth / 2);
+      pos.setXYZ(v, out[0], out[1], out[2]);
+    }
+    pos.needsUpdate = true;
+    this.geometry.computeVertexNormals();
+    this.geometry.computeBoundingSphere();
+  }
 }
 
 /**
- * O traço, em blocos, no espaço da cabeça.
+ * O traço, em blocos, e a etiqueta de cada vértice.
  *
  * Blocos e não um tubo curvo pelo mesmo motivo que o olho do pacote é um cubo:
  * o rosto inteiro é de faces planas e poucos polígonos, e uma boca redonda
- * seria a peça mais detalhada de uma cabeça que não tem detalhe nenhum. Os
- * blocos das pontas sobem e afinam, e é essa escadinha que vira uma curva a
- * qualquer distância a que o rosto é olhado.
+ * seria a peça mais detalhada de uma cabeça que não tem detalhe nenhum. Nove
+ * blocos, e não sete, porque agora eles precisam desenhar também um "O": com
+ * sete, a boca aberta tem quatro degraus de cada lado e lê como escada.
+ *
+ * A geometria nasce em torno da origem e sem tamanho nenhum — quem dá posição e
+ * forma a ela é `write`, e por isso a mesma malha serve às quatro expressões.
  */
-function buildMouth(frame: FaceFrame): THREE.BufferGeometry {
-  const width = frame.span * WIDTH;
-  const thick = frame.span * THICK;
-  const depth = frame.span * DEPTH;
-  const rise = thick * CURVE;
-
-  const midSide = frame.eyes.getComponent(frame.side);
-  const midUp = frame.eyes.getComponent(frame.up) - frame.span * DROP;
-  // A frente do traço fica no MESMO plano da frente do olho — o plano que o
-  // próprio pacote usa para pôr uma peça na cara sem que ela afunde. Ali a
-  // boca sobra dois milímetros da pele nos rostos masculinos e cinco nos
-  // femininos, que é a mesma ordem de grandeza com que o olho sobra. Recuar
-  // deste plano foi a primeira tentativa, e ela ENTERRAVA o meio da boca: a
-  // pele abaixo do nariz está a apenas 0,00002 dele. O resto do bloco entra
-  // pelo crânio adentro, onde ninguém o vê.
-  const midFwd = frame.front - frame.facing * (depth / 2);
-
-  const step = width / SEGMENTS;
+function buildMouth(): { geometry: THREE.BufferGeometry; bloco: Int8Array; canto: Int8Array } {
   const parts: THREE.BufferGeometry[] = [];
+  const bloco: number[] = [];
+  const canto: number[] = [];
   for (let i = 0; i < SEGMENTS; i++) {
-    // -1 na ponta esquerda, +1 na direita.
-    const t = (i - (SEGMENTS - 1) / 2) / ((SEGMENTS - 1) / 2);
-    const away = Math.abs(t);
-    const box = new THREE.BoxGeometry(
-      // Uma folga entre os blocos deixaria a boca tracejada; um décimo de
-      // sobreposição fecha a emenda sem engordar o traço.
-      step * 1.1,
-      thick * (1 - TAPER * away * away),
-      depth,
-    );
-    const at = [0, 0, 0];
-    const side = t * (width / 2 - step / 2);
-    at[frame.side] = midSide + side;
-    at[frame.up] = midUp + rise * away * away;
-    // O canto acompanha a bochecha para trás, senão a boca fica reta num rosto
-    // que não é.
-    at[frame.forward] = midFwd - frame.facing * WRAP * Math.abs(side);
-    box.translate(at[0], at[1], at[2]);
+    const box = new THREE.BoxGeometry(2, 2, 2);
+    const pos = box.getAttribute('position');
+    for (let v = 0; v < pos.count; v++) {
+      bloco.push(i);
+      // O canto de um cubo de aresta 2 é (±1, ±1, ±1): o sinal é a etiqueta.
+      canto.push(Math.sign(pos.getX(v)), Math.sign(pos.getY(v)), Math.sign(pos.getZ(v)));
+    }
     parts.push(box);
   }
-
-  const merged = mergeGeometries(parts);
+  const geometry = mergeGeometries(parts);
   for (const p of parts) p.dispose();
-  if (!merged) throw new Error('MouthV2: falha ao juntar os blocos da boca');
-  merged.computeBoundingSphere();
-  return merged;
+  if (!geometry) throw new Error('MouthV2: falha ao juntar os blocos da boca');
+  return { geometry, bloco: Int8Array.from(bloco), canto: Int8Array.from(canto) };
 }

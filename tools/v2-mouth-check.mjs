@@ -155,6 +155,64 @@ for (const head of heads) {
   for (const p of problemas) console.log(`    ✗ ${p}`);
 }
 
+// ---------------------------------------------------------------------------
+// As quatro EXPRESSÕES, numa cabeça de cada família.
+//
+// A caixa envolvente sozinha não separa um sorriso de uma tristeza: as duas
+// curvam a mesma linha para lados opostos e ocupam a mesma caixa. Quem separa é
+// a altura dos CANTOS contra a do meio, que a boca publica.
+// ---------------------------------------------------------------------------
+const ESTADOS = ['neutral', 'smile', 'surprise', 'sad'];
+const expressivas = args.heads ? [] : ['m_casual_character_head', 'f_suit_head'];
+const tirasExp = [];
+for (let r = 0; r < expressivas.length; r++) {
+  const head = expressivas[r];
+  const char = head.replace(/_head$/, '');
+  const look = { hair: head, top: `${char}_top`, bottom: `${char}_bottom`, shoes: `${char}_shoes` };
+  const medidas = {};
+  for (let c = 0; c < ESTADOS.length; c++) {
+    const st = ESTADOS[c];
+    const shot = await page.evaluate(([l, s]) => window.__lab.gameFace(l, 0, 0, 0.8, s), [look, st]);
+    medidas[st] = shot.face?.boca ?? null;
+    if (comFoto) {
+      const buf = Buffer.from(shot.png.split(',')[1], 'base64');
+      await writeFile(path.join(OUT, `expressao_${char}_${st}.png`), buf);
+      tirasExp.push({
+        input: await sharp(buf).flatten({ background: '#151821' }).resize(220, 220).png().toBuffer(),
+        left: c * 220, top: r * 220,
+      });
+    }
+  }
+  const alt = (st) => medidas[st]?.tamanho[1] ?? 0;
+  const cantos = (st) => medidas[st]?.cantos ?? 0;
+  const problemas = [];
+  const diga = (ok, msg) => { if (!ok) problemas.push(msg); };
+  diga(ESTADOS.every((st) => medidas[st]?.estado === st), 'a boca não adotou o estado pedido');
+  diga(alt('surprise') > alt('neutral') * 2,
+    `a surpresa mal abre — ${alt('surprise').toFixed(5)} contra ${alt('neutral').toFixed(5)} da neutra`);
+  diga(cantos('smile') > cantos('neutral'),
+    `o sorriso não levanta os cantos — ${cantos('smile')} contra ${cantos('neutral')}`);
+  diga(cantos('sad') < 0,
+    `a tristeza não derruba os cantos — ${cantos('sad')}`);
+  // E voltar é voltar: um estado que deixa resíduo vira expressão permanente.
+  const volta = await page.evaluate(([l]) => window.__lab.gameFace(l, 0, 0, 0.8, 'neutral'), [look]);
+  diga(JSON.stringify(volta.face?.boca?.tamanho) === JSON.stringify(medidas.neutral?.tamanho),
+    'voltar para neutra não devolve a boca ao mesmo lugar');
+  falhas += problemas.length;
+  console.log(`${problemas.length ? '✗' : '✓'} ${char}: quatro expressões ` +
+    `(cantos ${ESTADOS.map((st) => `${st[0]}=${cantos(st)}`).join(' ')})`);
+  for (const p of problemas) console.log(`    ✗ ${p}`);
+}
+if (comFoto && tirasExp.length) {
+  await sharp({
+    create: {
+      width: 220 * ESTADOS.length, height: 220 * expressivas.length,
+      channels: 3, background: '#151821',
+    },
+  }).composite(tirasExp).jpeg({ quality: 92 }).toFile(path.join(OUT, 'expressoes.jpg'));
+  console.log(`expressões: ${path.join(OUT, 'expressoes.jpg')}`);
+}
+
 // A folha de contato: duas cabeças por linha, frente e três quartos de cada.
 if (comFoto) {
   const cell = 220;
