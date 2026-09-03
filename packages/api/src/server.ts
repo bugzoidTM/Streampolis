@@ -13,6 +13,7 @@ import { closeLive, listLives, openLive } from './world/Lives.ts';
 import { optionalUser, requireService, requireUser, type AuthedRequest } from './http/middleware/auth.ts';
 import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
 import { getRanking, isBoard, isRange } from './social/Rankings.ts';
+import { presenceDirectory } from './social/PresenceDirectory.ts';
 import { listInventory, purchaseItem } from './shop/Purchases.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
@@ -305,6 +306,18 @@ app.get('/me/pk', requireUser, async (req: AuthedRequest, res, next) => {
   }
 });
 
+/**
+ * Onde EU estou (SPECs §17).
+ *
+ * Devolve cena e shard porque é a própria pessoa perguntando. A mesma resposta
+ * sobre outro jogador é endereço alheio e não sai daqui sem amizade — é a
+ * diferença entre "está no mundo", que o perfil já mostra a todos, e "está
+ * nesta praça, neste shard", que leva alguém até você.
+ */
+app.get('/me/presence', requireUser, (req: AuthedRequest, res) => {
+  res.json({ presence: presenceDirectory.locationOf(req.userId as string) });
+});
+
 // ----------------------------------------------------------------- loja ---
 
 app.get('/me/inventory', requireUser, async (req: AuthedRequest, res, next) => {
@@ -523,6 +536,40 @@ app.get('/internal/identity/:userId', rateLimit('service'), requireService, asyn
   } catch (err) {
     next(err);
   }
+});
+
+/**
+ * Retrato de presença de um processo de game server (SPECs §17).
+ *
+ * Retrato inteiro, sempre — nunca "fulano entrou". Ver PresenceDirectory.
+ */
+const presenceSnapshotSchema = z.object({
+  serverId: z.string().min(1).max(64),
+  at: z.number().int().nonnegative(),
+  entries: z.array(z.object({
+    // Não é uuid: em desenvolvimento o token do game server É o id do usuário
+    // ("ana"), e recusar isso aqui deixaria o jogo inteiro sem presença fora
+    // de produção. A rota é autenticada por token de serviço; o que entra veio
+    // do game server, não do navegador.
+    userId: z.string().min(1).max(64),
+    sceneId: z.string().min(1).max(32),
+    roomId: z.string().min(1).max(64),
+    kind: z.enum(['in_world', 'watching_live', 'streaming', 'in_pk']),
+    since: z.number().int().nonnegative(),
+  })).max(1_000),
+});
+
+app.post('/internal/presence', rateLimit('service'), requireService, (req, res, next) => {
+  try {
+    const snapshot = presenceSnapshotSchema.parse(req.body);
+    res.json({ ok: true, tracked: presenceDirectory.ingest(snapshot) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/internal/presence/:userId', rateLimit('service'), requireService, (req, res) => {
+  res.json({ presence: presenceDirectory.locationOf(param(req.params.userId)) });
 });
 
 const openLiveSchema = z.object({

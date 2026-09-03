@@ -8,3 +8,4 @@ export * from './placeables.js';
 export * from './portals.js';
 export * from './collision.js';
 export * from './protocol.js';
+export * from './presence.js';

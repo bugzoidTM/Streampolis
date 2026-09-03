@@ -8,12 +8,14 @@ import {
   type AnimState,
   type ChatMessage,
   type MoveCorrection,
+  type PresenceKind,
   type SceneId,
   type SystemNotice,
 } from '../shared.js';
 import { AuthError, defaultAuthProvider, type AuthIdentity, type AuthProvider } from '../auth/AuthProvider.js';
 import { ChatGuard } from '../social/ChatGuard.js';
 import { MovementController } from '../sim/Movement.js';
+import { presence } from '../world/Presence.js';
 import { spawnFor } from '../world/Spawns.js';
 import { PlayerState, WorldState, type RoomRole } from './schema.js';
 
@@ -121,6 +123,10 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
       lastEmoteAt: 0,
     });
 
+    // A partir daqui o jogador tem endereço: cena E shard. É o que permite a
+    // outra pessoa chegar até ele em vez de chegar até "a praça" (SPECs §17).
+    this.trackPresence(identity);
+
     // Spectators get a session (chat, rate limits, blocks) but no body: a live
     // with 100 viewers must not synchronise 100 avatars (SPECs §10).
     if (!this.spawnsAvatar(identity)) {
@@ -173,7 +179,45 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
   override onLeave(client: Client, _consented?: boolean): void {
     const session = this.sessions.get(client.sessionId);
     this.removeSession(client.sessionId);
-    if (session) this.onPlayerLeft(client, session.identity);
+    if (!session) return;
+    // Dentro do `if` de propósito. A segunda aba do mesmo usuário derruba a
+    // primeira em onJoin, e o onLeave dela chega DEPOIS — se a saída não
+    // dependesse de a sessão ainda existir, a aba velha apagaria a presença da
+    // aba nova, na mesma sala, e o jogador sumiria estando dentro.
+    presence().leave(session.identity.userId, this.roomId);
+    this.onPlayerLeft(client, session.identity);
+  }
+
+  /** A sala acabou: ninguém que estava nela continua em lugar nenhum. */
+  override onDispose(): void {
+    presence().dropRoom(this.roomId);
+  }
+
+  /**
+   * Como esta sala aparece no diretório. O default é "está no mundo"; a live
+   * distingue palco de plateia.
+   */
+  protected presenceKind(_identity: AuthIdentity): PresenceKind {
+    return 'in_world';
+  }
+
+  private trackPresence(identity: AuthIdentity): void {
+    presence().enter({
+      userId: identity.userId,
+      sceneId: this.sceneId,
+      roomId: this.roomId,
+      kind: this.presenceKind(identity),
+    });
+  }
+
+  /**
+   * Reanuncia todo mundo. Serve para mudanças que não são entrada nem saída —
+   * subir ao palco, começar um PK — em que o lugar é o mesmo e o que mudou é o
+   * que a pessoa está fazendo ali. `enter` é idempotente, então chamar isto de
+   * graça não custa publicação nenhuma.
+   */
+  protected refreshPresence(): void {
+    for (const session of this.sessions.values()) this.trackPresence(session.identity);
   }
 
   protected onPlayerJoined(_client: Client, _identity: AuthIdentity, _player: PlayerState | null): void {}

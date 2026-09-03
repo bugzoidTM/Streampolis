@@ -37,6 +37,17 @@ export const config = {
   apiBaseUrl: str('API_BASE_URL', ''),
   apiServiceToken: str('API_SERVICE_TOKEN', ''),
 
+  /**
+   * Identidade deste PROCESSO no diretório de presença. Fixa por deploy quando
+   * declarada; sorteada quando não — duas réplicas com o mesmo id sobrescrevem
+   * a fatia uma da outra e metade dos jogadores some do mapa.
+   */
+  serverId: str('GAME_SERVER_ID', `gs_${Math.random().toString(36).slice(2, 10)}`),
+  /** Janela de coalescência do retrato de presença (§17). */
+  presenceFlushMs: num('PRESENCE_FLUSH_MS', 150),
+  /** Batimento do retrato. Tem de ser bem menor que o TTL do lado da API. */
+  presenceHeartbeatMs: num('PRESENCE_HEARTBEAT_MS', 15_000),
+
   cityCapacity: num('CITY_CAPACITY', 36),
   apartmentCapacity: num('APARTMENT_CAPACITY', 12),
   liveCapacity: num('LIVE_CAPACITY', 100),

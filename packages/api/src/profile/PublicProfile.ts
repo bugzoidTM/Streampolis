@@ -1,5 +1,6 @@
 import { pool } from '../db/pool.ts';
 import { DEFAULT_AVATAR_DTO, type AvatarConfigDTO } from '../auth/identity.ts';
+import { presenceDirectory } from '../social/PresenceDirectory.ts';
 
 /**
  * Perfil público (PRD §15, §16).
@@ -117,7 +118,15 @@ export async function getPublicProfile(
     followers: int(row.followers),
     following: int(row.following),
     agency: row.agency_name,
-    presence: row.presence ?? 'offline',
+    // O "agora" vem do diretório efêmero, não da coluna: `profiles.presence`
+    // é o registro grosso do banco e ninguém o escreve a cada porta que se
+    // atravessa. Quem tem socket aberto é o game server, e é ele que alimenta
+    // o diretório — sem isto a tela de perfil diz "offline" para gente que
+    // está parada na praça ao lado.
+    //
+    // Sai o estado, nunca o shard: em que sala a pessoa está é endereço, e
+    // endereço exige amizade (ver PresenceDirectory).
+    presence: presenceDirectory.statusOf(row.id) ?? row.presence ?? 'offline',
     apartmentId: row.apartment_id,
     apartmentVisibility: row.apartment_visibility ?? 'private',
     isLive: Boolean(row.live_room_id),

@@ -36,15 +36,26 @@ const check = (label, ok, detail = '') => {
 const step = (label) => console.log(`\n${label}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitFor(label, predicate, timeoutMs = 6_000) {
+async function waitFor(label, predicate, timeoutMs = 6_000, intervalMs = 50) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) return true;
-    await sleep(50);
+    await sleep(intervalMs);
   }
   console.log(`  … tempo esgotado esperando: ${label}`);
   return false;
 }
+
+/**
+ * Espera por algo que só a API sabe responder.
+ *
+ * Intervalo folgado de propósito: 20 requisições por segundo contra uma rota
+ * autenticada gastam a cota do limitador em poucos segundos, e aí o e2e passa a
+ * medir o rate limit em vez do que veio testar — foi exatamente o que aconteceu
+ * na primeira versão desta etapa.
+ */
+const waitForApi = (label, predicate, timeoutMs = 6_000) =>
+  waitFor(label, predicate, timeoutMs, 400);
 
 async function api(path, init = {}) {
   const res = await fetch(`${API}${path}`, {
@@ -100,7 +111,25 @@ async function main() {
     anaPlayer?.avatar?.top === ana.identity.avatar.top && anaPlayer?.avatar?.accessory === '',
     `top=${anaPlayer?.avatar?.top} accessory=${anaPlayer?.avatar?.accessory}`);
 
-  step('2) Token forjado não entra');
+  // ----------------------------------------------------------- presença ---
+  step('2) A API sabe em QUAL PRAÇA Ana está');
+  const meAt = async (token) => (await api('/me/presence', { headers: asUser(token) })).body.presence;
+  const located = await waitForApi('presença publicada', async () => Boolean(await meAt(ana.token)));
+  const anaAt = await meAt(ana.token);
+  check('o game server publicou a presença sozinho', located);
+  check('a cena está certa', anaAt?.sceneId === 'central_plaza', JSON.stringify(anaAt));
+  // O que faltava: com a praça shardada, saber a CENA não leva ninguém a lugar
+  // nenhum — são três praças centrais ao mesmo tempo.
+  check('o shard é o mesmo em que o cliente entrou', anaAt?.roomId === anaCity.roomId,
+    `${anaAt?.roomId} ≠ ${anaCity.roomId}`);
+
+  const anaProfile = (await api(`/users/${ana.identity.userId}`, { headers: asUser(beto.token) })).body;
+  check('o perfil deixou de mentir "offline" para quem está na praça',
+    anaProfile.profile?.presence === 'in_world', `presence=${anaProfile.profile?.presence}`);
+  check('mas o perfil não entrega o endereço de ninguém',
+    !JSON.stringify(anaProfile).includes(anaCity.roomId));
+
+  step('3) Token forjado não entra');
   let refused = false;
   try {
     const forged = `${ana.token.slice(0, -4)}AAAA`;
@@ -110,9 +139,11 @@ async function main() {
   }
   check('assinatura inválida é recusada', refused);
   await anaCity.leave();
+  const gone = await waitForApi('presença some ao sair', async () => (await meAt(ana.token)) === null);
+  check('quem sai da sala sai do mapa', gone);
 
   // --------------------------------------------------------------- gift ---
-  step('3) Gift debita carteira de verdade');
+  step('4) Gift debita carteira de verdade');
   const walletBefore = (await api('/me/wallet', { headers: asUser(beto.token) })).body;
 
   const anaLive = await anaClient.create(ROOM_LIVE, {
@@ -122,6 +153,13 @@ async function main() {
   const betoLive = await betoClient.joinById(anaLive.roomId, { token: beto.token });
   const caioLive = await caioClient.joinById(anaLive.roomId, { token: caio.token });
   await waitFor('espectadores', () => betoLive.state?.viewers >= 1);
+
+  // Mesma sala, papéis opostos: presença diz o que a pessoa está fazendo ali,
+  // não só onde ela está.
+  await waitForApi('presença de palco', async () => (await meAt(ana.token))?.kind === 'streaming');
+  check('quem está no palco aparece transmitindo', (await meAt(ana.token))?.kind === 'streaming');
+  check('quem está na plateia aparece assistindo', (await meAt(beto.token))?.kind === 'watching_live');
+  check('host e espectador estão na mesma sala', (await meAt(beto.token))?.roomId === anaLive.roomId);
 
   const gifts = [];
   betoLive.onMessage('giftEvent', (g) => gifts.push(g));
@@ -153,7 +191,7 @@ async function main() {
   check('o débito virou uma linha de ledger', ledger.entries?.[0]?.amount === -198,
     JSON.stringify(ledger.entries?.[0]?.amount));
 
-  step('4) Saldo insuficiente não gera evento');
+  step('5) Saldo insuficiente não gera evento');
   const caioWallet = (await api('/me/wallet', { headers: asUser(caio.token) })).body;
   const caioNotices = [];
   caioLive.onMessage('notice', (n) => caioNotices.push(n));
@@ -164,7 +202,7 @@ async function main() {
   check('recusa não transmitiu evento', gifts.length === 1);
 
   // ----------------------------------------------------------------- PK ---
-  step('5) Resultado do PK é gravado pela API');
+  step('6) Resultado do PK é gravado pela API');
   anaLive.send('invite', { userId: caio.identity.userId });
   await sleep(400);
   caioLive.send('acceptStage', {});
@@ -172,13 +210,16 @@ async function main() {
 
   anaLive.send('startPK', { opponentId: caio.identity.userId });
   await waitFor('PK ativo', () => betoLive.state.pk.phase === 'ACTIVE', 10_000);
+  await waitForApi('presença de batalha', async () => (await meAt(ana.token))?.kind === 'in_pk');
+  check('durante o PK o host aparece em batalha', (await meAt(ana.token))?.kind === 'in_pk');
+  check('a plateia continua assistindo', (await meAt(beto.token))?.kind === 'watching_live');
   betoLive.send('gift', { giftId: 'g_heart', quantity: 1, idempotencyKey: `e2e_pk_${Date.now()}` });
   await waitFor('placar do host', () => betoLive.state.pk.scoreA >= 20);
 
   await caioLive.leave();
   await waitFor('PK encerrado', () => betoLive.state.pk.phase === 'FINISHED');
 
-  const persisted = await waitFor('histórico de PK gravado', async () => {
+  const persisted = await waitForApi('histórico de PK gravado', async () => {
     const { body } = await api('/me/pk', { headers: asUser(ana.token) });
     return (body.matches ?? []).length > 0;
   }, 8_000);
@@ -188,7 +229,7 @@ async function main() {
   check('vencedor gravado é o que o servidor declarou', history[0]?.won === true,
     JSON.stringify(history[0]));
 
-  step('6) Live aparece no feed da API e fecha ao terminar');
+  step('7) Live aparece no feed da API e fecha ao terminar');
   const listed = (await api('/lives')).body.lives ?? [];
   check('a live foi registrada na API', listed.some((l) => l.hostId === ana.identity.userId),
     `${listed.length} lives listadas`);

@@ -68,6 +68,7 @@ token de desenvolvimento É o id do usuário enquanto a API não emite os reais)
 | Dono/decoração/privacidade do apartamento | **API** | Sala recebe só o `apartmentId` |
 | Posição e colisão | **Game Server** | Cliente prevê com a mesma função |
 | Qual CORPO desenha o avatar | **API** (`body` validado contra posse) | Cliente cai para `v1` se duvidar |
+| Quem está em qual sala AGORA | **Game Server** (tem o socket) | API junta os retratos e responde |
 
 O que o navegador PODE dizer: seu token, para onde quer andar, o que quer
 falar, qual presente quer mandar, e o título da própria live. Só isso. Se você
@@ -103,6 +104,27 @@ Sem `API_BASE_URL` o game server usa stubs em memória e AVISA no log — bom pa
 desenvolver, proibido em produção (o próprio código recusa subir assim lá).
 `npm run e2e:api --workspace @streampolis/game-server` prova a integração
 inteira: token assinado, débito real na carteira, PK gravado no banco.
+
+## Presença: quem está em qual shard
+
+Com a praça shardada, "está na praça" deixou de ser endereço — são várias
+praças centrais ao mesmo tempo. O diretório de presença responde
+`userId → sceneId → roomId`, e mora em dois pedaços:
+
+- **game server** (`world/Presence.ts`) acumula quem está em sala NESTE processo
+  e publica em `POST /internal/presence` o retrato **inteiro** do processo, a
+  cada mudança (janela de 150 ms) e a cada 15 s de batimento;
+- **API** (`social/PresenceDirectory.ts`) junta os retratos em memória e expira
+  a fatia de quem parou de falar (`PRESENCE_TTL_MS`, 45 s).
+
+Retrato inteiro em vez de delta é a escolha central: uma mensagem perdida se
+conserta sozinha na seguinte, sem fila de reenvio e sem fantasma eterno. Nada
+disso vai para o Postgres — se o game server cai, ninguém está em sala nenhuma,
+e uma linha no banco dizendo o contrário seria uma mentira durável.
+
+Duas leituras, dois públicos: **estado** (`in_world`, `streaming`) é grosso e
+sai no perfil de qualquer um; **shard** (`roomId`) é endereço e só sai em
+`GET /me/presence` — quem tem o roomId chega na pessoa.
 
 ## Câmera e mouse: o jogo é de computador
 

@@ -76,6 +76,14 @@ export const config = {
    * jogando. Quem manda no corte é o fuso do público, não o do servidor.
    */
   rankingsTimezone: env('RANKINGS_TIMEZONE', 'America/Sao_Paulo'),
+  /**
+   * Quanto tempo a fatia de um game server continua valendo sem notícia dele.
+   *
+   * Tem de ser vários batimentos (PRESENCE_HEARTBEAT_MS, 15 s do outro lado):
+   * curto demais e um pico de latência apaga a cidade inteira do mapa; longo
+   * demais e um servidor derrubado deixa gente "online" por minutos.
+   */
+  presenceTtlMs: intEnv('PRESENCE_TTL_MS', 45_000),
   rateLimit: {
     windowMs: intEnv('RATE_WINDOW_MS', 60_000),
     generalMax: intEnv('RATE_GENERAL_MAX', 300),

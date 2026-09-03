@@ -7,6 +7,7 @@ import {
   type GiftEvent,
   type LikeTotals,
   type PKResult,
+  type PresenceKind,
   type SceneId,
 } from '../shared.js';
 import { AuthError, type AuthIdentity } from '../auth/AuthProvider.js';
@@ -170,6 +171,16 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
     return 'spectator';
   }
 
+  /**
+   * Numa live, "onde" não basta: um espectador e o host estão na mesma sala
+   * fazendo coisas opostas. Quem está no palco transmite (e em PK, batalha);
+   * o resto assiste.
+   */
+  protected override presenceKind(identity: AuthIdentity): PresenceKind {
+    if (this.roleFor(identity) === 'spectator') return 'watching_live';
+    return this.pk.active ? 'in_pk' : 'streaming';
+  }
+
   override onJoin(client: Client, options: LiveJoinOptions = {}, auth?: AuthIdentity): void {
     const identity = auth ?? (client.auth as AuthIdentity);
     if (this.state.ended) throw new ServerError(410, 'live_ended');
@@ -204,6 +215,11 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
 
   /** Metadata is what the live feed lists (PRD §11, SPECs §50). */
   private publishListing(): void {
+    // Todo caminho que muda palco ou PK passa por aqui (subir ao palco, sair
+    // dele, começar e encerrar batalha), então este é o único ponto que precisa
+    // reanunciar presença — em vez de seis chamadas espalhadas que um dia
+    // alguém esquece de acrescentar na sétima.
+    this.refreshPresence();
     this.setMetadata({
       liveId: this.state.liveId,
       hostId: this.state.hostId,
@@ -531,6 +547,7 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
   }
 
   override onDispose(): void {
+    super.onDispose();
     const scene = SCENES[this.sceneId];
     console.log(`[live] ${this.state.liveId} encerrada em ${scene.name}; ${this.state.likes} likes, ${this.state.coinsReceived} coins.`);
   }

@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import type { PKResult } from '../shared.js';
+import type { PKResult, PresenceSnapshot } from '../shared.js';
 
 /**
  * Boundary with packages/api for everything that is NOT money (that one has its
@@ -54,6 +54,8 @@ export interface ApiGateway {
   openLive(input: OpenLiveInput): Promise<{ liveId: string } | null>;
   closeLive(input: CloseLiveInput): Promise<void>;
   recordPKResult(input: PKResultInput): Promise<void>;
+  /** Retrato de quem está em sala neste processo (SPECs §17). */
+  publishPresence(snapshot: PresenceSnapshot): Promise<void>;
 }
 
 export class HttpApiGateway implements ApiGateway {
@@ -108,6 +110,10 @@ export class HttpApiGateway implements ApiGateway {
     await this.call('/internal/lives/close', { method: 'POST', body: JSON.stringify(input) });
   }
 
+  async publishPresence(snapshot: PresenceSnapshot): Promise<void> {
+    await this.call('/internal/presence', { method: 'POST', body: JSON.stringify(snapshot) });
+  }
+
   async recordPKResult(input: PKResultInput): Promise<void> {
     await this.call('/internal/pk/result', {
       method: 'POST',
@@ -135,6 +141,11 @@ export class HttpApiGateway implements ApiGateway {
 export class InMemoryApiGateway implements ApiGateway {
   readonly lives = new Map<string, OpenLiveInput>();
   readonly pkResults: PKResultInput[] = [];
+  /**
+   * Último retrato de presença. Sem API não há diretório para consultar, mas
+   * guardar o retrato deixa o e2e sem banco olhar o que o servidor DIRIA.
+   */
+  lastPresence: PresenceSnapshot | null = null;
 
   async getHome(apartmentId: string): Promise<HomeSnapshot> {
     return {
@@ -162,6 +173,10 @@ export class InMemoryApiGateway implements ApiGateway {
 
   async recordPKResult(input: PKResultInput): Promise<void> {
     this.pkResults.push(input);
+  }
+
+  async publishPresence(snapshot: PresenceSnapshot): Promise<void> {
+    this.lastPresence = snapshot;
   }
 }
 
