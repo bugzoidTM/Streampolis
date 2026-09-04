@@ -107,6 +107,24 @@ export class NetworkClient {
   }
 
   /**
+   * Entra numa sala EXISTENTE pelo id do shard (SPECs §17).
+   *
+   * `joinById`, e não `joinOrCreate`: é a diferença entre encontrar alguém e
+   * abrir uma sala vazia com o mesmo nome de cena. Como consequência, uma sala
+   * cheia (o matchmaker a TRANCA quando lota, que é como o sharding acontece)
+   * recusa o assento e joga — quem decide o que fazer com a recusa é
+   * `session.ts`, não este método.
+   *
+   * Nada aqui confere amizade: o `roomId` é a credencial, e ele só sai da API
+   * para amigos aceitos (`/friends/:id/location`). A sala continua conferindo o
+   * que sempre confere — o token no `onAuth`, e a porta fechada do apartamento.
+   */
+  async joinShard(roomId: string): Promise<WorldConnection> {
+    const room = await this.client.joinById<WorldStateView>(roomId, this.joinOptions());
+    return synced(new WorldConnection(room));
+  }
+
+  /**
    * Enters an apartment by id. Owner, furniture and privacy are resolved by the
    * server against the API — the browser only names the door.
    */

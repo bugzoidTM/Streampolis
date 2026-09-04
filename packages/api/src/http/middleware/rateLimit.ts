@@ -10,6 +10,9 @@ import { config } from '../../config.ts';
  *
  *   auth     — /auth/*: é onde se testa senha em massa. Teto baixo.
  *   economy  — carteira e extrato do próprio jogador. Teto médio.
+ *   social   — amizade, bloqueio e denúncia: escritas que atingem OUTRA conta.
+ *              Teto médio pelo mesmo motivo do auth — é por onde se varre a base
+ *              com convites ou se afoga a fila de moderação.
  *   service  — /internal/*: um único chamador confiável (o game server) que
  *              legitimamente faz MUITA chamada — cada presente de cada live
  *              passa por ali. O teto existe como raio de explosão se o token de
@@ -23,7 +26,7 @@ import { config } from '../../config.ts';
  * (SPECs §53) — a interface aqui não muda.
  */
 
-export type RateClass = 'general' | 'auth' | 'economy' | 'service';
+export type RateClass = 'general' | 'auth' | 'economy' | 'social' | 'service';
 
 interface Bucket {
   count: number;
@@ -58,9 +61,11 @@ export function rateLimit(cls: RateClass) {
     ? config.rateLimit.authMax
     : cls === 'economy'
       ? config.rateLimit.economyMax
-      : cls === 'service'
-        ? config.rateLimit.serviceMax
-        : config.rateLimit.generalMax;
+      : cls === 'social'
+        ? config.rateLimit.socialMax
+        : cls === 'service'
+          ? config.rateLimit.serviceMax
+          : config.rateLimit.generalMax;
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const now = Date.now();

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AvatarConfig } from '@streampolis/shared';
+import type { AvatarConfig, SceneId } from '@streampolis/shared';
 import { useAccountStore } from '../state/useAccountStore.js';
 import { useSessionStore } from '../state/useSessionStore.js';
+import { useSocialStore } from '../state/useSocialStore.js';
 import { intentFromQuery, type WorldIntent } from '../network/session.js';
-import type { ApiLive } from '../network/api.js';
+import { ApiError, type ApiLive, type Friend, type OnboardingStep } from '../network/api.js';
+import { FriendsView } from './FriendsView.js';
 import { WorldView } from './WorldView.js';
 import { EnterScreen, savedToken } from './EnterScreen.js';
 import { authSession } from '../network/authSession.js';
@@ -28,7 +30,7 @@ import './screens.css';
  * viagem. Um card do feed navega; a aba Loja não.
  */
 
-type Tab = 'world' | 'feed' | 'store' | 'profile' | 'look' | 'rankings';
+type Tab = 'world' | 'feed' | 'store' | 'profile' | 'look' | 'rankings' | 'friends';
 
 export interface AppShellProps {
   intent: WorldIntent;
@@ -63,7 +65,13 @@ export function AppShell(props: AppShellProps) {
   // salas.
   useEffect(() => authSession.subscribe((fresh) => {
     setToken(fresh);
-    if (!fresh) setAviso('Sua sessão expirou. Escolha um personagem para voltar.');
+    if (!fresh) {
+      // Amigos, convites e volta guiada são da CONTA. Deixá-los na memória
+      // faria a próxima pessoa a entrar neste navegador ver a lista de amigos
+      // de quem acabou de sair.
+      useSocialStore.getState().clear();
+      setAviso('Sua sessão expirou. Escolha um personagem para voltar.');
+    }
   }), []);
 
   /**
@@ -109,6 +117,52 @@ export function AppShell(props: AppShellProps) {
 
   const watch = (live: Pick<ApiLive, 'roomId'>) => navigate({ kind: 'watch', roomId: live.roomId });
 
+  /**
+   * Ir até um amigo (SPECs §17).
+   *
+   * Duas viagens diferentes escondidas num botão só, e o que decide é o que a
+   * pessoa está FAZENDO, não onde ela está:
+   *
+   * - transmitindo, assistindo ou em PK → entra na live pelo caminho de
+   *   sempre (`watch`), que é o que acende o HUD da transmissão;
+   * - andando pela cidade ou dentro de uma casa → entra no SHARD dela.
+   *
+   * O endereço é pedido na hora, e não lido da lista: entre o carregamento do
+   * painel e o clique, a pessoa pode ter trocado de sala três vezes.
+   */
+  const meet = async (userId: string) => {
+    const api = useAccountStore.getState().api;
+    if (!api) return;
+    try {
+      const { presence } = await api.friendLocation(userId);
+      if (!presence) {
+        setRecado('Essa pessoa acabou de sair. Tente de novo daqui a pouco.');
+        setTab('world');
+        return;
+      }
+      navigate(presence.kind === 'in_world'
+        // A cena vem do game server, que é quem tem o socket; ela só é usada
+        // como PLANO B (a cena para onde cair se o shard estiver cheio), e uma
+        // cena desconhecida cai na praça lá dentro.
+        ? { kind: 'meet', roomId: presence.roomId, sceneId: presence.sceneId as SceneId }
+        : { kind: 'watch', roomId: presence.roomId });
+    } catch (err) {
+      setRecado(err instanceof ApiError ? err.message : 'Não foi possível descobrir onde essa pessoa está.');
+      setTab('world');
+    }
+  };
+
+  /** Cada passo da volta guiada é uma tela ou uma viagem. Aqui é o mapa. */
+  const tourAction = (step: OnboardingStep) => {
+    switch (step) {
+      case 'create_avatar': setTab('look'); return;
+      case 'enter_plaza': navigate({ kind: 'city', sceneId: 'central_plaza' }); return;
+      case 'watch_live': setTab('feed'); return;
+      case 'visit_apartment': navigate({ kind: 'apartment', apartmentId: 'me' }); return;
+      case 'open_live': setGoLiveOpen(true);
+    }
+  };
+
   const key = useMemo(() => intentKey(intent), [intent]);
   const hosting = sessionKind === 'golive';
 
@@ -143,6 +197,7 @@ export function AppShell(props: AppShellProps) {
         onOpenProfile={openProfile}
         onSessionLost={() => { authSession.esquecer(); }}
         onFailed={viagemFalhou}
+        onNotice={setRecado}
         onTravel={(portal) => navigate(
           // `home` não é uma cena: é uma pergunta que só a API responde, e a
           // resposta muda de pessoa para pessoa. As outras são cenas públicas
@@ -175,12 +230,26 @@ export function AppShell(props: AppShellProps) {
           onde alguém vai procurar o próprio visual. */}
       {tab === 'look' && <AvatarView onClose={() => setTab('profile')} />}
 
+      {/* Amigos não é aba do rodapé: os cinco lugares estão ocupados, e quem
+          procura os seus amigos chega pelo próprio perfil — que é onde já se
+          fica de olho no que é seu. */}
+      {tab === 'friends' && (
+        <FriendsView
+          onOpenProfile={openProfile}
+          onMeet={(friend: Friend) => void meet(friend.userId)}
+          onClose={() => openProfile(null)}
+        />
+      )}
+
       {tab === 'profile' && (
         <ProfileView
           userId={profileTarget}
           onVisitApartment={(apartmentId) => navigate({ kind: 'apartment', apartmentId })}
           onWatchLive={(roomId) => navigate({ kind: 'watch', roomId })}
           onEditLook={() => setTab('look')}
+          onOpenFriends={() => setTab('friends')}
+          onMeet={(userId) => void meet(userId)}
+          onTourAction={tourAction}
           onLeave={() => {
             // Revoga a família do refresh no servidor e avisa os ouvintes —
             // que é quem devolve esta casca à porta de entrada.
@@ -318,6 +387,7 @@ function intentKey(intent: WorldIntent): string {
     case 'city': return `city:${intent.sceneId}`;
     case 'offline': return `offline:${intent.sceneId}`;
     case 'apartment': return `apt:${intent.apartmentId}`;
+    case 'meet': return `meet:${intent.roomId}`;
     case 'watch': return `watch:${intent.roomId}`;
     case 'golive': return `live:${intent.title}:${intent.category}`;
   }

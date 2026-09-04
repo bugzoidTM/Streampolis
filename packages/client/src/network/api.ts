@@ -41,6 +41,72 @@ export interface PublicProfile {
   liveTitle: string | null;
   isSelf: boolean;
   isFollowing: boolean;
+  friendship: FriendshipState;
+  /** EU bloqueei esta pessoa. Nunca o contrário — a API não conta isso a ninguém. */
+  isBlocked: boolean;
+}
+
+/**
+ * Amizade, do ponto de vista de quem pergunta (PRD §20).
+ *
+ * A mesma linha do banco é `outgoing` para um lado e `incoming` para o outro:
+ * quem manda no rótulo é quem está olhando, não a tabela.
+ */
+export type FriendshipState = 'none' | 'outgoing' | 'incoming' | 'friends';
+
+/** Estado grosso de presença; `null` é offline (ausência de registro). */
+export type PresenceKind = 'in_world' | 'watching_live' | 'streaming' | 'in_pk';
+
+export interface Friend {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatar: AvatarConfig;
+  gifterLevel: number;
+  agency: string | null;
+  state: FriendshipState;
+  since: string;
+  presence: PresenceKind | null;
+  online: boolean;
+}
+
+export interface FriendLists {
+  friends: Friend[];
+  incoming: Friend[];
+  outgoing: Friend[];
+}
+
+/**
+ * Onde o amigo está, com o SHARD. Só sai da API entre amigos aceitos — é o que
+ * permite chegar até a pessoa, e não apenas até "a praça".
+ */
+export interface FriendLocation {
+  userId: string;
+  sceneId: string;
+  roomId: string;
+  kind: PresenceKind;
+  since: number;
+}
+
+export type OnboardingStep =
+  | 'create_avatar' | 'enter_plaza' | 'watch_live' | 'visit_apartment' | 'open_live';
+
+export interface Onboarding {
+  steps: Array<{ step: OnboardingStep; done: boolean; doneAt: string | null }>;
+  next: OnboardingStep | null;
+  completed: number;
+  total: number;
+  done: boolean;
+}
+
+export type ReportType = 'chat' | 'profile' | 'live' | 'avatar' | 'other';
+
+export interface BlockedUser {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatar: AvatarConfig;
+  blockedAt: string;
 }
 
 export interface Wallet { credits: number; coins: number }
@@ -183,6 +249,90 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ username }),
     });
+  }
+
+  /**
+   * Cria a conta e já entra: a resposta é o mesmo par de tokens do login.
+   *
+   * Existe porque `enterAs` (dev-login) é uma porta que só se abre fora de
+   * produção — enquanto ela fosse a única, o jogo não podia valer dinheiro.
+   */
+  register(username: string, email: string, password: string): Promise<IssuedSession & { identity: ApiIdentity }> {
+    return this.call('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, email, password }),
+    });
+  }
+
+  /** Entrar com a conta de verdade. */
+  login(username: string, password: string): Promise<IssuedSession & { identity: ApiIdentity }> {
+    return this.call('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+  }
+
+  // --------------------------------------------------------------- amigos ---
+
+  friends(): Promise<FriendLists> {
+    return this.call<FriendLists>('/me/friends');
+  }
+
+  /** Manda o convite. Convite cruzado já volta como `friends` — ver a API. */
+  requestFriend(userId: string): Promise<{ userId: string; state: FriendshipState }> {
+    return this.call(`/friends/${encodeURIComponent(userId)}`, { method: 'POST' });
+  }
+
+  acceptFriend(userId: string): Promise<{ userId: string; state: FriendshipState }> {
+    return this.call(`/friends/${encodeURIComponent(userId)}/accept`, { method: 'POST' });
+  }
+
+  declineFriend(userId: string): Promise<{ userId: string; state: FriendshipState }> {
+    return this.call(`/friends/${encodeURIComponent(userId)}/decline`, { method: 'POST' });
+  }
+
+  /** Desfaz a amizade ou cancela o convite que eu mandei. */
+  removeFriend(userId: string): Promise<{ userId: string; state: FriendshipState }> {
+    return this.call(`/friends/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+  }
+
+  /**
+   * Onde o amigo está AGORA. `presence: null` é amigo offline, não erro — e um
+   * 403 aqui quer dizer "vocês não são amigos", que é outra frase na tela.
+   */
+  friendLocation(userId: string): Promise<{ presence: FriendLocation | null }> {
+    return this.call(`/friends/${encodeURIComponent(userId)}/location`);
+  }
+
+  // ------------------------------------------------------------ moderação ---
+
+  block(userId: string, blocked: boolean): Promise<{ blocked: boolean }> {
+    return this.call(`/users/${encodeURIComponent(userId)}/block`, {
+      method: 'PUT',
+      body: JSON.stringify({ blocked }),
+    });
+  }
+
+  blocks(): Promise<{ blocked: BlockedUser[] }> {
+    return this.call('/me/blocks');
+  }
+
+  /**
+   * Denuncia. `contextId` é o que a moderação usa para ACHAR o caso depois — a
+   * sala do chat, a live —, e sem ele sobra a palavra de um contra a do outro.
+   */
+  report(userId: string, type: ReportType, reason: string, contextId?: string): Promise<{
+    reportId: string; status: string; duplicate: boolean;
+  }> {
+    return this.call(`/users/${encodeURIComponent(userId)}/report`, {
+      method: 'POST',
+      body: JSON.stringify({ type, reason, contextId }),
+    });
+  }
+
+  /** A volta guiada da conta nova. Só leitura: quem marca passo é o servidor. */
+  onboarding(): Promise<Onboarding> {
+    return this.call<Onboarding>('/me/onboarding');
   }
 
   /**

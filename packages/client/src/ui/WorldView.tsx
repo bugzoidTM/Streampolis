@@ -45,6 +45,13 @@ export interface WorldViewProps {
    * sabe rodar offline, uma casa não.
    */
   onFailed?: (motivo: string) => void;
+  /**
+   * A viagem deu certo, mas não exatamente como pedida — e o jogador precisa
+   * saber. Hoje só um caso: o shard do amigo estava lotado e a entrada caiu no
+   * matchmaking normal da mesma cena. Sem este recado, "Encontrar" levaria a
+   * pessoa a uma praça idêntica e vazia sem uma palavra de explicação.
+   */
+  onNotice?: (recado: string) => void;
 }
 
 /**
@@ -88,6 +95,7 @@ export function WorldView(props: WorldViewProps) {
           connection = await openWorld(client, props.intent);
           if (cancelled) { void connection.leave(); return; }
           session.attach(connection, props.intent.kind);
+          avisaSeCaiuEmOutroShard(props.intent, connection, props.onNotice);
         } catch (err) {
           console.warn('[world] não foi possível abrir a sala:', err);
           connection = null;
@@ -106,6 +114,7 @@ export function WorldView(props: WorldViewProps) {
                 connection = await openWorld(client, props.intent);
                 if (cancelled) { void connection.leave(); return; }
                 session.attach(connection, props.intent.kind);
+                avisaSeCaiuEmOutroShard(props.intent, connection, props.onNotice);
               } catch (again) {
                 console.warn('[world] a sala recusou o token renovado:', again);
                 connection = null;
@@ -285,6 +294,27 @@ function motivoDaFalha(kind: IntentKind): string {
     case 'apartment': return 'Não foi possível abrir o apartamento agora.';
     case 'watch': return 'Esta live não está mais no ar.';
     case 'golive': return 'Não foi possível abrir sua live agora.';
+    case 'meet': return 'Seu amigo não está mais nessa sala.';
     default: return 'Não foi possível entrar nessa sala agora.';
   }
+}
+
+/**
+ * "Entrei, mas não onde eu queria."
+ *
+ * O shard do amigo pode ter lotado entre a resposta da API e o pedido de
+ * assento — e aí `meetAt` cai no matchmaking normal da mesma cena, que é o
+ * comportamento certo (melhor a praça ao lado do que tela de erro). O que não
+ * pode é isso ser silencioso: as duas praças são idênticas, e o jogador
+ * concluiria que o botão está quebrado ou que o amigo mentiu.
+ *
+ * A comparação é entre o shard PEDIDO e o `roomId` da sala em que se entrou —
+ * a única prova de que a sala é a mesma.
+ */
+function avisaSeCaiuEmOutroShard(
+  intent: WorldIntent, connection: AnyWorldConnection, onNotice?: (recado: string) => void,
+): void {
+  if (intent.kind !== 'meet' || !onNotice) return;
+  if (connection.room.roomId === intent.roomId) return;
+  onNotice('A sala do seu amigo estava cheia. Você entrou na sala ao lado.');
 }

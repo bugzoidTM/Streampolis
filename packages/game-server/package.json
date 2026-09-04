@@ -13,7 +13,8 @@
     "e2e": "node scripts/e2e-two-clients.mjs",
     "e2e:shard": "npm run build && node scripts/e2e-sharding.mjs",
     "e2e:api": "npm run build && node scripts/e2e-with-api.mjs",
-    "e2e:decor": "npm run build && node scripts/e2e-home-decor.mjs"
+    "e2e:decor": "npm run build && node scripts/e2e-home-decor.mjs",
+    "e2e:meet": "npm run build && node scripts/e2e-meet.mjs"
   },
   "dependencies": {
     "@colyseus/core": "0.16.24",

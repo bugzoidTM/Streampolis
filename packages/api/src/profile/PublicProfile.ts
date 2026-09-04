@@ -1,6 +1,7 @@
 import { pool } from '../db/pool.ts';
 import { DEFAULT_AVATAR_DTO, type AvatarConfigDTO } from '../auth/identity.ts';
 import { presenceDirectory } from '../social/PresenceDirectory.ts';
+import type { FriendshipState } from '../social/Friendships.ts';
 
 /**
  * Perfil público (PRD §15, §16).
@@ -35,6 +36,14 @@ export interface PublicProfile {
   liveTitle: string | null;
   isSelf: boolean;
   isFollowing: boolean;
+  /**
+   * Amizade com quem está olhando (PRD §20). Seguir e ser amigo são coisas
+   * diferentes e a tela precisa das duas: seguir é assinatura de conteúdo,
+   * amizade é o que abre a porta da casa `friends` e o "Encontrar".
+   */
+  friendship: FriendshipState;
+  /** EU bloqueei esta pessoa. O contrário nunca sai daqui — ver `Moderation`. */
+  isBlocked: boolean;
 }
 
 interface ProfileRow {
@@ -57,6 +66,8 @@ interface ProfileRow {
   followers: string | number;
   following: string | number;
   is_following: boolean | null;
+  friendship: FriendshipState | null;
+  is_blocked: boolean | null;
 }
 
 const int = (v: string | number | null | undefined): number => {
@@ -80,7 +91,25 @@ export async function getPublicProfile(
             (SELECT count(*) FROM follows f WHERE f.follower_id = u.id) AS following,
             CASE WHEN $2::uuid IS NULL THEN NULL ELSE EXISTS (
               SELECT 1 FROM follows f WHERE f.follower_id = $2::uuid AND f.followed_id = u.id
-            ) END AS is_following
+            ) END AS is_following,
+            -- A amizade é UMA linha com o par ordenado (user_a < user_b), então
+            -- a busca ordena com LEAST/GREATEST em vez de testar as duas
+            -- direções. "Quem pediu" é o que separa enviado de recebido: a
+            -- mesma linha é convite mandado para um lado e chegado para o outro.
+            CASE WHEN $2::uuid IS NULL THEN NULL ELSE COALESCE((
+              SELECT CASE
+                       WHEN fr.status = 'accepted' THEN 'friends'
+                       WHEN fr.status = 'pending' AND fr.requested_by = $2::uuid THEN 'outgoing'
+                       WHEN fr.status = 'pending' THEN 'incoming'
+                       ELSE 'none'
+                     END
+                FROM friendships fr
+               WHERE fr.user_a = LEAST($2::uuid, u.id)
+                 AND fr.user_b = GREATEST($2::uuid, u.id)
+            ), 'none') END AS friendship,
+            CASE WHEN $2::uuid IS NULL THEN NULL ELSE EXISTS (
+              SELECT 1 FROM user_blocks b WHERE b.user_id = $2::uuid AND b.blocked_id = u.id
+            ) END AS is_blocked
        FROM users u
        LEFT JOIN profiles p       ON p.user_id = u.id
        LEFT JOIN avatars av       ON av.user_id = u.id
@@ -134,6 +163,8 @@ export async function getPublicProfile(
     liveTitle: row.live_title,
     isSelf: viewerId === row.id,
     isFollowing: row.is_following === true,
+    friendship: row.friendship ?? 'none',
+    isBlocked: row.is_blocked === true,
   };
 }
 

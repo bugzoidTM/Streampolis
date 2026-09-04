@@ -17,6 +17,15 @@ import { optionalUser, requireService, requireUser, type AuthedRequest } from '.
 import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
 import { getRanking, isBoard, isRange } from './social/Rankings.ts';
 import { presenceDirectory } from './social/PresenceDirectory.ts';
+import {
+  FriendshipError, acceptFriendship, declineFriendship, listFriends,
+  locationOfFriend, removeFriendship, requestFriendship,
+} from './social/Friendships.ts';
+import {
+  ModerationError, blockUser, listBlocked, reportUser, unblockUser,
+} from './social/Moderation.ts';
+import { getOnboarding, markStep, observePresence } from './social/Onboarding.ts';
+import { RegisterError, registerAccount } from './auth/register.ts';
 import { listInventory, purchaseItem } from './shop/Purchases.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
@@ -88,6 +97,38 @@ app.post('/auth/login', rateLimit('auth'), async (req, res, next) => {
       return;
     }
     res.json({ ...await issueSessionTokens(identity, req.get('user-agent')), identity });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const registerSchema = z.object({
+  // Mesma forma que o CHECK do schema exige (`users_username_shape`). Escrita
+  // aqui de novo de propósito: recusar com uma frase em português vale mais do
+  // que devolver a violação de constraint do Postgres.
+  username: z.string().regex(/^[A-Za-z0-9_.]{3,24}$/, 'Use de 3 a 24 letras, números, ponto ou _'),
+  email: z.email().max(160),
+  password: z.string().min(8).max(200),
+});
+
+/**
+ * Cadastro (SPECs §36).
+ *
+ * A sessão sai daqui pelo MESMO caminho do login — `issueSessionTokens`, par de
+ * access + refresh rotativo. Quem se cadastra já entra: mandar a pessoa
+ * preencher o formulário e depois digitar de novo a senha que ela acabou de
+ * escolher é atrito sem nenhuma segurança em troca.
+ */
+app.post('/auth/register', rateLimit('auth'), async (req, res, next) => {
+  try {
+    const body = registerSchema.parse(req.body);
+    const userId = await registerAccount(body);
+    const identity = await loadIdentity(userId);
+    if (!identity) {
+      res.status(500).json({ error: 'internal_error' });
+      return;
+    }
+    res.status(201).json({ ...await issueSessionTokens(identity, req.get('user-agent')), identity });
   } catch (err) {
     next(err);
   }
@@ -243,6 +284,10 @@ app.put('/me/avatar', requireUser, async (req: AuthedRequest, res, next) => {
     const validation = await validateAvatar(req.userId as string, req.body);
     assertWearable(validation);
     await saveAvatar(req.userId as string, validation);
+    // O primeiro passo da volta guiada é marcado por quem VIU o ato: gravar a
+    // aparência É criar o avatar (ver `Onboarding`). Sem `await` — a volta
+    // guiada não pode segurar a resposta que devolve o token novo.
+    void markStep(req.userId as string, 'create_avatar');
     const identity = await loadIdentity(req.userId as string);
     if (!identity) {
       res.status(404).json({ error: 'not_found' });
@@ -416,6 +461,141 @@ app.put('/users/:userId/follow', requireUser, async (req: AuthedRequest, res, ne
       return;
     }
     res.json(await setFollow(req.userId as string, target, body.following));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------- amigos ---
+/**
+ * Amizade (PRD §20). Bilateral e com aceite, ao contrário de seguir — e é ela
+ * que abre a casa `friends` e o endereço de alguém no mundo.
+ *
+ * As quatro mutações são POST/DELETE sobre o MESMO recurso (`/friends/:userId`)
+ * porque é isso que elas são: uma aresta entre duas contas. `decline` e
+ * `DELETE` parecem a mesma coisa e não são — recusar só derruba convite alheio,
+ * enquanto o DELETE também cancela o meu e desfaz amizade feita.
+ */
+
+app.get('/me/friends', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await listFriends(req.userId as string));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/friends/:userId', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await requestFriendship(req.userId as string, param(req.params.userId)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/friends/:userId/accept', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await acceptFriendship(req.userId as string, param(req.params.userId)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/friends/:userId/decline', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await declineFriendship(req.userId as string, param(req.params.userId)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/friends/:userId', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await removeFriendship(req.userId as string, param(req.params.userId)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * "Encontrar" (SPECs §17).
+ *
+ * O único lugar da API pública que devolve o SHARD de outra pessoa. Com ele o
+ * cliente entra na mesma sala em vez de numa cópia dela — que é a diferença
+ * entre encontrar um amigo e aparecer numa praça vazia com o mesmo nome.
+ *
+ * Por isso o portão é amizade aceita, conferido aqui e agora (ver
+ * `locationOfFriend`), e por isso `presence: null` para amigo offline é resposta
+ * normal, não erro.
+ */
+app.get('/friends/:userId/location', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json({ presence: await locationOfFriend(req.userId as string, param(req.params.userId)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ------------------------------------------------------------- moderação ---
+/**
+ * A ponta do jogador (PRD §27, SPECs §39). Bloquear é privado e instantâneo;
+ * denunciar entra numa fila que um humano lê. A fila em si (`/admin/*`) não
+ * existe ainda — e a denúncia guardada sem painel continua valendo mais do que
+ * painel nenhum e denúncia nenhuma.
+ */
+
+const blockSchema = z.object({ blocked: z.boolean() });
+
+app.put('/users/:userId/block', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = blockSchema.parse(req.body);
+    const target = param(req.params.userId);
+    const me = req.userId as string;
+    res.json(body.blocked ? await blockUser(me, target) : await unblockUser(me, target));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/me/blocks', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json({ blocked: await listBlocked(req.userId as string) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const reportSchema = z.object({
+  type: z.enum(['chat', 'profile', 'live', 'avatar', 'other']),
+  reason: z.string().min(3).max(1_000),
+  /** Qual mensagem, qual live. Opcional: um perfil denunciado não tem contexto. */
+  contextId: z.string().max(120).optional(),
+});
+
+app.post('/users/:userId/report', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = reportSchema.parse(req.body);
+    res.json(await reportUser({
+      reporterId: req.userId as string,
+      targetId: param(req.params.userId),
+      type: body.type,
+      reason: body.reason,
+      contextId: body.contextId ?? null,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ------------------------------------------------------------ onboarding ---
+/**
+ * A volta guiada da conta nova (PRD §24). Só leitura: não existe rota para
+ * marcar um passo, porque quem marca é o servidor que VIU o ato acontecer —
+ * ver `Onboarding`.
+ */
+app.get('/me/onboarding', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await getOnboarding(req.userId as string));
   } catch (err) {
     next(err);
   }
@@ -607,7 +787,12 @@ const presenceSnapshotSchema = z.object({
 app.post('/internal/presence', rateLimit('service'), requireService, (req, res, next) => {
   try {
     const snapshot = presenceSnapshotSchema.parse(req.body);
-    res.json({ ok: true, tracked: presenceDirectory.ingest(snapshot) });
+    const tracked = presenceDirectory.ingest(snapshot);
+    // O mesmo retrato que move o mapa da cidade prova os passos do onboarding:
+    // quem está na praça entrou na praça, quem assiste assistiu. Sem `await` e
+    // sem poder falhar — a resposta ao game server não espera o Postgres.
+    observePresence(snapshot.entries);
+    res.json({ ok: true, tracked });
   } catch (err) {
     next(err);
   }
@@ -656,7 +841,12 @@ app.use((_req, res) => {
 });
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  if (err instanceof EconomyError) {
+  // Os quatro carregam `code` + `httpStatus` + uma mensagem escrita para o
+  // jogador ler: a tela mostra a frase em vez de traduzir um número de erro.
+  if (err instanceof EconomyError
+    || err instanceof FriendshipError
+    || err instanceof ModerationError
+    || err instanceof RegisterError) {
     res.status(err.httpStatus).json({ error: err.code, message: err.message });
     return;
   }

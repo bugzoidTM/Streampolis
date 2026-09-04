@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react';
 import type { AvatarConfig } from '@streampolis/shared';
-import { ApiClient, type DemoAccount } from '../network/api.js';
+import { ApiClient, ApiError, type DemoAccount } from '../network/api.js';
 import { authSession } from '../network/authSession.js';
 import { usePoster } from './usePoster.js';
 import { Button } from './primitives/Controls.js';
 import './enter.css';
 
 /**
- * Porta de entrada da demonstração.
+ * Porta de entrada.
  *
- * O jogo inteiro depende de um token assinado pela API, e não existe cadastro
- * ainda — então a versão pública entra por personagem. É uma porta aberta,
- * declarada como tal na tela: a API só oferece `dev-login` fora de produção, e
- * onde houver dinheiro de verdade essa rota não existe.
+ * Duas portas, e a ordem entre elas importa: **conta própria primeiro**,
+ * personagem de demonstração depois. Enquanto não havia cadastro, escolher um
+ * personagem era a única entrada — uma porta aberta, declarada como tal, que a
+ * API só oferece fora de produção. Agora ela é o atalho para dar uma olhada, e
+ * quem quiser guardar o que fez cria uma conta.
+ *
+ * As contas de demonstração continuam sumindo sozinhas onde `dev-login` não
+ * existe: em produção esta tela mostra só o formulário, sem nenhuma alteração
+ * no código.
  *
  * Os retratos são renderizados de verdade, com a aparência que cada conta tem
  * no banco. Escolher um personagem é a primeira coisa que alguém faz aqui;
@@ -69,15 +74,12 @@ export function EnterScreen({ onEnter, aviso }: EnterScreenProps) {
 
       {aviso && <p className="enter__error" role="status">{aviso}</p>}
 
+      <ContaForm api={api} onEnter={onEnter} />
+
       {accounts === null && <p className="enter__hint">Carregando personagens…</p>}
 
-      {accounts !== null && accounts.length === 0 && (
-        <div className="enter__fallback">
-          <p className="enter__hint">
-            Esta instância não oferece entrada por personagem. Abra com
-            <code> ?token=SEU_TOKEN </code> para entrar.
-          </p>
-        </div>
+      {accounts !== null && accounts.length > 0 && (
+        <p className="enter__hint enter__or">ou dê uma olhada com um personagem pronto</p>
       )}
 
       <div className="enter__cast">
@@ -95,10 +97,121 @@ export function EnterScreen({ onEnter, aviso }: EnterScreenProps) {
       {error && <p className="enter__error" role="alert">{error}</p>}
 
       <footer className="enter__foot">
-        Demonstração pública: as contas são de teste e a carteira é de mentira.
-        Nada aqui cobra dinheiro de verdade.
+        Os personagens prontos são contas de teste e a carteira deles é de
+        mentira. Nada aqui cobra dinheiro de verdade.
       </footer>
     </main>
+  );
+}
+
+/**
+ * Entrar ou criar conta, no mesmo formulário.
+ *
+ * Um formulário só, com um interruptor, porque os campos são quase os mesmos e
+ * porque a pessoa que erra de aba não sabe que errou — ela só vê "não foi
+ * possível entrar". O e-mail aparece apenas no cadastro: pedi-lo para entrar
+ * seria pedir um dado que o login não usa.
+ *
+ * Nada aqui valida senha por conta própria além do tamanho mínimo. Quem recusa
+ * "senha igual ao seu nome" é a API, com a frase pronta — duas listas de regras
+ * de senha, uma em cada lado, divergem no primeiro dia.
+ */
+function ContaForm({ api, onEnter }: { api: ApiClient; onEnter: (token: string) => void }) {
+  const [modo, setModo] = useState<'entrar' | 'criar'>('entrar');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const criando = modo === 'criar';
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErro(null);
+    try {
+      const session = criando
+        ? await api.register(username.trim(), email.trim(), password)
+        : await api.login(username.trim(), password);
+      // O par inteiro: sem o refresh, esta sessão duraria 15 minutos.
+      authSession.adopt(session);
+      onEnter(session.token);
+    } catch (err) {
+      // A API escreve a frase para o jogador ler ("Este nome já está em uso");
+      // traduzir status aqui perderia isso.
+      setErro(err instanceof ApiError ? err.message : 'Não foi possível concluir agora.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="enter__form" onSubmit={submit}>
+      <div className="enter__tabs" role="tablist" aria-label="Entrar ou criar conta">
+        <button
+          type="button" role="tab" aria-selected={!criando}
+          className={`enter__tab${!criando ? ' is-on' : ''}`}
+          onClick={() => { setModo('entrar'); setErro(null); }}
+        >
+          Entrar
+        </button>
+        <button
+          type="button" role="tab" aria-selected={criando}
+          className={`enter__tab${criando ? ' is-on' : ''}`}
+          onClick={() => { setModo('criar'); setErro(null); }}
+        >
+          Criar conta
+        </button>
+      </div>
+
+      <label className="enter__label" htmlFor="conta-username">Nome de usuário</label>
+      <input
+        id="conta-username"
+        className="enter__input"
+        value={username}
+        autoComplete="username"
+        maxLength={24}
+        placeholder="seu_nome"
+        onChange={(e) => setUsername(e.target.value)}
+      />
+
+      {criando && (
+        <>
+          <label className="enter__label" htmlFor="conta-email">E-mail</label>
+          <input
+            id="conta-email"
+            className="enter__input"
+            type="email"
+            value={email}
+            autoComplete="email"
+            maxLength={160}
+            placeholder="voce@exemplo.com"
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </>
+      )}
+
+      <label className="enter__label" htmlFor="conta-senha">Senha</label>
+      <input
+        id="conta-senha"
+        className="enter__input"
+        type="password"
+        value={password}
+        autoComplete={criando ? 'new-password' : 'current-password'}
+        maxLength={200}
+        placeholder={criando ? 'pelo menos 8 caracteres' : ''}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+
+      {erro && <p className="enter__error" role="alert">{erro}</p>}
+
+      <Button
+        variant="primary" size="lg" block type="submit"
+        disabled={busy || username.trim().length < 3 || password.length < 8 || (criando && !email.includes('@'))}
+      >
+        {busy ? 'Um instante…' : criando ? 'Criar conta e entrar' : 'Entrar'}
+      </Button>
+    </form>
   );
 }
 

@@ -95,6 +95,13 @@ export const config = {
      */
     authMax: intEnv('RATE_AUTH_MAX', isProd ? 10 : 40),
     economyMax: intEnv('RATE_ECONOMY_MAX', 60),
+    /**
+     * Convite de amizade, bloqueio e denúncia. Teto próprio porque as três são
+     * escritas que ATINGEM OUTRA PESSOA: o teto geral (300/min) deixaria alguém
+     * varrer a base inteira com pedidos de amizade, e denúncia em massa é uma
+     * arma contra a fila de moderação.
+     */
+    socialMax: intEnv('RATE_SOCIAL_MAX', 60),
     /** /internal/*: um chamador só (o game server), muitas chamadas legítimas. */
     serviceMax: intEnv('RATE_SERVICE_MAX', 3_000),
   },

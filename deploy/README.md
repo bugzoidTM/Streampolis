@@ -71,10 +71,22 @@ docker exec -e DATABASE_URL="postgres://streampolis:${SP_DB_PASSWORD}@sp-db:5432
 
 ## A porta de entrada é aberta, de propósito
 
-Ainda não existe cadastro. O site entra por personagem (`POST /auth/dev-login`),
-o que só funciona porque a API **não** roda com `NODE_ENV=production` — lá essa
-rota não existe. Antes de valer dinheiro de verdade: cadastro, senha, e
-`API_DEV_LOGIN` desligado.
+O cadastro já existe (`POST /auth/register`: usuário, e-mail e senha, com a
+mesma sessão de access + refresh do login), mas a entrada por personagem
+continua ligada: o site ainda oferece `POST /auth/dev-login`, que só funciona
+porque a API **não** roda com `NODE_ENV=production`.
+
+Para fechar a porta, basta o ambiente — nenhuma linha de código muda:
+
+```
+NODE_ENV=production     # dev-login some, e o segredo default deixa de existir
+API_DEV_LOGIN=0         # cinto e suspensório
+```
+
+Com ela fechada, a tela de entrada some sozinha com a fileira de personagens
+(ela desenha o que `/auth/demo-accounts` responder) e sobra só o formulário.
+Isso ainda não foi feito porque a demonstração pública vive de quem entra em
+dois cliques; o dia de fechar é o dia em que houver dinheiro de verdade.
 
 ## Verificar
 

@@ -25,6 +25,24 @@ export function duration(ms: number): string {
   return `${m} min`;
 }
 
+/**
+ * O que a pessoa está fazendo, em português.
+ *
+ * Mora aqui porque o perfil e a lista de amigos precisam da MESMA frase: duas
+ * traduções do mesmo estado acabam divergindo, e "Na cidade" num lugar com
+ * "Online" no outro parece dois estados diferentes.
+ */
+export function presenceLabel(presence: string | null | undefined): string {
+  switch (presence) {
+    case 'streaming': return 'Transmitindo';
+    case 'watching_live': return 'Assistindo';
+    case 'in_pk': return 'Em PK';
+    case 'in_world': return 'Na cidade';
+    case 'online': return 'Online';
+    default: return 'Offline';
+  }
+}
+
 /** "há 41 min" — relative age of a live. */
 export function since(ts: number, now = Date.now()): string {
   const min = Math.max(0, Math.round((now - ts) / 60_000));

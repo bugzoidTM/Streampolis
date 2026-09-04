@@ -205,6 +205,33 @@
 .profile__badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--sp-s3); }
 .profile__actions { display: flex; gap: var(--sp-s2); flex-wrap: wrap; }
 
+/*
+ * Bloquear e denunciar.
+ *
+ * Links de texto pequenos, e não botões: são saídas de emergência. Desenhá-los
+ * com o mesmo peso de "Seguir" convidaria ao clique, e o convite errado aqui é
+ * bloqueio por engano ou denúncia por implicância. Quem precisa acha; ninguém
+ * tropeça.
+ */
+.profile__safety {
+  display: flex;
+  gap: var(--sp-s3);
+  margin-top: var(--sp-s3);
+}
+
+.profile__safetyLink {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--sp-text-3);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.profile__safetyLink:hover { color: var(--sp-text-2); }
+
 .profile__wallet { display: flex; gap: var(--sp-s3); margin: var(--sp-s4) 0 0; flex-wrap: wrap; }
 
 .profile__grid {
@@ -367,6 +394,17 @@
 }
 
 .sheet__input:focus { border-color: var(--sp-violet); }
+
+/* A denúncia é um texto, não uma linha: o campo precisa caber uma história
+   curta sem virar uma fita rolando para o lado. */
+.sheet__input--area {
+  font: inherit;
+  color: inherit;
+  resize: vertical;
+  min-height: 84px;
+  line-height: 1.45;
+}
+
 .sheet__chips { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .sheet__chip {

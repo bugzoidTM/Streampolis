@@ -1,6 +1,12 @@
 /*
- * Tela de entrada. É a primeira impressão do produto inteiro, então ela tem
- * uma regra: nada de formulário. Escolher um personagem é o gesto.
+ * Tela de entrada. É a primeira impressão do produto inteiro.
+ *
+ * Ela já teve a regra "nada de formulário" — escolher um personagem era o
+ * gesto, e era a única entrada que existia. Com o cadastro, o formulário passou
+ * a ser necessário e o desenho resolveu isso pelo TAMANHO: um cartão estreito,
+ * de 320 px, contra a fileira de retratos de corpo inteiro logo abaixo. Quem
+ * quer guardar o que fez preenche três campos; quem só quer ver a cidade clica
+ * numa pessoa.
  */
 
 .enter {
@@ -45,6 +51,61 @@
 .enter__tag { margin: var(--sp-s2) 0 0; color: var(--sp-text-2); font-size: 15px; line-height: 1.5; }
 .enter__hint { color: var(--sp-text-3); font-size: 13.5px; }
 .enter__error { color: var(--sp-red); font-size: 13.5px; }
+
+.enter__form {
+  position: relative;
+  width: 320px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: var(--sp-s4);
+  border: 1px solid var(--sp-line-2);
+  border-radius: var(--sp-r-lg);
+  background: var(--sp-glass);
+  backdrop-filter: blur(12px);
+  text-align: left;
+}
+
+.enter__tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: var(--sp-s2);
+  padding: 3px;
+  border-radius: var(--sp-r-pill);
+  background: var(--sp-surface-2);
+}
+
+.enter__tab {
+  flex: 1 1 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--sp-r-pill);
+  background: transparent;
+  color: var(--sp-text-3);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.enter__tab.is-on { background: var(--sp-surface); color: var(--sp-text); font-weight: 600; }
+
+.enter__label { font-size: 12.5px; color: var(--sp-text-2); margin-top: 4px; }
+
+.enter__input {
+  padding: 10px var(--sp-s3);
+  border-radius: var(--sp-r-md);
+  border: 1px solid var(--sp-line-2);
+  background: var(--sp-surface-2);
+  color: var(--sp-text);
+  font: inherit;
+  outline: none;
+}
+.enter__input:focus { border-color: var(--sp-violet); }
+
+.enter__form .sp-btn { margin-top: var(--sp-s3); }
+
+/* O "ou" separa duas entradas de peso diferente; ele não é um título. */
+.enter__or { position: relative; margin: 0; }
 
 .enter__cast {
   position: relative;

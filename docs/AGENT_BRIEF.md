@@ -45,11 +45,25 @@ npm run dev --workspace @streampolis/client        # Vite em :5273
 npm run dev --workspace @streampolis/game-server   # Colyseus em :2567
 npm run e2e --workspace @streampolis/game-server   # prova do §69, sem navegador
 npm run e2e:shard --workspace @streampolis/game-server  # prova do sharding (§17)
+npm run e2e:meet --workspace @streampolis/game-server   # prova do "Encontrar" (§17)
 ```
 
 O `e2e:shard` baixa a lotação da praça para 2 (`CITY_CAPACITY`) e põe 5
 jogadores para entrar: com a capacidade de produção o limite nunca é alcançado,
 então o comportamento de shard não apareceria em teste nenhum.
+
+O `e2e:meet` usa o mesmo truque para provar o botão "Encontrar": entrar no
+shard do amigo, ser recusado quando ele lota, cair no matchmaking normal da
+mesma cena e voltar a caber quando alguém sai. Ele existe porque duas praças
+são visualmente idênticas — "Encontrar" quebrado e "Encontrar" funcionando têm
+a mesma aparência na tela, e a única diferença observável é o `roomId`.
+
+Com API e game server ligados um ao outro (`API_BASE_URL` + `API_SERVICE_TOKEN`
+no game server), `node tools/shoot-meet.mjs` faz o caminho inteiro pela
+interface: dois cadastros, uma amizade, o botão, e a conferência de que os dois
+terminaram na mesma sala. Sem essas envs o game server usa o gateway em memória
+e a presença nunca chega à API — o que faz o onboarding e o "Encontrar"
+parecerem quebrados quando só estão desligados.
 
 Sem `?token=`, o cliente roda **offline**: mesma praça, mesma câmera, avatar
 local integrado pela mesma `applyMoveIntent` do servidor. Com o game server no
@@ -69,6 +83,8 @@ token de desenvolvimento É o id do usuário enquanto a API não emite os reais)
 | Posição e colisão | **Game Server** | Cliente prevê com a mesma função |
 | Qual CORPO desenha o avatar | **API** (`body` validado contra posse) | Cliente cai para `v1` se duvidar |
 | Quem está em qual sala AGORA | **Game Server** (tem o socket) | API junta os retratos e responde |
+| Quem pode saber ONDE você está | **API** (exige amizade aceita) | Cliente recebe o shard já autorizado |
+| Que passo do onboarding foi cumprido | **API**, ao observar o ato | Cliente só desenha a lista |
 
 O que o navegador PODE dizer: seu token, para onde quer andar, o que quer
 falar, qual presente quer mandar, e o título da própria live. Só isso. Se você
