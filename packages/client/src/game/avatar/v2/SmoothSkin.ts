@@ -26,23 +26,35 @@ import * as THREE from 'three';
  */
 
 /**
- * O ÂNGULO de suavização pedido pela URL, em graus. Zero é desligado.
+ * O ângulo padrão, em graus — e é uma DECISÃO, tomada olhando a folha.
  *
- * `?smoothskin=180` funde tudo o que ocupa o mesmo ponto — a suavização total.
- * `?smoothskin=45` funde só o que se encontra em ângulo raso, que é como
- * qualquer pacote de modelagem faz: a bochecha e a testa suavizam, a aresta do
- * nariz e a linha do queixo continuam duras. `?smoothskin=1` é atalho para o
- * total, porque foi assim que o experimento nasceu.
+ * O experimento comparou três: chapado, 45° e total. O chapado tem uma costura
+ * no meio da cara (a frente do rosto são dois quadriláteros grandes com normais
+ * diferentes, e meio rosto fica mais escuro que o outro — defeito, não estilo);
+ * o total conserta a costura e come o nariz junto. 45° conserta a costura e
+ * mantém a aresta do nariz e a linha do queixo, que é o que qualquer pacote de
+ * modelagem faz.
  *
- * Desligado por padrão: isto é experimento, não decisão.
+ * `shots/v2-skin-ab/sheet.jpg` é a folha em que isso se decidiu.
+ */
+const DEFAULT_ANGLE = 45;
+
+/**
+ * O ÂNGULO de suavização, em graus. `?smoothskin=` continua mandando.
+ *
+ * `0` desliga e devolve o rosto chapado do pacote; `180` funde tudo o que
+ * ocupa o mesmo ponto (a suavização total); qualquer número entre os dois é o
+ * ângulo-limite. O interruptor sobrevive à decisão de propósito: é com ele que
+ * `tools/v2-skin-ab.mjs` refaz a comparação no dia em que alguém duvidar dela.
  */
 export function smoothSkinAngle(): number {
-  if (typeof location === 'undefined') return 0;
+  if (typeof location === 'undefined') return DEFAULT_ANGLE;
   const v = new URLSearchParams(location.search).get('smoothskin');
-  if (v === null || v === '0' || v === 'false') return 0;
+  if (v === null) return DEFAULT_ANGLE;
+  if (v === '0' || v === 'false') return 0;
   if (v === '1' || v === 'true') return 180;
   const n = Number(v);
-  return Number.isFinite(n) ? Math.max(0, Math.min(180, n)) : 0;
+  return Number.isFinite(n) ? Math.max(0, Math.min(180, n)) : DEFAULT_ANGLE;
 }
 
 /** O material desta malha é pele? É por ele que a cabeça se separa do cabelo. */
@@ -62,10 +74,39 @@ export function isSkinMaterial(material: THREE.Material | THREE.Material[]): boo
  * suave, e um relatório que não distingue "suavizei" de "não havia o que
  * suavizar" não serve para decidir nada.
  */
-export function smoothNormals(geometry: THREE.BufferGeometry, angleDeg = 180): number {
+export function smoothNormals(geometry: THREE.BufferGeometry, angleDeg = DEFAULT_ANGLE): number {
   const pos = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
   const nor = geometry.getAttribute('normal') as THREE.BufferAttribute | undefined;
   if (!pos || !nor || pos.count === 0) return 0;
+
+  // As normais CHAPADAS, guardadas na primeira passada e usadas em todas.
+  //
+  // Suavizar é destrutivo: sem guardar o original, a segunda chamada mediria
+  // ângulos entre normais que já foram suavizadas e o resultado dependeria da
+  // ordem em que as coisas aconteceram. Com o original guardado, a operação é
+  // idempotente e o ângulo pode mudar em tempo de execução — que é exatamente
+  // o que a comparação A/B precisa fazer.
+  const cache = geometry.userData as { flatNormals?: Float32Array };
+  if (!cache.flatNormals) {
+    const copia = new Float32Array(nor.count * 3);
+    for (let i = 0; i < nor.count; i++) {
+      copia[i * 3] = nor.getX(i);
+      copia[i * 3 + 1] = nor.getY(i);
+      copia[i * 3 + 2] = nor.getZ(i);
+    }
+    cache.flatNormals = copia;
+  }
+  const original = cache.flatNormals;
+
+  // Ângulo zero é o pedido de VOLTAR ao chapado, e não de não fazer nada: o
+  // A/B alterna os dois na mesma malha.
+  if (angleDeg <= 0) {
+    for (let i = 0; i < nor.count; i++) {
+      nor.setXYZ(i, original[i * 3] as number, original[i * 3 + 1] as number, original[i * 3 + 2] as number);
+    }
+    nor.needsUpdate = true;
+    return 0;
+  }
 
   let extent = 0;
   for (let i = 0; i < pos.count; i++) {
@@ -89,13 +130,6 @@ export function smoothNormals(geometry: THREE.BufferGeometry, angleDeg = 180): n
   }
 
   const limite = Math.cos((Math.min(180, Math.max(0, angleDeg)) * Math.PI) / 180);
-  const original = new Float32Array(nor.count * 3);
-  for (let i = 0; i < nor.count; i++) {
-    original[i * 3] = nor.getX(i);
-    original[i * 3 + 1] = nor.getY(i);
-    original[i * 3 + 2] = nor.getZ(i);
-  }
-
   let mexidos = 0;
   const v = new THREE.Vector3();
   for (const lista of vizinhos.values()) {

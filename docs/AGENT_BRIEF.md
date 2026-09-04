@@ -754,12 +754,13 @@ boca meio milímetro deixaria o lábio pintado onde ela não está mais.
 `node tools/v2-skin-ab.mjs --param=skinmat --lados=pacote:0,nosso:1` põe o
 material do pacote e o nosso lado a lado.
 
-## Normal suave na pele da cabeça: um experimento COM interruptor
+## Normal suave na pele da cabeça: 45°, decidido na folha
 
-`?smoothskin=0` (padrão) desenha a cabeça chapada como o pacote a entrega;
-`?smoothskin=45` suaviza só o que se encontra em ângulo raso; `?smoothskin=180`
-suaviza tudo o que ocupa o mesmo ponto. `node tools/v2-skin-ab.mjs` põe os três
-lado a lado, de frente e de três quartos, em `shots/v2-skin-ab/sheet.jpg`.
+O jogo desenha a cabeça com normal suavizada a **45°** desde a comparação.
+`?smoothskin=0` devolve o chapado do pacote e `?smoothskin=180` dá a suavização
+total; `node tools/v2-skin-ab.mjs` põe os três lado a lado, de frente e de três
+quartos, em `shots/v2-skin-ab/sheet.jpg`. O interruptor sobrevive à decisão de
+propósito: é com ele que ela se refaz no dia em que alguém duvidar.
 
 O que a folha mostra, e por que a pergunta não era "suavizar ou não":
 
@@ -771,12 +772,17 @@ O que a folha mostra, e por que a pergunta não era "suavizar ou não":
 - **45°** conserta a costura e mantém a aresta do nariz e a linha do queixo. É o
   que qualquer pacote de modelagem faz, e é o que a folha recomenda.
 
-Fica DESLIGADO por padrão até alguém olhar a folha e decidir — a troca é uma
-linha. Duas notas para o dia de adotar: a suavização hoje clona a geometria POR
-AVATAR (a do protótipo é compartilhada por todo mundo que veste a mesma cabeça,
-e suavizar no lugar suavizaria a praça inteira, inclusive o lado A da
-comparação); adotando, o lugar certo é o protótipo, uma vez. E o brilho de testa
-que o rosto suave ganha é assunto do MATERIAL, não da normal.
+A suavização acontece no PROTÓTIPO, uma vez por cabeça, e não numa cópia por
+avatar: a normal suave é a mesma para todo mundo que veste aquela peça, e clonar
+por avatar seria guardar trinta cópias do mesmo número numa praça cheia.
+Enquanto era experimento a cópia se justificava — os dois lados da comparação
+conviviam na mesma página —, e o que substitui aquilo é `smoothNormals` guardar
+as normais CHAPADAS originais em `geometry.userData`: com elas qualquer ângulo é
+recalculável, inclusive o zero, e a ferramenta continua alternando os três na
+mesma malha.
+
+(O brilho de testa que o rosto suave parecia ganhar era do MATERIAL, não da
+normal: `metalness 0,4` no material do pacote. Ver a seção da pele.)
 
 `mergeVertices` não serve para isto: ele só funde vértices iguais em todos os
 atributos, e numa malha chapada a normal é justamente o que difere — não fundiria

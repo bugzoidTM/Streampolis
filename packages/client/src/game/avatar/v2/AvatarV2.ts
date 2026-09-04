@@ -127,6 +127,15 @@ const HEAD_BONE_RATIO = 0.87;
 
 const FADE = 0.2;
 
+/**
+ * Com que ângulo cada malha de cabeça já foi suavizada.
+ *
+ * Módulo e não instância: a malha é do PROTÓTIPO, compartilhada por todo avatar
+ * que veste aquela cabeça, e suavizá-la de novo a cada avatar seria refazer a
+ * mesma conta trinta vezes numa praça cheia.
+ */
+const suavizadas = new WeakMap<THREE.BufferGeometry, number>();
+
 /** O quadro do rosto, quando existe. Cabeça de capacete não tem. */
 const frameDoRosto = (face: FaceV2 | null) => face?.face ?? null;
 
@@ -306,19 +315,25 @@ export class AvatarV2 implements AvatarLike {
     await this.line(host, present);
     if (this.disposed) return;
 
-    // EXPERIMENTO, desligado por padrão (`?smoothskin=1`): normal suave só na
-    // pele da CABEÇA. A geometria é clonada antes porque ela vem do protótipo
-    // em cache, compartilhado com todo avatar que veste a mesma cabeça —
-    // suavizar no lugar suavizaria a praça inteira, inclusive quem está
-    // desenhando o lado A da comparação. Se um dia virar decisão, o lugar certo
-    // é o protótipo, uma vez, e não uma cópia por avatar.
+    // NORMAL SUAVE na pele da cabeça, 45° por padrão — a decisão tomada olhando
+    // `shots/v2-skin-ab/sheet.jpg` (ver `SmoothSkin.ts`).
+    //
+    // NO PROTÓTIPO, sem clonar: a geometria da cabeça é compartilhada por todo
+    // avatar que veste aquela peça, e a normal suavizada é a mesma para todos
+    // eles — clonar por avatar seria pagar uma cópia da malha da cabeça por
+    // pessoa na praça para guardar trinta cópias do mesmo número. Enquanto era
+    // EXPERIMENTO a cópia se justificava (os dois lados da comparação
+    // conviviam na mesma página); virando padrão, não mais.
+    //
+    // O ângulo é lembrado por malha porque a comparação continua existindo: a
+    // ferramenta alterna 0, 45 e 180 na mesma cabeça, e `smoothNormals` guarda
+    // as normais chapadas originais para que qualquer ângulo seja recalculável.
     const anguloSuave = smoothSkinAngle();
-    if (anguloSuave > 0) {
-      for (const mesh of bySlot.get('head') ?? []) {
-        if (!isSkinMaterial(mesh.material)) continue;
-        mesh.geometry = mesh.geometry.clone();
-        this.suavizados += smoothNormals(mesh.geometry, anguloSuave);
-      }
+    for (const mesh of bySlot.get('head') ?? []) {
+      if (!isSkinMaterial(mesh.material)) continue;
+      if (suavizadas.get(mesh.geometry) === anguloSuave) continue;
+      suavizadas.set(mesh.geometry, anguloSuave);
+      this.suavizados += smoothNormals(mesh.geometry, anguloSuave);
     }
 
     this.skeleton = host.skeleton;

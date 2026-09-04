@@ -12,8 +12,9 @@
  * `scene-ab.mjs`, que é como o passe de assets foi decidido. Sai um par por
  * cabeça, de frente e de três quartos, e uma folha com os quatro lado a lado.
  *
- * Isto NÃO liga o experimento no jogo: o padrão continua chapado. Ligar é uma
- * decisão a tomar olhando a folha.
+ * A folha decidiu: o jogo desenha 45° desde então. A ferramenta continua aqui —
+ * é com ela que a decisão se refaz no dia em que alguém duvidar dela, e é ela
+ * que compara qualquer outro interruptor de rosto (ver `--param`).
  *
  *   node tools/v2-skin-ab.mjs
  *   node tools/v2-skin-ab.mjs --chars=m_king,f_witch --size=560
@@ -111,7 +112,7 @@ await sharp({
   },
 }).composite(tiles).jpeg({ quality: 92 }).toFile(path.join(OUT, 'sheet.jpg'));
 
-console.log('vértices suavizados por cabeça (0 = chapado, o padrão):');
+console.log('vértices suavizados por cabeça (o jogo desenha 45° desde a decisão):');
 for (const char of chars) {
   console.log(`  ${char.padEnd(24)} ` + LADOS.map(([l]) => `${l} ${feito.get(`${char}_${l}`)}`).join('  '));
 }
