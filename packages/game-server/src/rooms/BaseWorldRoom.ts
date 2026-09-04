@@ -28,6 +28,17 @@ const EMOTABLE: ReadonlySet<AnimState> = new Set<AnimState>([
 
 const EMOTE_COOLDOWN_MS = 900;
 
+/**
+ * Quanto tempo um corpo pode pedir para andar sem sair do lugar antes de a sala
+ * desconfiar.
+ *
+ * Um segundo e meio é folgado de propósito: encostar numa parede e continuar
+ * empurrando é jogo normal e dura o quanto o jogador quiser. O que não é normal
+ * é isso acontecer com o corpo DENTRO de um bloqueador — e é a conjunção das
+ * duas que dispara o desencalhe.
+ */
+const DESENCALHE_MS = 1_500;
+
 /** Options a room is created with. Subclasses widen this, never narrow it. */
 export interface RoomCreateOptions {
   sceneId?: SceneId;
@@ -417,6 +428,25 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
       player.moving = outcome.pose.moving;
       if (outcome.pose.moving) player.anim = 'walk';
       else if (player.anim === 'walk' || player.anim === 'run') player.anim = 'idle';
+
+      // DESENCALHE. Andar para dentro de um móvel não é possível — o passo que
+      // terminaria dentro de um bloqueador não acontece —, mas existem caminhos
+      // que não passam pelo movimento: o dono redecorando em cima de alguém,
+      // uma correção do servidor, um cliente com bundle antigo prevendo com
+      // outra planta. Quem cai num poço desses não sai por direção nenhuma:
+      // todas resolvem de volta para o mesmo ponto.
+      //
+      // As duas condições juntas, e nenhuma sozinha: pedir para andar e não sair
+      // do lugar por um segundo e meio acontece com quem está encostado numa
+      // parede (normal), e estar dentro de um bloqueador é a parte cara de
+      // medir. O `stuckFor` é o filtro barato que decide quando vale perguntar
+      // a segunda — em jogo normal, quase nunca.
+      if (session.movement.stuckFor > DESENCALHE_MS
+        && penetrates(outcome.pose, this.colliders())) {
+        session.movement.place(spawnFor(this.sceneId, this.joinCounter++));
+        this.notify(client, 'unstuck', 'Você estava preso; voltamos você para a entrada.');
+        continue;
+      }
 
       // Only send a correction when the server actually overrode the client.
       // A per-tick echo would be a second full position stream on the downlink.

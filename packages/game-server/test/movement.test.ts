@@ -312,3 +312,75 @@ describe('andar pelas salas não prende ninguém', () => {
     }
   });
 });
+
+/**
+ * O DESENCALHE: o que a sala precisa para libertar quem caiu num poço.
+ *
+ * A regra da sala é a conjunção de duas coisas, e nenhuma delas sozinha serve:
+ * pedir para andar sem sair do lugar (barato de medir, e acontece com quem
+ * encosta numa parede) E estar dentro de um bloqueador (caro de medir, e é o
+ * que separa "empurrando a parede" de "preso dentro do sofá").
+ */
+describe('encalhe: o relógio que a sala consulta', () => {
+  const mesa: Collider = { kind: 'rect', x: 0, z: -0.4, hw: 0.9, hd: 0.36, ry: 0 };
+  const cadeira: Collider = { kind: 'circle', x: 0, z: 0.4, r: 0.32 };
+
+  /** Um controlador com relógio na mão, para não esperar um segundo e meio de verdade. */
+  function comRelogio(colliders: Collider[], spawn = { x: 0, y: 0, z: 0, yaw: 0, moving: false }) {
+    let agora = 1_000;
+    const mc = new MovementController(spawn, AREA, () => agora, colliders, null);
+    return { mc, avanca: (ms: number) => { agora += ms; } };
+  }
+
+  it('não corre para quem anda', () => {
+    const { mc } = comRelogio([]);
+    for (let i = 1; i <= 24; i++) { mc.enqueue({ dx: 0, dz: 1, yaw: 0, run: false, seq: i }); mc.step(); }
+    assert.equal(mc.stuckFor, 0);
+  });
+
+  it('corre para quem empurra a parede — e isso NÃO é encalhe', () => {
+    // Encostado no monumento da praça, empurrando contra ele. O relógio corre,
+    // mas o corpo não está DENTRO de nada: a sala não faz nada.
+    const monumento: Collider = { kind: 'circle', x: 0, z: 0, r: 2 };
+    const { mc, avanca } = comRelogio([monumento], { x: 2.5, y: 0, z: 0, yaw: 0, moving: false });
+    for (let i = 1; i <= 40; i++) {
+      mc.enqueue({ dx: -1, dz: 0, yaw: 0, run: false, seq: i });
+      mc.step();
+      avanca(42);
+    }
+    assert.ok(mc.stuckFor > 1_000, 'o relógio precisa correr para quem empurra sem sair do lugar');
+    assert.equal(penetrates(mc.current, [monumento]), false,
+      'mas empurrar uma parede não é estar dentro dela — e é isso que impede o teleporte à toa');
+  });
+
+  it('e quem cai num poço quase sempre SAI empurrando — o desencalhe é raro', () => {
+    // Esta era a hipótese: caiu no poço, ficou preso para sempre. É falsa, e é
+    // bom que seja — o teste existe para não voltarmos a acreditar nela. De
+    // dentro da mesa, empurrando para o lado, o resolvedor cospe o corpo para
+    // fora em UM passo. O que não sai é o corpo que está num poço cercado por
+    // todos os lados, e é só para ele que a sala teleporta.
+    const poco = resolveCollision({ x: 0, z: 0 }, [mesa, cadeira], null);
+    assert.ok(penetrates(poco, [mesa, cadeira]), 'o poço tem de ser um poço');
+    const { mc, avanca } = comRelogio([mesa, cadeira], { x: poco.x, y: 0, z: poco.z, yaw: 0, moving: false });
+    for (let i = 1; i <= 6; i++) {
+      mc.enqueue({ dx: 1, dz: 0, yaw: 0, run: false, seq: i });
+      mc.step();
+      avanca(42);
+    }
+    assert.equal(penetrates(mc.current, [mesa, cadeira]), false, 'saiu empurrando para o lado');
+    assert.equal(mc.stuckFor, 0, 'e o relógio do encalhe nem chegou a correr');
+  });
+
+  it('e o relógio zera quando a sala tira o corpo de lá', () => {
+    const monumento: Collider = { kind: 'circle', x: 0, z: 0, r: 2 };
+    const { mc, avanca } = comRelogio([monumento], { x: 2.5, y: 0, z: 0, yaw: 0, moving: false });
+    for (let i = 1; i <= 60; i++) {
+      mc.enqueue({ dx: -1, dz: 0, yaw: 0, run: false, seq: i });
+      mc.step();
+      avanca(42);
+    }
+    assert.ok(mc.stuckFor > 1_500);
+    mc.place({ x: 8, y: 0, z: 8, yaw: 0, moving: false });
+    assert.equal(mc.stuckFor, 0, 'depois do desencalhe o relógio recomeça do zero');
+  });
+});

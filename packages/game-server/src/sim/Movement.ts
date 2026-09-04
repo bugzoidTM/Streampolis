@@ -94,6 +94,15 @@ export class MovementController {
   /** Sliding-window anchor for the teleport / sustained-speed audit. */
   private auditAnchor: { x: number; z: number; at: number };
   private pendingCorrection = false;
+  /**
+   * Há quanto tempo este jogador PEDE para andar e não sai do lugar, em ms.
+   *
+   * Não é a mesma coisa que estar parado: só conta quando o servidor consumiu
+   * uma intenção de MOVIMENTO e a posição não mudou nem um milímetro. Quem está
+   * encostado numa parede cai aqui também — e é por isso que quem lê este
+   * número precisa confirmar com `penetrates` antes de fazer qualquer coisa.
+   */
+  private stuckSince = 0;
 
   readonly stats = { dropped: 0, flooded: 0, speedViolations: 0, teleports: 0 };
 
@@ -121,6 +130,11 @@ export class MovementController {
     return this.lastAcceptedSeq;
   }
 
+  /** Por quantos ms seguidos este corpo pediu para andar sem sair do lugar. */
+  get stuckFor(): number {
+    return this.stuckSince === 0 ? 0 : this.now() - this.stuckSince;
+  }
+
   setArea(area: Bounds, colliders: readonly Collider[] = [], walkable: Area | null = null): void {
     this.area = area;
     this.colliders = colliders;
@@ -132,6 +146,7 @@ export class MovementController {
     this.pose = { ...pose };
     this.auditAnchor = { x: pose.x, z: pose.z, at: this.now() };
     this.pendingCorrection = true;
+    this.stuckSince = 0;
   }
 
   /**
@@ -198,6 +213,14 @@ export class MovementController {
         : next;
 
       moved = moved || next.moving;
+      // Pediu para andar e não andou? O relógio do encalhe começa a correr. Um
+      // passo que sai do lugar zera tudo — inclusive um passo de meio milímetro
+      // deslizando ao longo de uma parede, que é movimento legítimo.
+      if (next.moving) {
+        const saiu = Math.hypot(solved.x - this.pose.x, solved.z - this.pose.z) > 1e-6;
+        if (saiu) this.stuckSince = 0;
+        else if (this.stuckSince === 0) this.stuckSince = this.now();
+      }
       this.pose = { x: solved.x, y: this.pose.y, z: solved.z, yaw: next.yaw, moving: next.moving };
       this.lastAcceptedSeq = intent.seq;
     }
