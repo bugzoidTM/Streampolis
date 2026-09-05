@@ -49,12 +49,20 @@ npm run build --workspace @streampolis/game-server
 
 # 3. stack
 cd /root/streampolis-deploy && set -a && . ./.env && set +a
-docker stack deploy -c /root/streampolis/deploy/stack.yml streampolis
+docker stack deploy -c /root/streampolis/deploy/stack.yml \
+  -c /root/streampolis/deploy/stack.scaling.yml streampolis
 ```
 
 O site é servido por bind mount de `packages/client/dist`: refazer o build já
 publica, sem redeploy. A API e o game server rodam o código do repositório
 montado em `/app` — mudar código exige `docker service update --force`.
+
+Desde a atualização de movimento de 05/09/2026, a produção usa o overlay de
+escala: dois workers, gateway e Redis privado. Mantenha os DOIS arquivos na
+atualização; aplicar somente a base não remove o gateway e deixa rotas
+concorrentes. Reinicie ambos os workers quando apenas o código mudar.
+Consulte `packages/game-server/SCALING.md` para operação e rollback completo.
+Verifique `/ws/1/health` e `/ws/2/health` depois de publicar.
 
 ## Banco
 
