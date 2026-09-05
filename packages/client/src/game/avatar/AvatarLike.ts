@@ -1,6 +1,17 @@
 import type * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
 
+/** A walkable surface height in world metres; null denotes no supported ground. */
+export type GroundSampler = (x: number, z: number, normal: THREE.Vector3) => number | null;
+
+/** Client-only visual context. Never sent to the server or written into the rig. */
+export interface ProceduralFrame {
+  enabled: boolean;
+  grounded: boolean;
+  ground: GroundSampler | null;
+  lookTarget: THREE.Vector3 | null;
+}
+
 /**
  * O contrato que o MUNDO exige de um personagem — e nada além dele.
  *
@@ -52,6 +63,8 @@ export interface AvatarLike {
   readonly anim: AnimState;
   /** Avança um quadro. `speed` é a velocidade horizontal medida, em m/s. */
   animate(dt: number, speed: number): void;
+  /** Optional post-mixer refinements for avatars with a compatible skeleton. */
+  setProceduralFrame?(frame: ProceduralFrame): void;
   /**
    * Prende o piscar num valor, ou solta com `null`.
    *

@@ -15,6 +15,9 @@ function str(name: string, fallback: string): string {
 export const config = {
   port: num('GAME_SERVER_PORT', 2567),
   host: str('GAME_SERVER_HOST', '0.0.0.0'),
+  redisUrl: str('REDIS_URL', ''),
+  publicAddress: str('GAME_SERVER_PUBLIC_ADDRESS', ''),
+  distributed: str('GAME_SERVER_DISTRIBUTED', '') === '1',
 
   /**
    * Shared secret for the short-lived WebSocket token (SPECs §36). The API
@@ -49,6 +52,8 @@ export const config = {
   presenceHeartbeatMs: num('PRESENCE_HEARTBEAT_MS', 15_000),
 
   cityCapacity: num('CITY_CAPACITY', 36),
+  cityAoiRadius: num('CITY_AOI_RADIUS', 24),
+  cityAoiLeaveRadius: num('CITY_AOI_LEAVE_RADIUS', 28),
   apartmentCapacity: num('APARTMENT_CAPACITY', 12),
   liveCapacity: num('LIVE_CAPACITY', 100),
 

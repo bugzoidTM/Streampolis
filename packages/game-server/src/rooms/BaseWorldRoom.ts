@@ -274,6 +274,9 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
 
   protected onPlayerJoined(_client: Client, _identity: AuthIdentity, _player: PlayerState | null): void {}
   protected onPlayerLeft(_client: Client, _identity: AuthIdentity): void {}
+  /** Called while the body is still attached, including duplicate-tab replacement. */
+  protected onPlayerRemoving(_sessionId: string, _player: PlayerState): void {}
+  protected onAppearanceChanged(_client: Client, _player: PlayerState): void {}
 
   /** Default role in a public room; apartments and lives override it. */
   protected roleFor(_identity: AuthIdentity): RoomRole {
@@ -290,6 +293,8 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
   }
 
   private removeSession(sessionId: string): void {
+    const player = this.state.players.get(sessionId);
+    if (player) this.onPlayerRemoving(sessionId, player);
     const session = this.sessions.get(sessionId);
     if (session) this.chat.forget(session.identity.userId);
     this.sessions.delete(sessionId);
@@ -386,6 +391,7 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
           // live). Deixá-la velha faria o próximo evento reescrever a roupa
           // antiga por cima da nova.
           session.identity = identity;
+          this.onAppearanceChanged(client, player);
         })
         .catch(() => this.notify(client, 'restyle_failed', 'Não deu para aplicar o visual.'));
     });

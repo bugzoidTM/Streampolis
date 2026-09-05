@@ -1,0 +1,15 @@
+{
+  "rig": "f",
+  "authoredWith": "Blender MCP 4.5.9 LTS",
+  "duration": 4,
+  "frames": 121,
+  "fps": 30,
+  "deformBones": 62,
+  "tracks": 124,
+  "meshes": 0,
+  "skins": 0,
+  "helpersExported": 0,
+  "maxFootTravelMetres": 0,
+  "maxScaleError": 0.0000038611321984127756,
+  "maxLoopClosureError": 2.220446049250313e-16
+}

@@ -39,6 +39,8 @@ export interface WorldStateView {
   shard: string;
   tick: number;
   players: MapLike<PlayerView>;
+  /** City roster stays room-wide while positional players are filtered by AOI. */
+  members?: MapLike<Pick<PlayerView, 'id' | 'name' | 'gifterLevel' | 'agency' | 'role' | 'avatar'>>;
 }
 
 /** Um móvel colocado pelo dono, como a SALA o publica (schema `PlacedItem`). */

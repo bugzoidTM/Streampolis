@@ -3,6 +3,7 @@ import { resolveCollision, type Area, type Collider, type SceneId } from '@strea
 import type { Framing } from '../CameraManager.js';
 import type { GradeLook } from '../Renderer.js';
 import type { QualityTier } from '../QualityManager.js';
+import type { GroundSampler } from '../avatar/AvatarLike.js';
 import {
   Environment, InteriorRig, ROOM_DAY,
   type InteriorParams, type LightRig, type SkyParams,
@@ -23,6 +24,8 @@ export interface GameScene {
   readonly framing: Framing;
   /** Longest the camera boom may get here; a small flat cannot afford 9 m. */
   readonly maxBoom: number;
+  /** Only walkable ground, excluding furniture and decorative geometry. */
+  readonly groundAt?: GroundSampler;
   build(renderer: THREE.WebGLRenderer, tier?: QualityTier): Promise<void>;
   update(dt: number, camera: THREE.Camera): void;
   /**
@@ -57,6 +60,12 @@ export abstract class SceneBase implements GameScene {
   readonly mats = new MatLib();
   readonly framing: Framing = 'room';
   readonly maxBoom: number = 9.0;
+  // Movement/collision currently has one flat floor at y=0. A future terrain
+  // scene can override this sampler when shared movement supports its heights.
+  readonly groundAt: GroundSampler = (_x, _z, normal) => {
+    normal.set(0, 1, 0);
+    return 0;
+  };
 
   protected env: LightRig | null = null;
   protected colliders: Collider[] = [];

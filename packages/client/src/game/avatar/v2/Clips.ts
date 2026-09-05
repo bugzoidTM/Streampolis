@@ -13,8 +13,8 @@ import * as THREE from 'three';
  * repouso do esqueleto. Ler como delta é o que permite escrever "o braço sobe
  * 60°" sem saber como o autor do pacote deixou o braço parado.
  *
- * As faixas são compiladas UMA vez por página: os 21 personagens dividem o
- * mesmo esqueleto, então o resultado serve para todo mundo.
+ * As faixas são compiladas uma vez por pose de repouso. Os rigs masculino e
+ * feminino têm os mesmos nomes, mas rotações de bind diferentes.
  */
 
 /** Ossos do pacote que estas poses usam. O resto fica onde está. */
@@ -205,23 +205,24 @@ const CLAP: Spec = {
 
 const SPECS = [DANCE, SIT, CELEBRATE, CLAP];
 
-let compiled: THREE.AnimationClip[] | null = null;
+const compiled = new Map<string, THREE.AnimationClip[]>();
 
 /**
  * Compila as faixas contra o esqueleto de um personagem já carregado.
  *
  * Precisa de um exemplar porque as poses são DELTAS: sem a rotação de repouso
- * de cada osso não dá para dizer "sobe 60°". Como os 21 personagens dividem o
- * mesmo esqueleto, o resultado é compilado uma vez e servido a todos.
+ * de cada osso não dá para dizer "sobe 60°". A chave inclui o repouso, para
+ * nunca emprestar a rotação absoluta de um rig ao outro.
  */
 export function extraClips(rig: THREE.Object3D): THREE.AnimationClip[] {
-  if (compiled) return compiled;
-
   const rest = new Map<string, THREE.Quaternion>();
   rig.traverse((o) => {
     if ((o as THREE.Bone).isBone) rest.set(o.name, o.quaternion.clone());
   });
   if (!rest.size) return [];
+  const signature = JSON.stringify([...rest].map(([name, q]) => [name, ...q.toArray()]));
+  const cached = compiled.get(signature);
+  if (cached) return cached;
 
   const euler = new THREE.Euler();
   const delta = new THREE.Quaternion();
@@ -265,6 +266,6 @@ export function extraClips(rig: THREE.Object3D): THREE.AnimationClip[] {
     out.push(new THREE.AnimationClip(spec.name, spec.duration, tracks));
   }
 
-  compiled = out;
+  compiled.set(signature, out);
   return out;
 }

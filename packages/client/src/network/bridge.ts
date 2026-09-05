@@ -41,7 +41,7 @@ function personFrom(
   // endpoint can be asked for it.
   let avatar: AvatarConfig = DEFAULT_AVATAR;
   let agency: string | null = null;
-  state?.players?.forEach((player) => {
+  (state?.members ?? state?.players)?.forEach((player) => {
     if (player.id !== userId) return;
     avatar = player.avatar;
     agency = player.agency || null;
@@ -130,7 +130,7 @@ function isLiveState(state: WorldStateView): state is LiveStateView {
  */
 function rosterOf(state: WorldStateView | undefined, meSessionId: string): RoomPerson[] {
   const out: RoomPerson[] = [];
-  state?.players?.forEach((player, sessionId) => {
+  (state?.members ?? state?.players)?.forEach((player, sessionId) => {
     out.push({
       userId: player.id,
       sessionId,

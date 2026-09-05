@@ -21,6 +21,9 @@ import { renderPoster } from '../game/portrait/PosterStudio.js';
  */
 const DEPTH_RANGE = 8;
 
+/** A stationary preview still needs gait speed to sample Walk/Run blending. */
+const previewSpeed = (state: string) => state === 'walk' ? 2.4 : state === 'run' ? 5.2 : 0;
+
 /**
  * Turntable rig used by the visual review loop. Renders a row of avatars on a
  * neutral studio floor under the production lighting and post chain, so what
@@ -322,7 +325,7 @@ export function AvatarLab() {
           try {
             avatar.setAnim(animState as never);
             // Settle pose and expression blends without waiting on real time.
-            for (let i = 0; i < 60; i++) avatar.animate(0.05, 0);
+            for (let i = 0; i < 60; i++) avatar.animate(0.05, previewSpeed(animState));
             group.rotation.y = yaw;
             group.updateMatrixWorld(true);
             const top = avatar.stature;
@@ -377,7 +380,7 @@ export function AvatarLab() {
           const prev = group.rotation.y;
           try {
             avatar.setAnim(animState as never);
-            for (let i = 0; i < 60; i++) avatar.animate(0.05, 0);
+            for (let i = 0; i < 60; i++) avatar.animate(0.05, previewSpeed(animState));
             group.rotation.y = yaw;
             group.updateMatrixWorld(true);
             const top = avatar.stature;
@@ -485,7 +488,7 @@ export function AvatarLab() {
               const b = new THREE.Vector3();
               for (const state of states) {
                 avatar.setAnim(state as never);
-                for (let i = 0; i < 30; i++) avatar.animate(0.05, 1.4);
+                for (let i = 0; i < 30; i++) avatar.animate(0.05, previewSpeed(state));
                 group.updateMatrixWorld(true);
                 (boca as THREE.Object3D).getWorldPosition(a);
                 (bone as THREE.Bone).getWorldPosition(b);
@@ -880,8 +883,8 @@ export function AvatarLab() {
             // abre a emenda no meio do passo. Medir só parado é medir o
             // problema com o movimento desligado.
             avatar.setAnim(anim as never);
-            avatar.animate(0, 0);
-            for (let i = 0; i * 0.05 < fase; i++) avatar.animate(0.05, 0);
+            avatar.animate(0, previewSpeed(anim));
+            for (let i = 0; i * 0.05 < fase; i++) avatar.animate(0.05, previewSpeed(anim));
             palco.updateMatrixWorld(true);
             const top = avatar.stature;
             camera.position.set(0, top * 0.52, 2.95);

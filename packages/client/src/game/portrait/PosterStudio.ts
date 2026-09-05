@@ -177,7 +177,8 @@ async function shoot(
     avatar.setAnim(o.pose);
   }
   const step = 1 / 30;
-  for (let t = 0; t < o.at; t += step) avatar.animate(step, 0);
+  const previewSpeed = o.pose === 'walk' ? 2.4 : o.pose === 'run' ? 5.2 : 0;
+  for (let t = 0; t < o.at; t += step) avatar.animate(step, previewSpeed);
   // Três quartos: de frente o avatar vira foto 3x4 de documento.
   avatar.root.rotation.y = turn ?? (o.shot === 'bust' ? 0.42 : o.shot === 'feet' ? 0.62 : 0.34);
   avatar.root.updateMatrixWorld(true);

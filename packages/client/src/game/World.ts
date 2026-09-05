@@ -17,7 +17,7 @@ import { Renderer } from './Renderer.js';
 import { LoadTracker, type LoadReport } from './assets/loading.js';
 import { CameraManager } from './CameraManager.js';
 import { InputManager } from './InputManager.js';
-import type { AvatarLike } from './avatar/AvatarLike.js';
+import type { AvatarLike, ProceduralFrame } from './avatar/AvatarLike.js';
 import { crowdParts } from './AmbientCrowd.js';
 import { createAvatar, isPackaged, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
@@ -85,6 +85,9 @@ interface Actor {
   last: THREE.Vector3;
   /** Smoothed ground speed in m/s; what the locomotion clips are timed to. */
   speed: number;
+  /** Reused client-only pose context, so there is no allocation per frame. */
+  procedural: ProceduralFrame;
+  gaze: THREE.Vector3;
 }
 
 const LOCAL_ID = 'local';
@@ -498,6 +501,9 @@ export class World {
    */
   private syncActors(poses: RenderPose[], dt: number): void {
     const seen = new Set<string>();
+    const local = poses.find(pose => pose.isLocal);
+    const tier = this.renderer.quality.settings.tier;
+    let refinements = tier === 'high' ? 12 : tier === 'medium' ? 6 : 0;
 
     for (const pose of poses) {
       seen.add(pose.sessionId);
@@ -517,6 +523,8 @@ export class World {
           avatar, tag, bubble: null, yaw: pose.yaw,
           last: new THREE.Vector3(pose.x, pose.y, pose.z),
           speed: 0,
+          procedural: { enabled: false, grounded: false, ground: null, lookTarget: null },
+          gaze: new THREE.Vector3(),
         };
         this.actors.set(pose.sessionId, actor);
       }
@@ -526,6 +534,7 @@ export class World {
       // at the buffer's pace, and timing the walk to anything else is exactly
       // what makes feet skate.
       const travelled = Math.hypot(pose.x - actor.last.x, pose.z - actor.last.z);
+      const verticalSpeed = dt > 1e-4 ? Math.abs(pose.y - actor.last.y) / dt : 0;
       const instant = dt > 1e-4 ? travelled / dt : 0;
       // Half-life smoothing, so one dropped packet does not stop the legs.
       const k = 1 - Math.exp(-dt / 0.09);
@@ -551,13 +560,41 @@ export class World {
       actor.yaw = shortestLerp(actor.yaw, pose.yaw, pose.isLocal ? 0.35 : 1);
       actor.avatar.root.rotation.y = actor.yaw;
 
+      const context = actor.procedural;
+      const near = actor.avatar.root.position.distanceToSquared(this.camera.camera.position) < 16 ** 2;
+      context.enabled = this.forcedAnim === null && (pose.isLocal || (near && refinements > 0));
+      if (context.enabled && !pose.isLocal) refinements--;
+      context.ground = this.scene?.groundAt ?? null;
+      // The protocol currently has no jumping. An elevated/vertically moving
+      // pose must still release the feet, including future airborne states.
+      context.grounded = Math.abs(pose.y) < 0.045 && verticalSpeed < 0.35
+        && travelled < Math.max(0.75, dt * 12);
+      context.lookTarget = null;
+      if (context.enabled) {
+        if (pose.isLocal) {
+          actor.gaze.set(-Math.sin(this.camera.yaw) * 4, -Math.sin(this.camera.pitch) * 2,
+            -Math.cos(this.camera.yaw) * 4).add(actor.avatar.root.position);
+          actor.gaze.y += actor.avatar.stature * 0.87;
+          context.lookTarget = actor.gaze;
+        } else if (local && Math.hypot(local.x - pose.x, local.z - pose.z) < 6) {
+          actor.gaze.set(local.x, local.y + 1.5 * (local.avatar.height ?? 1), local.z);
+          context.lookTarget = actor.gaze;
+        }
+      }
+      actor.avatar.setProceduralFrame?.(context);
+
       // The state travels on the wire; here is where it becomes movement.
       // O estado vem do servidor; `forcedAnim` é a trava da revisão visual, que
       // manda o mesmo gesto para todo mundo. No corpo procedural ela entra pelo
       // `Animator`; no v2, que não tem um, ela simplesmente VIRA o estado.
       actor.avatar.setAnim(this.forcedAnim ?? pose.anim ?? 'idle');
       if (isProcedural(actor.avatar)) actor.avatar.animator.pin(this.forcedAnim);
-      actor.avatar.animate(dt, actor.speed);
+      // The visual gate deliberately walks in place; gameplay uses the speed
+      // actually drawn above. A pinned walk/run still needs a preview cadence.
+      const visualSpeed = this.forcedAnim
+        ? this.forcedAnim === 'walk' ? 2.4 : this.forcedAnim === 'run' ? 5.2 : 0
+        : actor.speed;
+      actor.avatar.animate(dt, visualSpeed);
 
       if (actor.bubble && !actor.bubble.update(dt)) {
         actor.bubble.dispose();
@@ -638,6 +675,7 @@ export class World {
       anim: [...this.actors.values()].map((a) => ({
         state: a.avatar.anim,
         speed: Math.round(a.speed * 100) / 100,
+        motion: isPackaged(a.avatar) ? a.avatar.animationReport() : null,
         // A BOCA, de quem tem uma. Sem isto, "o balão apareceu" e "o balão
         // apareceu e a cara se mexeu" são o mesmo relatório — e a segunda é a
         // única que prova que a fala chegou ao corpo.

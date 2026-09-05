@@ -1,8 +1,12 @@
 import * as THREE from 'three';
 import type { AnimState, AvatarConfig } from '@streampolis/shared';
 import type { AvatarOptions } from '../Avatar.js';
-import type { AvatarLike } from '../AvatarLike.js';
+import type { AvatarLike, ProceduralFrame } from '../AvatarLike.js';
 import { extraClips } from './Clips.js';
+import { compatibleDance, loadAuthoredDance } from './AuthoredAnimations.js';
+import { LocomotionController } from './LocomotionController.js';
+import { ProceduralPose } from './ProceduralPose.js';
+import { FacialMorphs, type FacialDriver } from './FacialMorphs.js';
 import { FaceV2 } from './FaceV2.js';
 import { MouthV2, type MouthState } from './MouthV2.js';
 import { isSkinMaterial, smoothNormals, smoothSkinAngle } from './SmoothSkin.js';
@@ -109,10 +113,6 @@ const RAMPA_FORRO = 0.060;
  */
 const PISO_FORRO = 0.02;
 
-/** Velocidade em que os ciclos do pacote foram autorados, em m/s. */
-const NATIVE_WALK = 1.4;
-const NATIVE_RUN = 3.6;
-
 /** Altura do adulto que o jogo desenha, em metros. */
 const GAME_HEIGHT = 1.72;
 
@@ -160,6 +160,13 @@ export class AvatarV2 implements AvatarLike {
   private mixer: THREE.AnimationMixer | null = null;
   private clips = new Map<string, THREE.AnimationClip>();
   private action: THREE.AnimationAction | null = null;
+  private locomotion: LocomotionController | null = null;
+  private procedural: ProceduralPose | null = null;
+  private proceduralFrame: ProceduralFrame | null = null;
+  private readonly gestureFades = new Map<THREE.AnimationAction, {
+    from: number; to: number; elapsed: number; duration: number;
+  }>();
+  private danceSource: 'fallback' | 'blender' = 'fallback';
   private state: AnimState = 'idle';
   /**
    * A estatura nominal, já com o multiplicador do jogador.
@@ -191,6 +198,7 @@ export class AvatarV2 implements AvatarLike {
    * nada a fechar, e fingir que há custaria uma deformação por quadro à toa.
    */
   private face: FaceV2 | null = null;
+  private facialMorphs: FacialMorphs | null = null;
   /**
    * A boca, que o pacote não tem.
    *
@@ -328,8 +336,14 @@ export class AvatarV2 implements AvatarLike {
     // O ângulo é lembrado por malha porque a comparação continua existindo: a
     // ferramenta alterna 0, 45 e 180 na mesma cabeça, e `smoothNormals` guarda
     // as normais chapadas originais para que qualquer ângulo seja recalculável.
+    // Authored facial geometry opts in explicitly; ordinary wardrobe heads
+    // keep their current normals, vertex paint, blinking and procedural mouth.
+    if (this.options.face !== false) {
+      this.facialMorphs = FacialMorphs.create(bySlot.get('head') ?? []);
+      this.facialMorphs?.setState(this.pendingMouth);
+    }
     const anguloSuave = smoothSkinAngle();
-    for (const mesh of bySlot.get('head') ?? []) {
+    for (const mesh of this.facialMorphs ? [] : (bySlot.get('head') ?? [])) {
       if (!isSkinMaterial(mesh.material)) continue;
       if (suavizadas.get(mesh.geometry) === anguloSuave) continue;
       suavizadas.set(mesh.geometry, anguloSuave);
@@ -349,7 +363,7 @@ export class AvatarV2 implements AvatarLike {
         // e uma vez só por cabeça — o valor gravado é multiplicador, então ele
         // vale para os oito tons de pele. Vem antes da boca porque é a pele em
         // volta dela, e depois do rosto porque é dele que sai onde é a boca.
-        if (frameDoRosto(this.face)) {
+        if (!this.facialMorphs && frameDoRosto(this.face)) {
           const toHead = host.skeleton.boneInverses[
             host.skeleton.bones.findIndex((b) => b.name === 'Head')
           ];
@@ -365,7 +379,7 @@ export class AvatarV2 implements AvatarLike {
         // poria a boca de todo mundo na cabeça de quem carregou primeiro.
         const frame = this.face.face;
         const bone = host.skeleton.bones.find((b) => b.name === 'Head');
-        if (frame && bone) {
+        if (!this.facialMorphs && frame && bone) {
           this.mouth = new MouthV2(
             frame, bone, SKIN_TONES[this.config.skinTone % SKIN_TONES.length],
           );
@@ -375,6 +389,7 @@ export class AvatarV2 implements AvatarLike {
         }
       }
     }
+    this.procedural = new ProceduralPose(this.root, host.skeleton, this.height);
     this.mixer = new THREE.AnimationMixer(hostRoot);
     // O rig é o da peça HOSPEDEIRA, que é a dona do esqueleto que todas as
     // outras adotaram. Vestir uma blusa do outro pacote continua valendo — a
@@ -386,7 +401,10 @@ export class AvatarV2 implements AvatarLike {
     // montagem, e aí `play()` nunca roda, `setAnim()` vira no-op silencioso e a
     // praça enche de estátuas — com uma promessa rejeitada por jogador que
     // ninguém observa. As quatro faixas autorais não dependem do arquivo.
-    const packClips = await loadClips(rig).catch(() => [] as THREE.AnimationClip[]);
+    const [packClips, authoredClips] = await Promise.all([
+      loadClips(rig).catch(() => [] as THREE.AnimationClip[]),
+      loadAuthoredDance(rig).catch(() => [] as THREE.AnimationClip[]),
+    ]);
     if (this.disposed) return;
     for (const clip of packClips) {
       this.clips.set(clip.name.replace('CharacterArmature|', ''), clip);
@@ -394,6 +412,12 @@ export class AvatarV2 implements AvatarLike {
     // As autorais entram DEPOIS e por cima: se um dia o pacote ganhar uma
     // dança, ela vence a nossa só trocando a ordem aqui.
     for (const clip of extraClips(hostRoot)) this.clips.set(clip.name, clip);
+    const dance = compatibleDance(authoredClips, host.skeleton);
+    if (dance) {
+      this.clips.set('Dance', dance);
+      this.danceSource = 'blender';
+    }
+    this.locomotion = new LocomotionController(this.mixer, this.clips);
     this.play(this.state, 0);
   }
 
@@ -528,15 +552,38 @@ export class AvatarV2 implements AvatarLike {
   }
 
   private play(state: AnimState, fade = FADE) {
-    // O que pode faltar é o CLIPE, não a chave: `CLIP_FOR` é um Record completo.
-    // Sem o segundo `get`, um arquivo de animação que não chegou congela o
-    // avatar no estado anterior para sempre.
-    const clip = this.clips.get(CLIP_FOR[state]) ?? this.clips.get('Idle');
-    if (!clip || !this.mixer) return;
-    const next = this.mixer.clipAction(clip);
-    next.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-    if (this.action && this.action !== next) this.action.crossFadeTo(next, fade, false);
+    if (!this.mixer || !this.locomotion) return;
+    const isGait = state === 'idle' || state === 'walk' || state === 'run';
+    const clip = isGait ? null : this.clips.get(CLIP_FOR[state]);
+    // Missing gestures fall back to the gait, including a failed pack load.
+    const next = clip ? this.mixer.clipAction(clip) : null;
+    if (next === this.action) return;
+    this.locomotion.setActive(!next, fade);
+    for (const [action] of this.gestureFades) {
+      this.gestureFades.set(action, {
+        from: action.getEffectiveWeight(), to: action === next ? 1 : 0,
+        elapsed: 0, duration: fade,
+      });
+    }
+    if (next && !this.gestureFades.has(next)) {
+      next.reset().setLoop(THREE.LoopRepeat, Infinity).setEffectiveWeight(0).play();
+      this.gestureFades.set(next, { from: 0, to: 1, elapsed: 0, duration: fade });
+    }
     this.action = next;
+    this.updateGestureFades(0);
+    this.locomotion.update(0, this.locomotion.report().speed);
+  }
+
+  private updateGestureFades(dt: number): void {
+    for (const [action, fade] of this.gestureFades) {
+      fade.elapsed += dt;
+      const alpha = fade.duration > 0 ? Math.min(1, fade.elapsed / fade.duration) : 1;
+      action.setEffectiveWeight(THREE.MathUtils.lerp(fade.from, fade.to, alpha));
+      if (alpha === 1 && fade.to === 0) {
+        action.stop();
+        this.gestureFades.delete(action);
+      }
+    }
   }
 
   /**
@@ -635,7 +682,7 @@ export class AvatarV2 implements AvatarLike {
     // dão a mesma imagem, e é este relatório que as separa.
     return {
       ...face,
-      boca: this.mouth?.describe() ?? null,
+      boca: this.facialMorphs?.describe() ?? this.mouth?.describe() ?? null,
       suavizados: this.suavizados,
       pintados: this.pintados,
     };
@@ -668,11 +715,12 @@ export class AvatarV2 implements AvatarLike {
    */
   setMouth(state: MouthState): void {
     this.pendingMouth = state;
-    this.mouth?.setState(state);
+    if (this.facialMorphs) this.facialMorphs.setState(state);
+    else this.mouth?.setState(state);
   }
 
   get mouthState(): MouthState {
-    return this.mouth?.state ?? this.pendingMouth;
+    return this.facialMorphs?.state ?? this.mouth?.state ?? this.pendingMouth;
   }
 
   /**
@@ -692,29 +740,52 @@ export class AvatarV2 implements AvatarLike {
    */
   speak(text: string, seed = 0): void {
     const segundos = Math.min(4.5, Math.max(0.8, 0.55 + text.length * 0.045));
-    this.mouth?.speak(segundos, seed);
+    if (this.facialMorphs) this.facialMorphs.speak(segundos, seed);
+    else this.mouth?.speak(segundos, seed);
   }
 
   /** A boca está se mexendo agora? É o que uma ferramenta pergunta. */
   get speaking(): boolean {
-    return this.mouth?.speaking ?? false;
+    return this.facialMorphs?.speaking ?? this.mouth?.speaking ?? false;
+  }
+
+  /** A facial clip and procedural expression must never write the same keys. */
+  setFacialDriver(driver: FacialDriver): void {
+    this.facialMorphs?.setDriver(driver);
   }
 
   private pendingMouth: MouthState = 'neutral';
+
+  setProceduralFrame(frame: ProceduralFrame): void {
+    this.proceduralFrame = frame;
+  }
+
+  /** Runtime evidence for the animation lab without exposing mutable actions. */
+  animationReport(): Record<string, unknown> {
+    return {
+      state: this.state, locomotion: this.locomotion?.report() ?? null,
+      danceSource: this.danceSource, danceDuration: this.clips.get('Dance')?.duration ?? null,
+      facialSource: this.facialMorphs ? 'authored-morphs' : 'procedural',
+      gestureWeight: [...this.gestureFades.keys()].reduce((sum, action) => sum + action.getEffectiveWeight(), 0),
+    };
+  }
 
   animate(dt: number, speed: number): void {
     // O rosto avança MESMO SEM MIXER: ele não depende de clipe nenhum, e um
     // avatar que ainda não recebeu as animações precisa piscar do mesmo jeito.
     this.face?.update(dt);
     this.mouth?.update(dt);
-    if (!this.mixer) return;
-    if (this.action) {
-      // O ciclo é regido pela velocidade DESENHADA, como no v1: é a única coisa
-      // que impede uma caminhada de patinar sobre o chão.
-      const native = this.state === 'run' ? NATIVE_RUN : this.state === 'walk' ? NATIVE_WALK : 0;
-      this.action.timeScale = native > 0 ? THREE.MathUtils.clamp(speed / native, 0.4, 2.2) : 1;
+    if (!this.mixer) {
+      this.facialMorphs?.update(dt);
+      return;
     }
+    this.procedural?.restore();
+    this.updateGestureFades(dt);
+    this.locomotion?.update(dt, speed);
     this.mixer.update(dt);
+    this.facialMorphs?.update(dt);
+    // Release IK until the outgoing gesture finishes its fade into locomotion.
+    this.procedural?.apply(dt, this.state, this.gestureFades.size ? null : this.proceduralFrame);
   }
 
   get stature(): number {
@@ -723,9 +794,13 @@ export class AvatarV2 implements AvatarLike {
 
   dispose(): void {
     this.disposed = true;
+    this.procedural?.restore();
+    this.procedural = null;
     this.mixer?.stopAllAction();
     this.mixer = null;
     this.action = null;
+    this.locomotion = null;
+    this.gestureFades.clear();
     this.clips.clear();
     for (const m of this.materials) m.dispose();
     this.materials = [];
@@ -733,6 +808,8 @@ export class AvatarV2 implements AvatarLike {
     this.skeleton = null;
     this.face?.dispose();
     this.face = null;
+    this.facialMorphs?.dispose();
+    this.facialMorphs = null;
     // A boca é malha e material DESTE avatar — nada dela vem do protótipo em
     // cache —, então ela é descartada de verdade, e não só solta do osso.
     this.mouth?.dispose();

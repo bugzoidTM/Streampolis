@@ -1,4 +1,4 @@
-import { ArraySchema, MapSchema, Schema, type } from '@colyseus/schema';
+import { ArraySchema, MapSchema, Schema, type, view } from '@colyseus/schema';
 import type { AnimState, AvatarConfig, HomePlacement, PKPhase, SceneId } from '../shared.js';
 
 /**
@@ -91,6 +91,39 @@ export class WorldState extends Schema {
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   /** Server tick counter; useful for client-side debug overlays. */
   @type('uint32') tick = 0;
+}
+
+/** Social roster: stays visible across the city without streaming distant poses. */
+export class CityMemberState extends Schema {
+  @type('string') id = '';
+  @type('string') name = '';
+  @type('uint8') gifterLevel = 0;
+  @type('string') agency = '';
+  @type('string') role: RoomRole = 'visitor';
+  @type(AvatarState) avatar = new AvatarState();
+
+  apply(player: PlayerState): this {
+    this.id = player.id;
+    this.name = player.name;
+    this.gifterLevel = player.gifterLevel;
+    this.agency = player.agency;
+    this.role = player.role;
+    this.avatar.apply(player.avatar.toConfig());
+    return this;
+  }
+}
+
+/**
+ * Separate schema deliberately: tagging an inherited field in schema 3 can
+ * mutate the parent's metadata and hide apartment/live bodies as well.
+ * Keep the first four field indices compatible with WorldState.
+ */
+export class CityState extends Schema {
+  @type('string') sceneId: SceneId = 'central_plaza';
+  @type('string') shard = '';
+  @view() @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
+  @type('uint32') tick = 0;
+  @type({ map: CityMemberState }) members = new MapSchema<CityMemberState>();
 }
 
 /**

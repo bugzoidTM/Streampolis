@@ -6,6 +6,8 @@ import { CityRoom } from './rooms/CityRoom.js';
 import { ApartmentRoom } from './rooms/ApartmentRoom.js';
 import { LiveRoom } from './rooms/LiveRoom.js';
 import type { LiveSummary } from './shared.js';
+import { createScaling } from './scaling.js';
+import { presence } from './world/Presence.js';
 
 /**
  * Game server process (SPECs §52, §54).
@@ -18,12 +20,18 @@ import type { LiveSummary } from './shared.js';
 export const ROOM_CITY = 'city';
 export const ROOM_APARTMENT = 'apartment';
 export const ROOM_LIVE = 'live';
+const scaling = createScaling(config);
+let accepting = false;
 
 const httpServer = http.createServer((req, res) => {
   const url = req.url ?? '/';
   if (url === '/health' || url === '/healthz') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, uptime: process.uptime(), env: config.env }));
+    void scaling.ready().then((connected) => {
+      const ok = accepting && connected;
+      res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ ok, uptime: process.uptime(), env: config.env, mode: scaling.mode,
+        serverId: config.serverId, processId: matchMaker.processId }));
+    });
     return;
   }
   if (url.startsWith('/live')) {
@@ -65,7 +73,15 @@ async function listLives(): Promise<LiveSummary[]> {
 }
 
 export const gameServer = new Server({
+  ...scaling.serverOptions,
   transport: new WebSocketTransport({ server: httpServer }),
+});
+
+gameServer.onBeforeShutdown(() => { accepting = false; });
+gameServer.onShutdown(async () => {
+  // onDispose has removed every room; publish the empty slice before exit.
+  await presence().flush();
+  presence().stop();
 });
 
 // filterBy is what shards the world: a full central-plaza-001 makes the
@@ -85,6 +101,7 @@ gameServer.define(ROOM_LIVE, LiveRoom);
 
 export async function start(port = config.port, host = config.host): Promise<void> {
   await gameServer.listen(port, host);
+  accepting = true;
   console.log(`[game-server] ouvindo em ws://${host}:${port} (${config.env})`);
   if (!isProduction() && !config.authSecret) {
     console.warn('[game-server] sem AUTH_JWT_SECRET: tokens de desenvolvimento aceitos.');
