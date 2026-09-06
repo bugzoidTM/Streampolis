@@ -127,13 +127,35 @@ Duas consequências do modo beta que costumam pegar de surpresa:
   modo demonstração**. A exceção — e o que se roda antes de publicar uma beta —
   é o `release-check` abaixo.
 
-## Ainda não há como comprar Coins
+## Compra de Coins (checkout)
 
-O webhook de pagamento não está no ar (`SP_WEBHOOK_SECRET` existe, ninguém o
-usa). Numa beta pública isso significa: conta nova nasce com carteira zerada e
-**não tem caminho de produto para presentear**. É o buraco a fechar antes de a
-beta valer dinheiro; o `release-check` credita a carteira de teste chamando
-`purchaseCoins` direto no banco — o mesmo caminho que o webhook chamará.
+O fluxo do PRD §15 — dinheiro real → Coins → presente — existe na API desde
+06/09/2026:
+
+```
+GET  /shop/coin-packages              vitrine (pública, com o aviso legal)
+POST /me/checkout                     abre a intenção de compra (pendente)
+POST /payments/webhook/:provider      o provedor confirma; SÓ aqui a moeda entra
+GET  /me/payments                     histórico do jogador
+```
+
+Quem credita é o **webhook**, nunca o navegador, e ele é autenticado pela
+assinatura HMAC-SHA256 do corpo CRU no header `X-Streampolis-Signature`
+(`sha256=…` também é aceito), com o `SP_WEBHOOK_SECRET` do `.env`. Evento
+repetido é normal num gateway: a dedupe está em `webhook_events` e na chave de
+idempotência do pagamento.
+
+O provedor é configuração, e o padrão é **não ter**:
+
+| `PAYMENTS_PROVIDER` | efeito |
+| --- | --- |
+| `none` (padrão) | `/me/checkout` responde 503 "indisponível". É a verdade enquanto não houver gateway contratado — melhor do que uma tela de pagamento que não cobra |
+| `sandbox` | provedor de mentira, com `POST /payments/sandbox/:id/confirm`. **Proibido em produção** (a API se recusa a subir); é o que permite o `release-check` comprar Coins de ponta a ponta |
+
+Ligar um gateway de verdade é implementar um adaptador que devolva
+`{ providerPaymentId, checkoutUrl }` em `packages/api/src/shop/Checkout.ts`; o
+webhook, o crédito e a idempotência já estão prontos para ele. Defina também
+`PAYMENTS_RETURN_URL=https://streampolis.nutef.com` para a volta do checkout.
 
 ## Verificar
 
@@ -156,8 +178,8 @@ avatar, praça, amizade, encontrar, apartamento, live, gift e PK. Não usa
 npm run release:check
 
 # contra a stack publicada, de dentro do container da API — é lá que o
-# Postgres da produção é alcançável (o release-check precisa dele para dar
-# Coins à conta de teste; ver "Ainda não há como comprar Coins")
+# Postgres da produção é alcançável (com PAYMENTS_PROVIDER=none o release-check
+# credita a conta de teste por dentro; com um provedor configurado ele COMPRA)
 CID=$(docker ps --filter name=streampolis_sp-api -q | head -1)
 source /root/streampolis-deploy/.env
 docker exec -w /app \

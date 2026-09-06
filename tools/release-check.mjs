@@ -48,18 +48,18 @@
  * decidiu nunca fazer. Uma conta de teste por rodada é o preço; o prefixo `rc_`
  * é o que permite reconhecê-las depois.
  *
- * ## Moeda: por que este teste precisa do banco
+ * ## Moeda
  *
- * Não existe (ainda) caminho de produto para uma conta nova ter Coins: o
- * webhook de pagamento que chamaria `purchaseCoins` não está no ar, e o `seed`
- * — que dá saldo às fixtures — recusa-se a rodar em produção. Sem Coins não há
- * gift, e sem gift não há placar de PK.
+ * Com um provedor de pagamento configurado (`PAYMENTS_PROVIDER=sandbox`), a
+ * conta de teste COMPRA Coins pela vitrine, como o jogador pagante: vitrine →
+ * checkout → confirmação do provedor → carteira. Nesse caminho o teste não toca
+ * o banco em momento nenhum.
  *
- * A saída é creditar a conta pelo MESMO código que o webhook chamará
- * (`purchaseCoins`, com `paymentId` marcado como release-check), o que exige
- * `DATABASE_URL`. É o único passo que não passa pela API pública, e está
- * anotado como tal na saída do teste — ele é uma bengala do ambiente, não uma
- * funcionalidade nova.
+ * Sem provedor (`none`, o padrão da produção enquanto não houver gateway
+ * contratado), a compra responde 503 e o teste cai para o crédito por dentro —
+ * `purchaseCoins`, o mesmo código que o webhook chama —, o que exige
+ * `DATABASE_URL`. Esse passo aparece anotado na saída: é bengala de ambiente,
+ * não funcionalidade.
  *
  * ## Orçamento de /auth
  *
@@ -151,8 +151,62 @@ async function registrar(pessoa) {
 }
 
 /**
- * Credita Coins pelo mesmo caminho do webhook de pagamento. Único passo que
- * fala com o banco — ver o cabeçalho deste arquivo.
+ * Compra de Coins pelo caminho do JOGADOR: vitrine → checkout → confirmação do
+ * provedor → carteira. Devolve `null` quando não há provedor de pagamento
+ * configurado (`PAYMENTS_PROVIDER=none`), e aí quem credita é o banco.
+ *
+ * Esta é a diferença entre testar o produto e testar o banco de dados: com
+ * provedor configurado, o gift do passo seguinte gasta moeda que passou pela
+ * mesma porta que a do jogador pagante.
+ */
+async function comprarCoins(pessoa, minimo) {
+  const vitrine = await api('/shop/coin-packages');
+  if (vitrine.status !== 200) return null;
+  const pacotes = vitrine.body.packages ?? [];
+  check('a vitrine de Coins responde com pacotes', pacotes.length > 0, `${pacotes.length} pacotes`);
+  check('e traz o aviso obrigatório de que presente não é dinheiro (PRD §15)',
+    /não transfere dinheiro/i.test(vitrine.body.disclosure ?? ''), vitrine.body.disclosure ?? '(vazio)');
+
+  const pacote = pacotes.filter((p) => p.totalCoins >= minimo)
+    .sort((a, b) => a.priceCents - b.priceCents)[0];
+  if (!pacote) return null;
+
+  const intencao = await api('/me/checkout', {
+    method: 'POST', headers: asUser(pessoa.token), body: JSON.stringify({ packageId: pacote.id }),
+  });
+  if (intencao.status === 503) return null;   // provedor `none`: cai para o banco
+  check('o checkout abriu uma intenção de compra', intencao.status === 201, JSON.stringify(intencao.body));
+  check('a intenção nasce PENDENTE — nada de Coins antes do dinheiro',
+    intencao.body.status === 'pending');
+  const carteiraPendente = (await api('/me/wallet', { headers: asUser(pessoa.token) })).body;
+  check('e a carteira continua zerada enquanto está pendente', carteiraPendente.coins === 0,
+    `coins=${carteiraPendente.coins}`);
+
+  const confirmacao = await api(`/payments/sandbox/${intencao.body.paymentId}/confirm`, {
+    method: 'POST', headers: asUser(pessoa.token),
+  });
+  check('a confirmação do provedor creditou', confirmacao.body?.result === 'credited',
+    JSON.stringify(confirmacao.body));
+
+  // Gateway reenviando o mesmo evento é o comportamento NORMAL dele; creditar
+  // duas vezes seria dinheiro inventado.
+  const repetida = await api(`/payments/sandbox/${intencao.body.paymentId}/confirm`, {
+    method: 'POST', headers: asUser(pessoa.token),
+  });
+  check('reenvio do mesmo evento não credita de novo', repetida.body?.result === 'duplicate',
+    JSON.stringify(repetida.body));
+
+  const historico = (await api('/me/payments', { headers: asUser(pessoa.token) })).body.payments ?? [];
+  check('a compra aparece paga no histórico do jogador',
+    historico[0]?.paymentId === intencao.body.paymentId && historico[0]?.status === 'paid',
+    JSON.stringify(historico[0]));
+
+  return pacote.totalCoins;
+}
+
+/**
+ * Credita Coins direto pelo caminho do webhook, no banco. Só entra em cena
+ * quando não há provedor de pagamento — ver o cabeçalho deste arquivo.
  */
 async function creditarCoins(userId, coins) {
   const localApi = /^(https?:)?\/\/(127\.0\.0\.1|localhost)\b/.test(API) || API.startsWith('http://127.0.0.1');
@@ -422,12 +476,20 @@ async function main() {
   check('a live entrou no feed público', feed.some((l) => l.hostId === A.userId), `${feed.length} lives`);
 
   // ------------------------------------------------------------------ gift ---
-  step('8) Gift: a moeda sai de uma carteira de verdade');
-  await creditarCoins(B.userId, COINS);
-  note(`carteira da espectadora creditada com ${COINS} Coins pelo caminho do webhook `
-    + '(purchaseCoins) — único passo fora da API pública; ver o cabeçalho deste arquivo.');
+  step('8) Checkout: a espectadora compra Coins (PRD §15)');
+  const comprados = await comprarCoins(B, 150);
+  if (comprados === null) {
+    await creditarCoins(B.userId, COINS);
+    note(`sem provedor de pagamento configurado: carteira creditada por dentro `
+      + `(purchaseCoins, ${COINS} Coins). Rode com PAYMENTS_PROVIDER=sandbox para exercitar a compra.`);
+  } else {
+    note(`comprou o pacote de ${comprados} Coins pela vitrine, sem tocar no banco.`);
+  }
+  const esperado = comprados ?? COINS;
   const antes = (await api('/me/wallet', { headers: asUser(B.token) })).body;
-  check('o crédito chegou à carteira', antes.coins === COINS, `coins=${antes.coins}`);
+  check('o crédito chegou à carteira', antes.coins === esperado, `coins=${antes.coins}`);
+
+  step('9) Gift: a moeda sai de uma carteira de verdade');
 
   const chave = `release_check_${STAMP}_gift`;
   bLive.send('gift', { giftId: 'g_star', quantity: 1, idempotencyKey: chave });
@@ -450,7 +512,7 @@ async function main() {
     JSON.stringify((extrato.entries ?? [])[0]?.amount));
 
   // -------------------------------------------------------------------- PK ---
-  step('9) PK: convite para o palco, batalha e resultado gravado');
+  step('10) PK: convite para o palco, batalha e resultado gravado');
   aLive.send('invite', { userId: B.userId });
   await sleep(500);
   bLive.send('acceptStage', {});
@@ -481,7 +543,7 @@ async function main() {
     JSON.stringify(historico[0]));
 
   // ------------------------------------------------------------ fechamento ---
-  step('10) Fechamento: a live acaba e a sessão continua renovável');
+  step('11) Fechamento: a live acaba e a sessão continua renovável');
   aLive.send('endLive', {});
   const fechou = await waitFor('a live sair do feed', async () => {
     const { body } = await api('/lives');

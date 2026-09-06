@@ -53,6 +53,31 @@ export const config = {
    */
   devLogin: !isProd && env('API_DEV_LOGIN', '1') === '1',
   /**
+   * Compra de Coins (PRD §15).
+   *
+   * `none` é o padrão porque não há gateway contratado, e uma tela de pagamento
+   * que não cobra é pior do que nenhuma: `/me/checkout` responde 503 e o cliente
+   * mostra a loja de Coins como indisponível.
+   *
+   * `sandbox` é o provedor de mentira que existe para o e2e comprar de ponta a
+   * ponta; ele se recusa a funcionar em produção — Coins de graça numa beta
+   * pública seriam economia inventada, e a economia é o produto.
+   */
+  payments: {
+    provider: (() => {
+      const escolhido = env('PAYMENTS_PROVIDER', 'none');
+      if (escolhido === 'sandbox' && isProd) {
+        throw new Error('PAYMENTS_PROVIDER=sandbox é proibido em produção');
+      }
+      if (!['none', 'sandbox'].includes(escolhido)) {
+        throw new Error(`PAYMENTS_PROVIDER desconhecido: ${escolhido}`);
+      }
+      return escolhido as 'none' | 'sandbox';
+    })(),
+    /** Base pública do site, para onde o provedor devolve o jogador. */
+    returnUrl: env('PAYMENTS_RETURN_URL', 'http://127.0.0.1:5173').replace(/\/$/, ''),
+  },
+  /**
    * Quantos saltos de proxy confiar no X-Forwarded-For. 0 = nenhum (default
    * seguro para rodar exposto direto); 1 quando há um nginx/Cloudflare na
    * frente. Confiar sem proxy deixa qualquer um forjar o próprio IP e escapar

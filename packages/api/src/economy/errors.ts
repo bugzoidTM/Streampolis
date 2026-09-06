@@ -16,7 +16,13 @@ export type EconomyErrorCode =
   | 'WRONG_CURRENCY'
   | 'PK_NOT_ACTIVE'
   | 'PK_ALREADY_FINISHED'
-  | 'FEATURE_DISABLED';
+  | 'FEATURE_DISABLED'
+  // Checkout de Coins (§15). `PAYMENTS_UNAVAILABLE` é 503 de propósito: não é
+  // culpa do jogador nem pedido inválido — é o provedor que não existe ainda.
+  | 'PAYMENTS_UNAVAILABLE'
+  | 'PACKAGE_UNKNOWN'
+  | 'TOO_MANY_PENDING'
+  | 'SANDBOX_DISABLED';
 
 /** Erro de regra de economia. Nunca carrega saldo em mensagem para o cliente. */
 export class EconomyError extends Error {

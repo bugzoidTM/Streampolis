@@ -27,6 +27,10 @@ import {
 import { getOnboarding, markStep, observePresence } from './social/Onboarding.ts';
 import { RegisterError, registerAccount } from './auth/register.ts';
 import { listInventory, purchaseItem } from './shop/Purchases.ts';
+import {
+  GIFT_DISCLOSURE, handlePaymentWebhook, listCoinPackages, listPayments,
+  sandboxConfirm, signatureMatches, startCheckout,
+} from './shop/Checkout.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
 
@@ -39,7 +43,18 @@ import { cors } from './http/middleware/cors.ts';
  */
 
 export const app = express();
-app.use(express.json({ limit: '64kb' }));
+/**
+ * O corpo CRU fica guardado para o webhook de pagamento.
+ *
+ * A assinatura do provedor é sobre os BYTES que ele mandou. Reserializar o JSON
+ * já parseado muda um espaço, uma ordem de chave, um número em notação
+ * científica — e derruba a assinatura de um gateway honesto. Guardar o buffer
+ * custa nada nas outras rotas (o teto é 64kb) e é a única forma de conferir.
+ */
+app.use(express.json({
+  limit: '64kb',
+  verify: (req, _res, buf) => { (req as Request & { rawBody?: Buffer }).rawBody = buf; },
+}));
 app.disable('x-powered-by');
 // Atrás de um proxy o IP do cliente vem no X-Forwarded-For; sem isto o
 // limitador conta todo mundo no mesmo balde (o do proxy). Configurável porque
@@ -461,6 +476,85 @@ app.post('/me/purchases', rateLimit('economy'), requireUser, async (req: AuthedR
 });
 
 // ---------------------------------------------------------------- perfil ---
+
+// -------------------------------------------------------------- checkout ---
+/**
+ * Compra de Coins (PRD §14, §15; SPECs §28).
+ *
+ * A vitrine é pública: preço de pacote não é segredo, e a tela de compra
+ * precisa dele antes de o jogador decidir entrar. O que credita moeda é só o
+ * webhook — ver `shop/Checkout.ts`.
+ */
+app.get('/shop/coin-packages', async (_req, res, next) => {
+  try {
+    res.json({ packages: await listCoinPackages(), disclosure: GIFT_DISCLOSURE });
+  } catch (err) { next(err); }
+});
+
+const checkoutSchema = z.object({ packageId: z.string().min(1).max(64) });
+
+app.post('/me/checkout', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const { packageId } = checkoutSchema.parse(req.body);
+    res.status(201).json(await startCheckout({ userId: req.userId as string, packageId }));
+  } catch (err) { next(err); }
+});
+
+app.get('/me/payments', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json({ payments: await listPayments(req.userId as string) });
+  } catch (err) { next(err); }
+});
+
+/**
+ * Webhook do provedor de pagamento (SPECs §62).
+ *
+ * Fora de `/internal/*` de propósito: quem chama não é o game server, é o
+ * gateway, e a credencial dele é a ASSINATURA do corpo — não um bearer que
+ * teríamos de entregar a um terceiro. Sem assinatura válida a resposta é 401 e
+ * nada é gravado.
+ *
+ * Responde 200 para evento repetido ou ignorado: um gateway que recebe erro
+ * reenvia para sempre, e reenviar um evento que já creditou não é problema
+ * nosso — é o comportamento correto dele.
+ */
+const webhookSchema = z.object({
+  id: z.string().min(1).max(128),
+  type: z.string().min(1).max(64),
+  paymentId: z.string().uuid(),
+});
+
+app.post('/payments/webhook/:provider', rateLimit('economy'), async (req, res, next) => {
+  try {
+    const raw = (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.from('');
+    if (!signatureMatches(raw, req.get('x-streampolis-signature'))) {
+      res.status(401).json({ error: 'bad_signature' });
+      return;
+    }
+    const evento = webhookSchema.parse(req.body);
+    const resultado = await handlePaymentWebhook({
+      provider: param(req.params.provider).slice(0, 32),
+      eventId: evento.id,
+      eventType: evento.type,
+      paymentId: evento.paymentId,
+      payload: req.body,
+      signature: req.get('x-streampolis-signature'),
+    });
+    res.json(resultado);
+  } catch (err) { next(err); }
+});
+
+/**
+ * Confirmação do provedor de mentira. Existe para o release-check comprar Coins
+ * de ponta a ponta sem cartão; `config.payments` recusa isto em produção.
+ */
+app.post('/payments/sandbox/:paymentId/confirm', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await sandboxConfirm(
+      z.string().uuid().parse(param(req.params.paymentId)), req.userId as string,
+    ));
+  } catch (err) { next(err); }
+});
 
 app.get('/users/:userId', optionalUser, async (req: AuthedRequest, res, next) => {
   try {
