@@ -25,6 +25,7 @@
     "gate:cards": "node tools/store-cards.mjs",
     "gate:walls": "node tools/room-walls-check.mjs",
     "release:check": "node tools/release-check.mjs",
+    "admin:check": "node tools/admin-check.mjs",
     "gate:plan": "node tools/room-plan-check.mjs",
     "test:avatar-motion": "node tools/avatar-motion-check.mjs"
   },

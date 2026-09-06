@@ -314,6 +314,22 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
     this.onMessage(MSG.chat, (client, message: { text?: unknown }) => {
       const session = this.sessions.get(client.sessionId);
       if (!session) return;
+      /**
+       * Silenciado pela moderação (PRD §27/§28).
+       *
+       * A marca é NEGATIVA (`muted` presente) e vem assinada no token: o
+       * servidor de jogo não consulta o banco para saber quem pode falar. Ela
+       * chega no próximo token da pessoa — até 15 minutos, a janela do §36 —,
+       * e é por isso que a punição que precisa ser instantânea (suspender,
+       * banir) derruba a sessão em vez de depender disto.
+       *
+       * O aviso é privado: anunciar na sala que fulano está calado entrega à
+       * plateia uma decisão de moderação que não é dela.
+       */
+      if (session.identity.permissions.includes('muted')) {
+        this.notify(client, 'chat_muted', 'Você está temporariamente silenciado.');
+        return;
+      }
       const verdict = this.chat.check(session.identity.userId, message?.text);
       if (!verdict.ok) {
         this.notify(client, `chat_${verdict.reason}`, verdict.message);

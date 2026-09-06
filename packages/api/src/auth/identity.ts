@@ -51,6 +51,7 @@ interface IdentityRow {
   display_name: string | null;
   role: 'player' | 'moderator' | 'admin';
   status: string;
+  chat_muted_until: Date | null;
   gifter_level: number | null;
   agency_name: string | null;
   config: AvatarConfigDTO | null;
@@ -62,9 +63,30 @@ const PERMISSIONS_BY_ROLE: Record<string, string[]> = {
   admin: ['play', 'moderate', 'admin'],
 };
 
+/**
+ * As permissões que vão assinadas no token.
+ *
+ * O silêncio é uma permissão NEGATIVA (`muted`) em vez de a falta de uma
+ * positiva (`chat`), e isso é decisão, não estilo: um token já emitido não tem
+ * como ganhar permissão nova, então exigir `chat` calaria todo mundo que
+ * estivesse com token na mão no momento do deploy. Com a marca negativa, quem
+ * não foi silenciado continua falando e quem foi para de falar no próximo
+ * token — no máximo 15 minutos (§36), a mesma janela de todo o resto.
+ *
+ * Pura de propósito: é a regra que decide quem pode falar, e ela merece teste
+ * sem banco por perto.
+ */
+export function permissionsFor(
+  role: string, chatMutedUntil: Date | null, now: Date = new Date(),
+): string[] {
+  const base = PERMISSIONS_BY_ROLE[role] ?? ['play'];
+  const calado = chatMutedUntil !== null && chatMutedUntil.getTime() > now.getTime();
+  return calado ? [...base, 'muted'] : base;
+}
+
 export async function loadIdentity(userId: string): Promise<SessionIdentity | null> {
   const { rows } = await pool.query<IdentityRow>(
-    `SELECT u.id, u.username, p.display_name, u.role, u.status,
+    `SELECT u.id, u.username, p.display_name, u.role, u.status, u.chat_muted_until,
             s.gifter_level, a.name AS agency_name, av.config
        FROM users u
        LEFT JOIN profiles p      ON p.user_id = u.id
@@ -84,7 +106,7 @@ export async function loadIdentity(userId: string): Promise<SessionIdentity | nu
   return {
     userId: row.id,
     displayName: row.display_name || row.username,
-    permissions: PERMISSIONS_BY_ROLE[row.role] ?? ['play'],
+    permissions: permissionsFor(row.role, row.chat_muted_until),
     gifterLevel: row.gifter_level ?? 0,
     agency: row.agency_name ?? '',
     avatar: row.config ?? DEFAULT_AVATAR_DTO,

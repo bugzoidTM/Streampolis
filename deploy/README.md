@@ -167,6 +167,17 @@ node tools/screens-check.mjs --client=https://streampolis.nutef.com \
 
 Os dois entram por `dev-login`: valem no modo **demonstração**.
 
+### admin-check (moderação)
+
+Fila de denúncias, dossiê, sanção com motivo obrigatório, rastro no audit log —
+e a metade que costuma faltar: o efeito no jogo (quem é silenciado realmente
+para de falar na sala). Entra pela conta `moderador` do seed, então vale no modo
+demonstração.
+
+```bash
+npm run admin:check
+```
+
 ### release-check (o que se roda antes de publicar a beta)
 
 Duas contas novas, criadas pelo formulário, fazendo a volta inteira: cadastro,

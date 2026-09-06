@@ -13,7 +13,9 @@ import { assertWearable, readAvatar, saveAvatar, validateAvatar } from './profil
 import { recordPKResult, listPKHistory } from './pk/PkRecords.ts';
 import { canEnter, getHome, getOrCreateHomeOf, saveLayout, setVisibility } from './world/Homes.ts';
 import { closeLive, listLives, openLive } from './world/Lives.ts';
-import { optionalUser, requireService, requireUser, type AuthedRequest } from './http/middleware/auth.ts';
+import {
+  optionalUser, requirePermission, requireService, requireUser, type AuthedRequest,
+} from './http/middleware/auth.ts';
 import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
 import { getRanking, isBoard, isRange } from './social/Rankings.ts';
 import { presenceDirectory } from './social/PresenceDirectory.ts';
@@ -31,6 +33,10 @@ import {
   GIFT_DISCLOSURE, handlePaymentWebhook, listCoinPackages, listPayments,
   sandboxConfirm, signatureMatches, startCheckout,
 } from './shop/Checkout.ts';
+import {
+  AdminError, applySanction, claimReport, isSanctionAction, listAudit, listReports,
+  resolveReport, searchUsers, userDossier, type Actor, type ReportStatus, type StaffRole,
+} from './admin/AdminService.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
 
@@ -720,6 +726,105 @@ app.get('/me/onboarding', requireUser, async (req: AuthedRequest, res, next) => 
   }
 });
 
+// ------------------------------------------------------------- painel ---
+/**
+ * Painel administrativo (PRD §28; SPECs §37, §65).
+ *
+ * Tudo aqui exige a permissão `moderate`, que vem do PAPEL assinado no token —
+ * o navegador não escolhe ser moderador. E tudo aqui escreve no `audit_log`
+ * com motivo: uma equipe que pune sem deixar rastro é a próxima crise.
+ *
+ * O que ainda NÃO está aqui, do que o §28 pede: ajuste de saldo, encerrar live
+ * de fora, agências e edição de catálogo. Cada um mexe em outro dono (economia,
+ * game server, conteúdo) e merece a mesma cerimônia que estes ganharam.
+ */
+const staff = [requireUser, requirePermission('moderate')] as const;
+
+/** Quem está agindo, para o log: papel vem do token, IP vem do proxy. */
+function actorOf(req: AuthedRequest): Actor {
+  return {
+    userId: req.userId as string,
+    role: req.permissions?.includes('admin') ? 'admin' : 'moderator' as StaffRole,
+    ip: req.ip,
+  };
+}
+
+app.get('/admin/reports', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'open';
+    const valido = ['open', 'reviewing', 'resolved', 'rejected'].includes(status);
+    res.json({ reports: await listReports({ status: valido ? status as ReportStatus : 'open' }) });
+  } catch (err) { next(err); }
+});
+
+app.post('/admin/reports/:id/claim', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json({ report: await claimReport(z.string().uuid().parse(param(req.params.id)), actorOf(req)) });
+  } catch (err) { next(err); }
+});
+
+const decisionSchema = z.object({
+  decision: z.enum(['resolved', 'rejected']),
+  resolution: z.string().min(3).max(1_000),
+});
+
+app.post('/admin/reports/:id/resolve', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = decisionSchema.parse(req.body);
+    res.json({
+      report: await resolveReport({
+        reportId: z.string().uuid().parse(param(req.params.id)),
+        actor: actorOf(req), decision: body.decision, resolution: body.resolution,
+      }),
+    });
+  } catch (err) { next(err); }
+});
+
+app.get('/admin/users', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    res.json({ users: await searchUsers(q) });
+  } catch (err) { next(err); }
+});
+
+app.get('/admin/users/:id', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await userDossier(z.string().uuid().parse(param(req.params.id))));
+  } catch (err) { next(err); }
+});
+
+const sanctionSchema = z.object({
+  action: z.string(),
+  reason: z.string().min(3).max(1_000),
+  minutes: z.number().int().positive().optional(),
+});
+
+app.post('/admin/users/:id/sanction', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = sanctionSchema.parse(req.body);
+    if (!isSanctionAction(body.action)) {
+      res.status(400).json({ error: 'INVALID_ACTION', message: 'Ação desconhecida.' });
+      return;
+    }
+    res.json(await applySanction({
+      actor: actorOf(req),
+      targetId: z.string().uuid().parse(param(req.params.id)),
+      action: body.action, reason: body.reason, minutes: body.minutes,
+    }));
+  } catch (err) { next(err); }
+});
+
+app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json({
+      entries: await listAudit({
+        targetId: typeof req.query.targetId === 'string' ? req.query.targetId : undefined,
+        action: typeof req.query.action === 'string' ? req.query.action : undefined,
+      }),
+    });
+  } catch (err) { next(err); }
+});
+
 // ------------------------------------------------------------------ feed ---
 
 app.get('/lives', async (_req, res, next) => {
@@ -963,6 +1068,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   // Os quatro carregam `code` + `httpStatus` + uma mensagem escrita para o
   // jogador ler: a tela mostra a frase em vez de traduzir um número de erro.
   if (err instanceof EconomyError
+    || err instanceof AdminError
     || err instanceof FriendshipError
     || err instanceof ModerationError
     || err instanceof RegisterError) {
