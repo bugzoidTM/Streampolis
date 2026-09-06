@@ -73,6 +73,17 @@ sobrevivente após encerramento do outro. Não toca a API nem contas reais.
 Encerra seus processos ao final. Deve rodar contra Redis real; mocks não
 demonstram coordenação entre processos.
 
+## Teto de serialização da praça (aprendido no teste de carga)
+
+A praça codifica UMA VISÃO POR CLIENTE no mesmo buffer compartilhado, então o
+tamanho do patch cresce com o quadrado da lotação do shard. Com o buffer padrão
+do `@colyseus/schema` (8 KB) e 36 pessoas andando, ele estoura em quase todo
+quadro — a biblioteca redimensiona no meio da codificação e o cliente passa a
+receber fluxo corrompido (`"refId" not found`), sem queda de socket e sem erro
+no log de aplicação. `index.ts` fixa `Encoder.BUFFER_SIZE = 256 * 1024` por
+isso. Subir `CITY_CAPACITY` exige subir esse número junto; o sinal de que ficou
+pequeno é `grep "buffer overflow"` no log do worker. Ver `docs/load-test.md`.
+
 Validação de 05/09/2026: 69 testes e o smoke completo passaram em Linux com
 Node 22 e Redis 8.2.3 real, em containers descartáveis numa rede Docker interna,
 sem portas publicadas. A composição base + overlay passou em `docker stack
