@@ -526,14 +526,37 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
     this.broadcast(MSG.likeTotals, payload);
   }
 
-  private endLive(reason: 'host_ended' | 'host_left'): void {
+  /**
+   * Encerramento por moderação (PRD §28).
+   *
+   * Chamado de fora do processo, pelo `remoteRoomCall` — o worker que recebeu a
+   * ordem do painel pode não ser o dono desta sala, e é o Colyseus quem faz a
+   * ponte. Público de propósito, e com nome que diz de onde vem: uma sala que
+   * fecha sozinha sem explicação é um bug procurando por relatório.
+   *
+   * A plateia é avisada de que ACABOU, não do motivo: o motivo é da equipe e do
+   * host, e ler a decisão de moderação em público é punição extra que ninguém
+   * decidiu aplicar.
+   */
+  moderationClose(reason: string): { closed: boolean } {
+    if (this.state.ended) return { closed: false };
+    console.log(`[live] ${this.state.liveId} encerrada por moderação: ${reason}`);
+    this.endLive('moderation');
+    return { closed: true };
+  }
+
+  private endLive(reason: 'host_ended' | 'host_left' | 'moderation'): void {
     if (this.state.ended) return;
     this.state.ended = true;
     this.state.isPK = false;
     this.autoDispose = true;
     this.lock();
     this.publishListing();
-    this.systemChat(reason === 'host_ended' ? 'A live foi encerrada.' : 'O host saiu — live encerrada.');
+    this.systemChat(
+      reason === 'host_ended' ? 'A live foi encerrada.'
+        : reason === 'moderation' ? 'Esta live foi encerrada pela moderação.'
+          : 'O host saiu — live encerrada.',
+    );
     this.broadcast(MSG.notice, { code: 'live_ended', text: 'Esta live terminou.' });
     void this.api.closeLive({
       externalId: this.state.liveId,

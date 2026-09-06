@@ -36,6 +36,16 @@ const check = (label, ok, detalhe = '') => {
 };
 const passo = (t) => console.log(`\n${t}`);
 
+async function esperar(label, condicao, msMax = 15_000) {
+  const fim = Date.now() + msMax;
+  while (Date.now() < fim) {
+    if (await condicao()) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  console.log(`  … tempo esgotado esperando: ${label}`);
+  return false;
+}
+
 async function api(path, init = {}) {
   const res = await fetch(`${API}${path}`, {
     ...init, headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
@@ -305,6 +315,77 @@ async function main() {
       typeof logEconomia[0]?.reason === 'string' && logEconomia[0].reason.length > 3,
       JSON.stringify(logEconomia[0]?.reason));
 
+  }
+
+  passo('15) Encerrar uma live pelo painel — e a live acabar de verdade');
+  let liveSala = null;
+  try {
+    const cliente = new Client(WS);
+    liveSala = await cliente.create('live', {
+      token: ana.token, title: `admin-check ${Date.now()}`, category: 'música',
+    });
+    for (const t of ['chatMessage', 'notice', 'giftEvent', 'stageInvite', 'pkResult', 'follow']) {
+      liveSala.onMessage(t, () => {});
+    }
+  } catch (err) {
+    console.log(`  · sem game server: passo 15 pulado (${String(err?.message ?? err).slice(0, 60)})`);
+  }
+  if (liveSala) {
+    const avisosLive = [];
+    liveSala.onMessage('notice', (n) => avisosLive.push(n));
+    // A live só entra na lista do painel depois de registrada na API, e ela é
+    // registrada preguiçosamente — um espectador basta para forçar.
+    const espectadorCliente = new Client(WS);
+    const espectador = await espectadorCliente.joinById(liveSala.roomId, { token: beto.token });
+    for (const t of ['chatMessage', 'notice', 'giftEvent', 'stageInvite', 'pkResult', 'follow']) {
+      espectador.onMessage(t, () => {});
+    }
+
+    const viva = await esperar('a live aparecer no painel', async () => {
+      const lista = (await api('/admin/lives', { headers: como(mod.token) })).body.lives ?? [];
+      return lista.some((l) => l.roomId === liveSala.roomId);
+    }, 20_000);
+    check('o painel enxerga a live ativa', viva);
+
+    const semMotivoLive = await api(`/admin/lives/${liveSala.roomId}/close`, {
+      method: 'POST', headers: como(mod.token), body: JSON.stringify({ reason: 'x' }),
+    });
+    check('encerrar sem motivo é recusado', semMotivoLive.status === 400, `status=${semMotivoLive.status}`);
+
+    const ordem = await api(`/admin/lives/${liveSala.roomId}/close`, {
+      method: 'POST', headers: como(mod.token),
+      body: JSON.stringify({ reason: 'admin-check: encerramento de teste' }),
+    });
+    check('a ordem foi aceita', ordem.status === 200 && Boolean(ordem.body.commandId),
+      JSON.stringify(ordem.body));
+
+    const repetida = await api(`/admin/lives/${liveSala.roomId}/close`, {
+      method: 'POST', headers: como(mod.token),
+      body: JSON.stringify({ reason: 'admin-check: mandando de novo' }),
+    });
+    check('mandar de novo não empilha ordem', repetida.body?.alreadyPending === true,
+      JSON.stringify(repetida.body));
+
+    // A ordem viaja de carona no batimento de presença: até alguns segundos.
+    const acabou = await esperar('a sala obedecer',
+      async () => liveSala.state?.ended === true, 30_000);
+    check('a live realmente terminou na sala', acabou, `ended=${liveSala.state?.ended}`);
+    check('a plateia foi avisada de que acabou',
+      avisosLive.some((a) => a.code === 'live_ended'), JSON.stringify(avisosLive).slice(0, 120));
+
+    const sumiu = await esperar('a live sair do feed', async () => {
+      const lista = (await api('/lives')).body.lives ?? [];
+      return !lista.some((l) => l.hostId === ana.identity.userId);
+    }, 20_000);
+    check('e saiu do feed público', sumiu);
+
+    const logLive = (await api('/admin/audit?action=live.close', { headers: como(mod.token) })).body.entries ?? [];
+    check('o encerramento deixou rastro com motivo',
+      typeof logLive[0]?.reason === 'string' && logLive[0].reason.includes('admin-check'),
+      JSON.stringify(logLive[0]?.reason));
+
+    await espectador.leave().catch(() => {});
+    await liveSala.leave().catch(() => {});
   }
 
   console.log(`\n${falhas === 0 ? '✅' : '❌'} ${total - falhas}/${total} verificações passaram.`);

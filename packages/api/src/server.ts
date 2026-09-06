@@ -36,9 +36,10 @@ import {
   sandboxConfirm, signatureMatches, startCheckout,
 } from './shop/Checkout.ts';
 import {
-  AdminError, applySanction, assertAdmin, audit, claimReport, isSanctionAction, listAllCoinPackages,
-  listAudit, listReports, resolveReport, searchUsers, setEconomyBlock, updateCoinPackage,
-  userDossier, type Actor, type ReportStatus, type StaffRole,
+  AdminError, ackCommand, applySanction, assertAdmin, audit, claimReport, closeLiveByOrder,
+  isSanctionAction, listActiveLives, listAllCoinPackages, listAudit, listReports, resolveReport,
+  searchUsers, setEconomyBlock, takeCommandsFor, updateCoinPackage, userDossier,
+  type Actor, type ReportStatus, type StaffRole,
 } from './admin/AdminService.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
@@ -897,6 +898,30 @@ app.patch('/admin/coin-packages/:id', ...staff, async (req: AuthedRequest, res, 
   } catch (err) { next(err); }
 });
 
+/**
+ * Lives no painel (§28: "visualizar ativas; finalizar").
+ *
+ * Encerrar é de MODERADOR, não de administrador: uma transmissão que precisa
+ * acabar agora é conteúdo, não dinheiro, e esperar um admin acordar é o tipo de
+ * atraso que a moderação não pode ter.
+ */
+app.get('/admin/lives', ...staff, async (_req: AuthedRequest, res, next) => {
+  try {
+    res.json({ lives: await listActiveLives() });
+  } catch (err) { next(err); }
+});
+
+const closeByOrderSchema = z.object({ reason: z.string().min(3).max(1_000) });
+
+app.post('/admin/lives/:roomId/close', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = closeByOrderSchema.parse(req.body);
+    res.json(await closeLiveByOrder({
+      actor: actorOf(req), roomId: param(req.params.roomId), reason: body.reason,
+    }));
+  } catch (err) { next(err); }
+});
+
 app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
   try {
     res.json({
@@ -1091,7 +1116,7 @@ const presenceSnapshotSchema = z.object({
   })).max(1_000),
 });
 
-app.post('/internal/presence', rateLimit('service'), requireService, (req, res, next) => {
+app.post('/internal/presence', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     const snapshot = presenceSnapshotSchema.parse(req.body);
     const tracked = presenceDirectory.ingest(snapshot);
@@ -1099,10 +1124,39 @@ app.post('/internal/presence', rateLimit('service'), requireService, (req, res, 
     // quem está na praça entrou na praça, quem assiste assistiu. Sem `await` e
     // sem poder falhar — a resposta ao game server não espera o Postgres.
     observePresence(snapshot.entries);
-    res.json({ ok: true, tracked });
+    /**
+     * A carona do batimento (§28).
+     *
+     * Este é o único canal que já existe da API para o game server, e ele
+     * acontece de qualquer jeito a cada poucos segundos. Mandar as ordens de
+     * moderação na RESPOSTA evita abrir porta nova no game server — que seria
+     * mais superfície exposta para executar comando de moderação.
+     *
+     * Uma falha aqui não pode derrubar a presença: sem retrato, a cidade some
+     * do mapa. Por isso o catch devolve lista vazia em vez de propagar.
+     */
+    let commands: Awaited<ReturnType<typeof takeCommandsFor>> = [];
+    try {
+      const rooms = [...new Set(snapshot.entries.map((e) => e.roomId))];
+      commands = await takeCommandsFor(snapshot.serverId, rooms);
+    } catch (err) {
+      console.error('[api] falha ao buscar ordens de moderação:', err);
+    }
+    res.json({ ok: true, tracked, commands });
   } catch (err) {
     next(err);
   }
+});
+
+/** O worker confirmando o que fez com a ordem que levou. */
+const ackSchema = z.object({ commandId: z.string().uuid(), result: z.string().min(1).max(200) });
+
+app.post('/internal/moderation/ack', rateLimit('service'), requireService, async (req, res, next) => {
+  try {
+    const body = ackSchema.parse(req.body);
+    await ackCommand(body.commandId, body.result);
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 app.get('/internal/presence/:userId', rateLimit('service'), requireService, (req, res) => {

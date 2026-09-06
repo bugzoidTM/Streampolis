@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { defaultApiGateway, type ApiGateway } from '../api/ApiGateway.js';
 import type { PresenceEntry, PresenceKind, PresenceSnapshot, SceneId } from '../shared.js';
+import type { ModerationCommand } from '../api/ApiGateway.js';
 
 /**
  * Quem está onde, dentro DESTE processo (SPECs §17).
@@ -22,7 +23,7 @@ export interface EnterInput {
 }
 
 export interface PresenceSink {
-  publishPresence(snapshot: PresenceSnapshot): Promise<void>;
+  publishPresence(snapshot: PresenceSnapshot): Promise<ModerationCommand[] | void>;
 }
 
 export interface TrackerOptions {
@@ -35,6 +36,12 @@ export interface TrackerOptions {
   heartbeatMs?: number;
   /** Falso nos testes: nada de timers, o flush é chamado à mão. */
   autoFlush?: boolean;
+  /**
+   * O que fazer com as ordens de moderação que voltarem no batimento. Quem
+   * sabe executá-las é o índice do processo (ele tem o matchmaker); o rastreador
+   * de presença só as entrega.
+   */
+  onCommands?: (commands: ModerationCommand[]) => void | Promise<void>;
 }
 
 export class PresenceTracker {
@@ -54,6 +61,22 @@ export class PresenceTracker {
   private changes = 0;
 
   readonly serverId: string;
+
+  private commandHandler: TrackerOptions['onCommands'] = undefined;
+
+  /** Ver `TrackerOptions.onCommands`. */
+  private get onCommands(): TrackerOptions['onCommands'] {
+    return this.commandHandler ?? this.options.onCommands;
+  }
+
+  /**
+   * Quem executa as ordens de moderação. Definido pelo índice do processo no
+   * boot, porque é ele que tem o matchmaker — o rastreador de presença não
+   * conhece salas, e não é para conhecer.
+   */
+  onModeration(handler: TrackerOptions['onCommands']): void {
+    this.commandHandler = handler;
+  }
 
   constructor(private readonly options: TrackerOptions = {}) {
     this.serverId = options.serverId ?? config.serverId;
@@ -158,8 +181,11 @@ export class PresenceTracker {
     this.publishing = true;
     this.dirtyWhilePublishing = false;
     try {
-      await this.sink.publishPresence(snapshot);
+      const ordens = (await this.sink.publishPresence(snapshot)) ?? [];
       this.lastPublishedEmpty = snapshot.entries.length === 0;
+      // As ordens vêm de carona no batimento; executá-las não pode atrapalhar o
+      // retrato, então nada de `await` no caminho da presença.
+      if (ordens.length > 0 && this.onCommands) void this.onCommands(ordens);
     } catch {
       // Um retrato perdido se corrige sozinho no próximo: é por isso que o
       // protocolo é retrato e não delta. Nada de fila de reenvio aqui.

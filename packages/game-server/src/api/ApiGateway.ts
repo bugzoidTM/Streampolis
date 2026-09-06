@@ -54,14 +54,34 @@ export interface PKResultInput extends PKResult {
   startedAt?: number | null;
 }
 
+/**
+ * Ordem de moderação vinda do painel (PRD §28).
+ *
+ * Ela chega de CARONA na resposta do batimento de presença, e não por uma porta
+ * nova neste processo: um endpoint que encerra transmissão é superfície que a
+ * gente prefere não expor, e o batimento já acontece de qualquer jeito.
+ */
+export interface ModerationCommand {
+  id: string;
+  command: 'close_live';
+  targetType: 'room';
+  targetId: string;
+  reason: string;
+}
+
 export interface ApiGateway {
   getHome(apartmentId: string): Promise<HomeSnapshot | null>;
   canEnterHome(apartmentId: string, userId: string): Promise<boolean>;
   openLive(input: OpenLiveInput): Promise<{ liveId: string } | null>;
   closeLive(input: CloseLiveInput): Promise<void>;
   recordPKResult(input: PKResultInput): Promise<void>;
-  /** Retrato de quem está em sala neste processo (SPECs §17). */
-  publishPresence(snapshot: PresenceSnapshot): Promise<void>;
+  /**
+   * Retrato de quem está em sala neste processo (SPECs §17). A resposta traz o
+   * que o painel mandou fazer — ver `ModerationCommand`.
+   */
+  publishPresence(snapshot: PresenceSnapshot): Promise<ModerationCommand[]>;
+  /** Confirma o que aconteceu com uma ordem. */
+  ackModeration(commandId: string, result: string): Promise<void>;
 }
 
 export class HttpApiGateway implements ApiGateway {
@@ -116,8 +136,17 @@ export class HttpApiGateway implements ApiGateway {
     await this.call('/internal/lives/close', { method: 'POST', body: JSON.stringify(input) });
   }
 
-  async publishPresence(snapshot: PresenceSnapshot): Promise<void> {
-    await this.call('/internal/presence', { method: 'POST', body: JSON.stringify(snapshot) });
+  async publishPresence(snapshot: PresenceSnapshot): Promise<ModerationCommand[]> {
+    const resposta = await this.call<{ commands?: ModerationCommand[] }>(
+      '/internal/presence', { method: 'POST', body: JSON.stringify(snapshot) },
+    );
+    return resposta?.commands ?? [];
+  }
+
+  async ackModeration(commandId: string, result: string): Promise<void> {
+    await this.call('/internal/moderation/ack', {
+      method: 'POST', body: JSON.stringify({ commandId, result }),
+    });
   }
 
   async recordPKResult(input: PKResultInput): Promise<void> {
@@ -181,9 +210,12 @@ export class InMemoryApiGateway implements ApiGateway {
     this.pkResults.push(input);
   }
 
-  async publishPresence(snapshot: PresenceSnapshot): Promise<void> {
+  async publishPresence(snapshot: PresenceSnapshot): Promise<ModerationCommand[]> {
     this.lastPresence = snapshot;
+    return [];
   }
+
+  async ackModeration(): Promise<void> { /* sem API, sem painel */ }
 }
 
 export function defaultApiGateway(): ApiGateway {

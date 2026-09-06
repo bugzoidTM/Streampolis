@@ -493,6 +493,134 @@ export async function updateCoinPackage(input: {
   return todos.find((p) => p.id === input.packageId) as AdminCoinPackage;
 }
 
+// ----------------------------------------------------------------- lives ---
+
+export interface LiveView {
+  liveId: string;
+  roomId: string | null;
+  title: string;
+  category: string;
+  host: { userId: string; username: string; status: string };
+  startedAt: string;
+  peakViewers: number;
+  likes: number;
+  coinTotal: number;
+  /** Já existe ordem de encerramento esperando para ser entregue? */
+  closePending: boolean;
+}
+
+/** "Visualizar ativas" (§28). O que está no ar AGORA, com quem é o dono. */
+export async function listActiveLives(): Promise<LiveView[]> {
+  const { rows } = await pool.query(
+    `SELECT s.id, s.room_id, s.title, s.category, s.started_at, s.peak_real_viewers,
+            s.likes, s.gift_coin_total, u.id AS host_id, u.username, u.status,
+            EXISTS (SELECT 1 FROM moderation_commands c
+                     WHERE c.target_id = s.room_id AND c.command = 'close_live'
+                       AND c.acked_at IS NULL) AS close_pending
+       FROM stream_sessions s JOIN users u ON u.id = s.host_id
+      WHERE s.status = 'live' ORDER BY s.started_at DESC LIMIT 100`,
+  );
+  return rows.map((r) => ({
+    liveId: r.id,
+    roomId: r.room_id,
+    title: r.title,
+    category: r.category,
+    host: { userId: r.host_id, username: r.username, status: r.status },
+    startedAt: r.started_at.toISOString(),
+    peakViewers: r.peak_real_viewers,
+    likes: Number(r.likes),
+    coinTotal: Number(r.gift_coin_total),
+    closePending: r.close_pending,
+  }));
+}
+
+/**
+ * "Finalizar" (§28).
+ *
+ * A API não fala com a sala: ela enfileira a ordem, e o worker a busca no
+ * próprio batimento de presença (ver `0012_moderation_commands.sql`). Duas
+ * consequências que valem estar escritas:
+ *
+ *   1. o encerramento não é instantâneo — leva o tempo do próximo batimento,
+ *      alguns segundos. Uma live que precisa sumir AGORA se resolve banindo o
+ *      host, que derruba a sessão dele;
+ *   2. a ordem é idempotente por sala: mandar duas vezes não empilha duas
+ *      ordens, porque a segunda encontraria a primeira ainda pendente.
+ */
+export async function closeLiveByOrder(input: {
+  actor: Actor; roomId: string; reason: string;
+}): Promise<{ commandId: string; alreadyPending: boolean }> {
+  const motivo = assertReason(input.reason);
+  const sala = input.roomId.slice(0, 64);
+
+  const pendente = await pool.query<{ id: string }>(
+    `SELECT id FROM moderation_commands
+      WHERE target_id = $1 AND command = 'close_live' AND acked_at IS NULL`,
+    [sala],
+  );
+  if (pendente.rows[0]) return { commandId: pendente.rows[0].id, alreadyPending: true };
+
+  const viva = await pool.query(
+    `SELECT id FROM stream_sessions WHERE room_id = $1 AND status = 'live'`, [sala],
+  );
+  if (!viva.rows[0]) throw new AdminError('NOT_FOUND', 'Nenhuma live ativa nesta sala.', 404);
+
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO moderation_commands (command, target_type, target_id, reason, issued_by)
+     VALUES ('close_live', 'room', $1, $2, $3) RETURNING id`,
+    [sala, motivo, input.actor.userId],
+  );
+  await audit({
+    actor: input.actor, action: 'live.close', targetType: 'room', targetId: sala, reason: motivo,
+  });
+  return { commandId: rows[0].id, alreadyPending: false };
+}
+
+export interface PendingCommand {
+  id: string;
+  command: 'close_live';
+  targetType: 'room';
+  targetId: string;
+  reason: string;
+}
+
+/**
+ * O que este worker tem para fazer.
+ *
+ * Chamado pelo `/internal/presence`: as ordens saem daqui MARCADAS como
+ * entregues, para o worker seguinte não pegar a mesma. Se o worker morrer entre
+ * receber e executar, a ordem fica pendurada — e é por isso que `acked_at`
+ * existe separado de `delivered_at`: dá para ver no banco quais ordens foram
+ * entregues e nunca confirmadas.
+ */
+export async function takeCommandsFor(serverId: string, rooms: string[]): Promise<PendingCommand[]> {
+  if (rooms.length === 0) return [];
+  const { rows } = await pool.query(
+    `UPDATE moderation_commands SET delivered_at = now(), delivered_to = $1
+      WHERE id IN (
+        SELECT id FROM moderation_commands
+         WHERE delivered_at IS NULL AND target_id = ANY($2::text[])
+         ORDER BY issued_at LIMIT 20
+         FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id, command, target_type, target_id, reason`,
+    [serverId.slice(0, 64), rooms.slice(0, 500)],
+  );
+  return rows.map((r) => ({
+    id: r.id, command: r.command, targetType: r.target_type,
+    targetId: r.target_id, reason: r.reason,
+  }));
+}
+
+/** O worker confirmando o que fez com a ordem. */
+export async function ackCommand(commandId: string, result: string): Promise<void> {
+  await pool.query(
+    `UPDATE moderation_commands SET acked_at = now(), ack_result = $2
+      WHERE id = $1 AND acked_at IS NULL`,
+    [commandId, result.slice(0, 200)],
+  );
+}
+
 // ----------------------------------------------------------------- log ---
 
 export interface AuditEntry {

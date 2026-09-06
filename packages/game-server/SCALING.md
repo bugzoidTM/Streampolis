@@ -55,6 +55,24 @@ as conexões Redis Presence/Driver não respondem; informa `processId`,
 independentes por worker. O overlay define ids distintos; instalações novas
 podem omitir `GAME_SERVER_ID` para obter um id por processo.
 
+## Ordens do painel chegam pelo batimento
+
+O painel administrativo pode encerrar uma live (PRD §28), e a API não fala com
+as salas: ela enfileira a ordem em `moderation_commands`, e a resposta do
+`POST /internal/presence` — que cada worker já chama a cada poucos segundos —
+leva o que houver pendente para as salas daquele retrato. O worker que recebe
+não precisa ser o dono: `matchMaker.remoteRoomCall` entrega a chamada no
+processo dono, o mesmo mecanismo que faz `joinById` funcionar entre workers.
+
+Duas propriedades a lembrar em operação:
+
+* **não é instantâneo.** Vale o tempo do próximo batimento (até 15 s ocioso,
+  bem menos numa sala com movimento). Uma live que precisa sumir AGORA se
+  resolve banindo o host, que derruba a sessão;
+* **entregue ≠ executado.** `delivered_at` e `acked_at` são colunas separadas de
+  propósito: uma ordem entregue a um worker que morreu em seguida fica visível
+  no banco como entregue e nunca confirmada.
+
 ## Validar antes de ativar
 
 ```bash

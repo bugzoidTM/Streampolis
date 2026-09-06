@@ -167,12 +167,14 @@ node tools/screens-check.mjs --client=https://streampolis.nutef.com \
 
 Os dois entram por `dev-login`: valem no modo **demonstração**.
 
-### admin-check (moderação e economia)
+### admin-check (moderação, economia e lives)
 
 Fila de denúncias, dossiê, sanção com motivo obrigatório, ajuste de saldo,
-bloqueio de carteira, pacotes de Coins e o rastro no audit log — mais a metade
-que costuma faltar: o efeito no jogo (quem é silenciado realmente para de falar
-na sala; carteira bloqueada realmente não compra).
+bloqueio de carteira, pacotes de Coins, encerramento de live e o rastro no audit
+log — mais a metade que costuma faltar: o efeito no jogo (quem é silenciado
+realmente para de falar na sala; carteira bloqueada realmente não compra; a live
+encerrada pelo painel realmente acaba, inclusive quando a ordem cai num worker
+que não é o dono da sala).
 
 ```bash
 npm run admin:check

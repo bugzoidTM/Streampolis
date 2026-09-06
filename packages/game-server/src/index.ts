@@ -10,6 +10,10 @@ import { LiveRoom } from './rooms/LiveRoom.js';
 import type { LiveSummary } from './shared.js';
 import { createScaling } from './scaling.js';
 import { presence } from './world/Presence.js';
+import { defaultApiGateway, type ModerationCommand } from './api/ApiGateway.js';
+
+/** Um gateway por processo, para o ack das ordens de moderação. */
+const api = defaultApiGateway();
 
 /**
  * Game server process (SPECs §52, §54).
@@ -183,8 +187,39 @@ gameServer.define(ROOM_APARTMENT, ApartmentRoom).filterBy(['apartmentId']);
  */
 gameServer.define(ROOM_LIVE, LiveRoom);
 
+/**
+ * As ordens do painel administrativo (PRD §28).
+ *
+ * Elas chegam de carona na resposta do batimento de presença, e QUALQUER worker
+ * pode recebê-las — inclusive um que não é dono da sala alvo. Quem resolve isso
+ * é o `remoteRoomCall` do Colyseus, que entrega a chamada no processo dono
+ * (é o mesmo mecanismo que faz `joinById` funcionar entre workers).
+ *
+ * Todo desfecho é confirmado de volta, inclusive o fracasso: uma ordem entregue
+ * e nunca confirmada fica visível no banco, que é exatamente o que se quer
+ * poder investigar quando uma live não morreu.
+ */
+async function executarOrdens(commands: ModerationCommand[]): Promise<void> {
+  for (const ordem of commands) {
+    if (ordem.command !== 'close_live') {
+      await api.ackModeration(ordem.id, `desconhecida:${ordem.command}`);
+      continue;
+    }
+    try {
+      const resultado = await matchMaker.remoteRoomCall(ordem.targetId, 'moderationClose', [ordem.reason]);
+      const fechou = (resultado as { closed?: boolean } | undefined)?.closed === true;
+      await api.ackModeration(ordem.id, fechou ? 'closed' : 'already_ended');
+    } catch (err) {
+      // Sala inexistente é desfecho legítimo: a live pode ter acabado sozinha
+      // entre a ordem e a entrega.
+      await api.ackModeration(ordem.id, `falhou:${String((err as Error)?.message ?? err).slice(0, 120)}`);
+    }
+  }
+}
+
 export async function start(port = config.port, host = config.host): Promise<void> {
   await gameServer.listen(port, host);
+  presence().onModeration((commands) => void executarOrdens(commands));
   accepting = true;
   console.log(`[game-server] ouvindo em ws://${host}:${port} (${config.env})`);
   if (!isProduction() && !config.authSecret) {
