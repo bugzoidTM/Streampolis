@@ -135,6 +135,22 @@ app.post('/auth/register', rateLimit('auth'), async (req, res, next) => {
 });
 
 /**
+ * O que é uma conta de FIXTURE.
+ *
+ * Enquanto só existiam as quatro contas do seed, "entrar sem senha" e "entrar
+ * sem senha numa conta de teste" eram a mesma frase. Com o cadastro no ar
+ * deixaram de ser: a primeira conta que alguém criasse na demonstração pública
+ * apareceria na fileira da porta de entrada e poderia ser aberta por qualquer
+ * um, por username, sem senha. Isso é tomada de conta, não porta aberta.
+ *
+ * O domínio do e-mail é a marca, porque é o próprio `seed.ts` que a escreve
+ * (`@dev.streampolis`) e nenhum cadastro de verdade pode reivindicá-la sem
+ * registrar o domínio. `dev-login` e a vitrine da porta usam a MESMA condição:
+ * se a lista e a entrada divergissem, uma delas estaria mentindo.
+ */
+const FIXTURE_EMAIL_SUFFIX = '@dev.streampolis';
+
+/**
  * Contas de demonstração, com a aparência de cada uma, para a tela de entrada
  * poder desenhar o retrato de verdade em vez de três bonecos genéricos.
  *
@@ -155,8 +171,10 @@ app.get('/auth/demo-accounts', async (_req, res, next) => {
          LEFT JOIN profiles p ON p.user_id = u.id
          LEFT JOIN avatars av ON av.user_id = u.id
         WHERE u.status = 'active' AND u.role = 'player'
+          AND u.email_lower LIKE $1
         ORDER BY u.created_at
         LIMIT 4`,
+      [`%${FIXTURE_EMAIL_SUFFIX}`],
     );
     res.json({
       accounts: rows.map((r) => ({
@@ -172,8 +190,15 @@ app.get('/auth/demo-accounts', async (_req, res, next) => {
 
 /**
  * Login de desenvolvimento: entra por username, sem senha. Existe para o game
- * server e o cliente rodarem antes do cadastro existir, e some em produção
+ * server e o cliente rodarem sem passar pelo cadastro, e some em produção
  * (config.devLogin é falso lá, sem exceção).
+ *
+ * SÓ contas de fixture. Antes bastava um username qualquer, o que era inofensivo
+ * enquanto o único jeito de existir no banco era o `seed`. Com `/auth/register`
+ * no ar, essa mesma rota abriria a conta de qualquer jogador de verdade da
+ * demonstração pública para quem soubesse o nome dele — e um 404 aqui é
+ * exatamente o que se deve responder, porque para esta porta essa conta não
+ * existe mesmo.
  */
 app.post('/auth/dev-login', rateLimit('auth'), async (req, res, next) => {
   if (!config.devLogin) {
@@ -183,8 +208,8 @@ app.post('/auth/dev-login', rateLimit('auth'), async (req, res, next) => {
   try {
     const username = z.string().min(3).max(24).parse((req.body ?? {}).username);
     const { rows } = await pool.query<{ id: string }>(
-      'SELECT id FROM users WHERE username_lower = lower($1)',
-      [username],
+      'SELECT id FROM users WHERE username_lower = lower($1) AND email_lower LIKE $2',
+      [username, `%${FIXTURE_EMAIL_SUFFIX}`],
     );
     if (!rows[0]) {
       res.status(404).json({ error: 'user_not_found', hint: 'rode npm run seed' });
