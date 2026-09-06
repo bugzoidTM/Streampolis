@@ -1,0 +1,59 @@
+# Public Beta — a porta fechada, dita em voz alta.
+#
+#   docker stack deploy \
+#     -c stack.yml -c stack.scaling.yml -c stack.beta.yml streampolis
+#
+# A ORDEM importa e `stack.scaling.yml` vem antes: é ele que define `sp-game-2`.
+# Um overlay de modo aplicado sem ele criaria um serviço só com `environment`,
+# sem imagem — inválido.
+#
+# ## O que muda para quem chega
+#
+# Só a entrada. Não há uma linha de regra de jogo aqui, e é de propósito: o dia
+# de fechar a porta não pode ser também o dia de mudar o jogo, senão não se sabe
+# qual das duas coisas quebrou.
+#
+#   * `/auth/dev-login` responde 404 — ninguém entra por username, sem senha;
+#   * `/auth/demo-accounts` responde 404, e a tela de entrada deixa de desenhar
+#     a fileira de personagens sozinha (ela mostra o que a rota responder);
+#   * sobra o formulário: cadastro (`/auth/register`) e login com senha.
+#
+# ## O que muda por baixo (packages/api/src/config.ts)
+#
+#   * segredo default deixa de existir: JWT_SECRET, API_SERVICE_TOKEN e
+#     PAYMENT_WEBHOOK_SECRET passam a ser obrigatórios — a API não sobe sem eles
+#     (estão no `/root/streampolis-deploy/.env`);
+#   * limitador de `/auth` cai de 40 para 10 por minuto por IP;
+#   * `API_CORS_ORIGINS` passa a ser obrigatório: lista vazia em produção não
+#     libera ninguém, em vez de liberar todo mundo.
+#
+# ## O que NÃO se pode mais fazer aqui
+#
+#   * `npm run seed` — o seed se recusa a rodar em produção, e é isso que se
+#     quer: conta com senha conhecida não tem o que fazer numa beta pública. As
+#     contas de fixture que já existem no banco continuam lá, apenas
+#     inalcançáveis pela porta aberta (`dev-login` só aceitava `@dev.streampolis`
+#     e agora não aceita ninguém).
+#
+# ## Antes de publicar
+#
+#   node tools/release-check.mjs --api=… --ws=…   (ver deploy/README.md)
+version: "3.7"
+
+services:
+
+  # Redundante com a base DE PROPÓSITO. O comando de deploy passa a dizer em
+  # qual modo a stack está indo, e ler o comando basta para saber a resposta —
+  # não é preciso abrir três arquivos para descobrir se a porta está aberta.
+  sp-api:
+    environment:
+      NODE_ENV: production
+      API_DEV_LOGIN: "0"
+
+  sp-game:
+    environment:
+      NODE_ENV: production
+
+  sp-game-2:
+    environment:
+      NODE_ENV: production

@@ -1,7 +1,20 @@
 # Produção — streampolis.nutef.com
 
-Demonstração pública rodando na VPS da Nutef, em Docker Swarm atrás do Traefik
-que já serve os outros domínios da casa.
+Rodando na VPS da Nutef, em Docker Swarm atrás do Traefik que já serve os outros
+domínios da casa.
+
+A stack tem **dois modos de entrada**, e o modo é o terceiro arquivo do comando
+de deploy:
+
+| Modo | Comando | Quem entra |
+| --- | --- | --- |
+| **Public Beta** | `-c stack.yml -c stack.scaling.yml -c stack.beta.yml` | só quem se cadastra ou faz login com senha |
+| **Demonstração** | `-c stack.yml -c stack.scaling.yml -c stack.demo.yml` | qualquer um, escolhendo um personagem na fileira |
+
+A base (`stack.yml`) já vem FECHADA (`NODE_ENV=production`, `API_DEV_LOGIN=0`):
+esquecer um overlay tem de custar a fileira de personagens, que se vê no
+primeiro segundo, e não abrir a entrada sem senha, que não se vê nunca. Cada
+overlay explica o que muda; comece por eles.
 
 ## Desenho
 
@@ -47,10 +60,19 @@ npm run build --workspace @streampolis/client
 # 2. game server compilado (o serviço roda o dist/)
 npm run build --workspace @streampolis/game-server
 
-# 3. stack
+# 3. stack — o TERCEIRO arquivo escolhe o modo de entrada
 cd /root/streampolis-deploy && set -a && . ./.env && set +a
 docker stack deploy -c /root/streampolis/deploy/stack.yml \
-  -c /root/streampolis/deploy/stack.scaling.yml streampolis
+  -c /root/streampolis/deploy/stack.scaling.yml \
+  -c /root/streampolis/deploy/stack.demo.yml streampolis   # ou stack.beta.yml
+```
+
+A ordem importa: `stack.scaling.yml` antes do overlay de modo, porque é ele que
+define `sp-game-2`. Para ver o que o Swarm vai receber sem publicar nada:
+
+```bash
+docker stack config -c stack.yml -c stack.scaling.yml -c stack.beta.yml \
+  | grep -E 'NODE_ENV|API_DEV_LOGIN'
 ```
 
 O site é servido por bind mount de `packages/client/dist`: refazer o build já
@@ -77,14 +99,11 @@ docker exec -e DATABASE_URL="postgres://streampolis:${SP_DB_PASSWORD}@sp-db:5432
   -w /app/packages/api $CID node src/db/migrate.ts
 ```
 
-## A porta de entrada é aberta, de propósito
+## A porta de entrada: qual é a aberta e qual é a fechada
 
-O cadastro já existe (`POST /auth/register`: usuário, e-mail e senha, com a
-mesma sessão de access + refresh do login), mas a entrada por personagem
-continua ligada: o site ainda oferece `POST /auth/dev-login`, que só funciona
-porque a API **não** roda com `NODE_ENV=production`.
-
-Para fechar a porta, basta o ambiente — nenhuma linha de código muda:
+`POST /auth/dev-login` entra por username, sem senha. É a porta da demonstração,
+e ela existe **só** onde a API não roda com `NODE_ENV=production` — nenhuma linha
+de código muda entre os dois modos, só o ambiente:
 
 ```
 NODE_ENV=production     # dev-login some, e o segredo default deixa de existir
@@ -92,9 +111,29 @@ API_DEV_LOGIN=0         # cinto e suspensório
 ```
 
 Com ela fechada, a tela de entrada some sozinha com a fileira de personagens
-(ela desenha o que `/auth/demo-accounts` responder) e sobra só o formulário.
-Isso ainda não foi feito porque a demonstração pública vive de quem entra em
-dois cliques; o dia de fechar é o dia em que houver dinheiro de verdade.
+(ela desenha o que `/auth/demo-accounts` responder) e sobra só o formulário de
+cadastro e login. O cadastro (`POST /auth/register`) funciona nos dois modos.
+
+Mesmo com a porta aberta, ela só abre conta de **fixture** (as do `seed`,
+domínio `@dev.streampolis`): quem se cadastra de verdade na demonstração não
+aparece na fileira nem pode ser aberto por username.
+
+Duas consequências do modo beta que costumam pegar de surpresa:
+
+* `npm run seed` **recusa-se a rodar** em produção — conta com senha conhecida
+  não tem o que fazer numa beta pública. Semear é coisa do modo demonstração;
+* todas as ferramentas de conferência do repositório (`tools/*-check.mjs`, os
+  `e2e:*` do game server) entram por `dev-login` e portanto **só funcionam no
+  modo demonstração**. A exceção — e o que se roda antes de publicar uma beta —
+  é o `release-check` abaixo.
+
+## Ainda não há como comprar Coins
+
+O webhook de pagamento não está no ar (`SP_WEBHOOK_SECRET` existe, ninguém o
+usa). Numa beta pública isso significa: conta nova nasce com carteira zerada e
+**não tem caminho de produto para presentear**. É o buraco a fechar antes de a
+beta valer dinheiro; o `release-check` credita a carteira de teste chamando
+`purchaseCoins` direto no banco — o mesmo caminho que o webhook chamará.
 
 ## Verificar
 
@@ -103,6 +142,43 @@ node tools/prod-check.mjs                      # primeira visita, entrar, mundo
 node tools/screens-check.mjs --client=https://streampolis.nutef.com \
   --api=https://streampolis.nutef.com/api --server=wss://streampolis.nutef.com/ws
 ```
+
+Os dois entram por `dev-login`: valem no modo **demonstração**.
+
+### release-check (o que se roda antes de publicar a beta)
+
+Duas contas novas, criadas pelo formulário, fazendo a volta inteira: cadastro,
+avatar, praça, amizade, encontrar, apartamento, live, gift e PK. Não usa
+`dev-login` em lugar nenhum, então é o único que vale nos dois modos.
+
+```bash
+# local (API e game server de desenvolvimento)
+npm run release:check
+
+# contra a stack publicada, de dentro do container da API — é lá que o
+# Postgres da produção é alcançável (o release-check precisa dele para dar
+# Coins à conta de teste; ver "Ainda não há como comprar Coins")
+CID=$(docker ps --filter name=streampolis_sp-api -q | head -1)
+source /root/streampolis-deploy/.env
+docker exec -w /app \
+  -e DATABASE_URL="postgres://streampolis:${SP_DB_PASSWORD}@sp-db:5432/streampolis" \
+  $CID node tools/release-check.mjs --expect=beta \
+    --api=http://sp-api:8787 --ws=ws://sp-game:2567
+```
+
+Duas coisas a saber antes de rodar:
+
+* em produção o limitador deixa passar 10 chamadas de `/auth` por minuto por IP
+  e a rodada gasta 6 — **espere um minuto entre duas rodadas**, senão o cadastro
+  volta 429 (o limitador funcionando, não um defeito);
+* cada rodada **deixa duas contas** `rc_<carimbo>_a/_b` no banco. É de propósito:
+  gift e PK escrevem em `wallet_transactions` e `pk_matches`, que referenciam o
+  usuário com `ON DELETE RESTRICT` porque extrato e histórico são imutáveis.
+  Apagar a conta exigiria apagar o extrato.
+
+Com `--ws` apontando para o domínio público, use **um worker fixo**
+(`wss://streampolis.nutef.com/ws/1`): "Encontrar" entra numa sala pelo id, e o id
+só existe no worker que a criou.
 
 ## DNS
 

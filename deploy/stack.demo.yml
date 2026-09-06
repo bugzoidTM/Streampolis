@@ -1,0 +1,52 @@
+# Demonstração pública — a porta aberta, preservada.
+#
+#   docker stack deploy \
+#     -c stack.yml -c stack.scaling.yml -c stack.demo.yml streampolis
+#
+# A ORDEM importa e `stack.scaling.yml` vem antes: é ele que define `sp-game-2`.
+#
+# Este é o ambiente que rodou de 31/08/2026 até a Public Beta: entra-se em dois
+# cliques, escolhendo um personagem na fileira da tela de entrada, sem senha.
+# Ele existe porque uma demonstração vive de quem entra sem se cadastrar — e
+# porque é o único ambiente em que as ferramentas de conferência do repositório
+# (tools/*-check.mjs, os e2e de `packages/game-server/scripts`) funcionam: todas
+# elas entram por `POST /auth/dev-login`.
+#
+# ## A porta é aberta, e o que a impede de ser uma tomada de conta
+#
+# `dev-login` só abre conta de FIXTURE — as do `seed`, marcadas pelo domínio
+# `@dev.streampolis`. Quem se cadastrar de verdade nesta demonstração não
+# aparece na fileira e não pode ser aberto por username (ver o comentário de
+# `FIXTURE_EMAIL_SUFFIX` em packages/api/src/server.ts).
+#
+# ## Isto NÃO é ambiente para dinheiro de verdade
+#
+# Entrar sem senha e cobrar são coisas que não convivem. No dia em que houver
+# pagamento, o deploy é o do `stack.beta.yml` — e é só trocar o terceiro arquivo
+# do comando.
+version: "3.7"
+
+services:
+
+  sp-api:
+    environment:
+      # Fora de produção: `dev-login` e `demo-accounts` existem, os segredos
+      # default voltam a valer como fallback (os de verdade continuam vindo do
+      # .env) e o limitador de /auth afrouxa para 40/min — folga de propósito,
+      # para um e2e rodado quatro vezes seguidas não se trancar para fora.
+      NODE_ENV: development
+      # Cinto e suspensório: mesmo fora de produção, a porta só abre se alguém
+      # disser explicitamente que quer abri-la.
+      API_DEV_LOGIN: "1"
+
+  # Os workers acompanham o modo da API. Não muda regra de jogo nenhuma (com
+  # AUTH_JWT_SECRET e API_BASE_URL definidos os atalhos de desenvolvimento nunca
+  # são usados); mantém-se aqui só para a demonstração continuar sendo, byte por
+  # byte, o ambiente que ela era antes da beta.
+  sp-game:
+    environment:
+      NODE_ENV: development
+
+  sp-game-2:
+    environment:
+      NODE_ENV: development

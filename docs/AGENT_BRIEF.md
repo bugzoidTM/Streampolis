@@ -107,6 +107,12 @@ O seed cria ana/beto/caio/moderador (senha `streampolis-dev`).
 `POST /auth/dev-login {"username":"ana"}` devolve o token de sessão — é ele que
 vai no `?token=` do cliente e no join das salas.
 
+Esta porta existe **só fora de produção**, e só para as contas do seed. Onde a
+API roda com `NODE_ENV=production` (modo Public Beta, ver `deploy/README.md`)
+ela responde 404 e a entrada é `POST /auth/register` / `POST /auth/login`. O
+único e2e que atravessa os dois modos é `node tools/release-check.mjs`, que cria
+duas contas novas e faz a volta inteira sem `dev-login`.
+
 Para rodar o game server contra a API de verdade:
 
 ```

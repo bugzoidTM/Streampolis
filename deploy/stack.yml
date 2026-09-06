@@ -1,4 +1,13 @@
-# Streampolis em produção (demonstração pública).
+# Streampolis em produção — BASE da stack.
+#
+# Este arquivo sozinho não descreve um deploy inteiro: o modo de entrada mora
+# num overlay, e é ele que decide quem consegue entrar no jogo.
+#
+#   base + stack.scaling.yml + stack.beta.yml   → Public Beta (porta fechada)
+#   base + stack.scaling.yml + stack.demo.yml   → demonstração (porta aberta)
+#
+# A base já vem com a postura FECHADA (NODE_ENV=production, API_DEV_LOGIN=0):
+# esquecer um overlay tem de falhar para o lado seguro. Ver deploy/README.md.
 #
 # Um único domínio, três caminhos:
 #   /        site estático (build do Vite)
@@ -46,15 +55,26 @@ services:
     volumes:
       - /root/streampolis:/app:ro
     environment:
-      NODE_ENV: development
+      # POSTURA PADRÃO: PORTA FECHADA (Public Beta).
+      #
+      # A base declara o ambiente mais restrito de propósito. Quem quiser a
+      # demonstração de porta aberta precisa DIZER isso, acrescentando
+      # `stack.demo.yml` ao comando — e quem esquecer um arquivo perde a
+      # fileira de personagens (visível no primeiro segundo) em vez de abrir a
+      # entrada sem senha (invisível até alguém abusar dela).
+      #
+      # `NODE_ENV=production` faz mais do que sumir com o `dev-login`: acaba com
+      # todo segredo default (JWT, serviço, webhook passam a ser obrigatórios),
+      # aperta o limitador de /auth para 10/min e torna a lista de origens do
+      # CORS obrigatória. Ver packages/api/src/config.ts.
+      NODE_ENV: production
+      API_DEV_LOGIN: "0"
       API_HOST: 0.0.0.0
       API_PORT: "8787"
       DATABASE_URL: postgres://streampolis:${SP_DB_PASSWORD}@sp-db:5432/streampolis
       JWT_SECRET: ${SP_JWT_SECRET}
       API_SERVICE_TOKEN: ${SP_SERVICE_TOKEN}
       PAYMENT_WEBHOOK_SECRET: ${SP_WEBHOOK_SECRET}
-      # Porta aberta da demonstração: entra-se por personagem, sem senha.
-      API_DEV_LOGIN: "1"
       API_CORS_ORIGINS: https://streampolis.nutef.com
       # Traefik é o único proxy à frente; sem isto o limitador conta todo mundo
       # no mesmo balde (o do proxy).
@@ -86,7 +106,13 @@ services:
     volumes:
       - /root/streampolis:/app:ro
     environment:
-      NODE_ENV: development
+      # Mesma postura da API. No game server `production` não muda regra de
+      # jogo nenhuma: ele só se recusa a cair nos atalhos de desenvolvimento
+      # (identidade sem assinatura, economia em memória, casa resolvida em
+      # memória) — coisas que aqui já não acontecem porque AUTH_JWT_SECRET e
+      # API_BASE_URL estão definidos. O ganho é o silêncio virar ruído: em vez
+      # de degradar sozinho, o processo se recusa a subir.
+      NODE_ENV: production
       GAME_SERVER_HOST: 0.0.0.0
       GAME_SERVER_PORT: "2567"
       AUTH_JWT_SECRET: ${SP_JWT_SECRET}

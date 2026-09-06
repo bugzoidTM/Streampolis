@@ -29,7 +29,11 @@ services:
     volumes:
       - /root/streampolis:/app:ro
     environment:
-      NODE_ENV: development
+      # Mesma postura fechada da base (ver sp-game em stack.yml). Os overlays de
+      # modo (stack.beta.yml / stack.demo.yml) tratam este worker junto com o
+      # outro — dois workers em ambientes diferentes seriam a mesma cidade com
+      # duas regras.
+      NODE_ENV: production
       GAME_SERVER_HOST: 0.0.0.0
       GAME_SERVER_PORT: "2567"
       AUTH_JWT_SECRET: ${SP_JWT_SECRET}
