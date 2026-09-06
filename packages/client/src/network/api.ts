@@ -109,6 +109,42 @@ export interface BlockedUser {
   blockedAt: string;
 }
 
+export interface CoinPackage {
+  id: string;
+  name: string;
+  coins: number;
+  bonusCoins: number;
+  /** `coins + bonusCoins`, somado pela API — a tela nunca soma dinheiro. */
+  totalCoins: number;
+  priceCents: number;
+  currency: string;
+}
+
+export interface CheckoutIntent {
+  paymentId: string;
+  packageId: string;
+  coins: number;
+  priceCents: number;
+  currency: string;
+  status: string;
+  checkoutUrl: string;
+  provider: string;
+  /** PRD §15: presentear não transfere dinheiro. Vem da API para a frase ser
+   *  a mesma em todo lugar onde ela precisa aparecer. */
+  disclosure: string;
+}
+
+export interface PaymentSummary {
+  paymentId: string;
+  packageId: string;
+  coins: number;
+  priceCents: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+  paidAt: string | null;
+}
+
 export interface Wallet { credits: number; coins: number }
 
 export interface DemoAccount {
@@ -227,6 +263,34 @@ export class ApiClient {
 
   me(): Promise<MeResponse> {
     return this.call<MeResponse>('/me');
+  }
+
+  // --------------------------------------------------------------- coins ---
+
+  /**
+   * Vitrine de Coins (PRD §15). Pública: preço não é segredo, e a tela precisa
+   * dele antes de a pessoa decidir entrar na conta.
+   */
+  coinPackages(): Promise<{ packages: CoinPackage[]; disclosure: string }> {
+    return this.call('/shop/coin-packages');
+  }
+
+  /**
+   * Abre a intenção de compra. NÃO credita nada: a moeda entra quando o
+   * provedor confirma o pagamento, e é por isso que a tela seguinte é do
+   * provedor, não nossa.
+   */
+  startCheckout(packageId: string): Promise<CheckoutIntent> {
+    return this.call('/me/checkout', { method: 'POST', body: JSON.stringify({ packageId }) });
+  }
+
+  /** Só existe com o provedor de mentira; em produção a rota nem responde. */
+  confirmSandboxPayment(paymentId: string): Promise<{ result: string }> {
+    return this.call(`/payments/sandbox/${encodeURIComponent(paymentId)}/confirm`, { method: 'POST' });
+  }
+
+  payments(): Promise<{ payments: PaymentSummary[] }> {
+    return this.call('/me/payments');
   }
 
   /** Contas jogáveis da demonstração. Vazio quando a API não as oferece. */

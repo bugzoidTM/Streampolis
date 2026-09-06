@@ -8,6 +8,7 @@ import { short } from '../state/format.js';
 import { usePoster } from './usePoster.js';
 import { Button, Money, Notice, RarityTag, Segmented } from './primitives/Controls.js';
 import { IconBag, IconCheck, IconCoin, IconCredits } from './Icons.js';
+import { CoinShop } from './CoinShop.js';
 
 /**
  * Loja (PRD §13, §16).
@@ -60,6 +61,10 @@ export function StoreView() {
   const setCurrency = useShopStore((s) => s.setCurrency);
 
   const [pending, setPending] = useState<{ item: ItemDef; currency: Currency } | null>(null);
+  /** A loja de Coins mora AQUI porque é aqui que a pessoa descobre que não tem
+   *  saldo: o pedido "quero esse item" e a resposta "faltam Coins" acontecem na
+   *  mesma tela, e mandar procurar a compra em outro lugar perde a compra. */
+  const [coinShop, setCoinShop] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -93,6 +98,9 @@ export function StoreView() {
         <div className="store__wallet">
           <Money currency="credits" amount={wallet.credits} icon={<IconCredits size={15} />} />
           <Money currency="coins" amount={wallet.coins} icon={<IconCoin size={15} />} />
+          <Button size="sm" variant="primary" icon={<IconCoin size={14} />} onClick={() => setCoinShop(true)}>
+            Comprar Coins
+          </Button>
         </div>
       </header>
 
@@ -158,6 +166,8 @@ export function StoreView() {
           </div>
         </div>
       )}
+
+      {coinShop && <CoinShop onClose={() => setCoinShop(false)} />}
 
       {toast && (
         <div className={`store__toast${toast.ok ? ' is-ok' : ' is-bad'}`} role="status">{toast.text}</div>
