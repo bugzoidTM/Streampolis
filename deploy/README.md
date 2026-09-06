@@ -167,15 +167,38 @@ node tools/screens-check.mjs --client=https://streampolis.nutef.com \
 
 Os dois entram por `dev-login`: valem no modo **demonstração**.
 
-### admin-check (moderação)
+### admin-check (moderação e economia)
 
-Fila de denúncias, dossiê, sanção com motivo obrigatório, rastro no audit log —
-e a metade que costuma faltar: o efeito no jogo (quem é silenciado realmente
-para de falar na sala). Entra pela conta `moderador` do seed, então vale no modo
-demonstração.
+Fila de denúncias, dossiê, sanção com motivo obrigatório, ajuste de saldo,
+bloqueio de carteira, pacotes de Coins e o rastro no audit log — mais a metade
+que costuma faltar: o efeito no jogo (quem é silenciado realmente para de falar
+na sala; carteira bloqueada realmente não compra).
 
 ```bash
 npm run admin:check
+```
+
+A equipe entra com **senha** (`/auth/login`), nunca por `dev-login`: a porta
+aberta da demonstração serve para experimentar o jogo, e desde que o painel
+existe ela abriria poder de banir e de mexer em saldo para qualquer visitante.
+`dev-login` responde 404 para conta de moderador ou administrador.
+
+Papéis: **moderador** vê a fila e aplica sanções; **administrador** faz o que é
+dinheiro — ajustar saldo, bloquear carteira, configurar pacotes. Silenciar
+alguém por uma hora e creditar 10.000 Coins têm raios de explosão diferentes.
+
+As contas de equipe da produção (`moderador`, `administrador`) têm senha
+ALEATÓRIA, guardada em `SP_STAFF_PASSWORD` no `/root/streampolis-deploy/.env`.
+A senha do `seed` (`streampolis-dev`) está escrita no repositório e valia nelas
+até 06/09/2026 — com o painel no ar, isso era acesso público à moderação. Se
+rodar o `seed` de novo contra a produção, ele reescreve essas senhas para a de
+desenvolvimento: rotacione depois.
+
+```bash
+# admin-check contra a produção
+source /root/streampolis-deploy/.env
+STAFF_PASSWORD="$SP_STAFF_PASSWORD" node tools/admin-check.mjs \
+  --api=https://streampolis.nutef.com/api --ws=wss://streampolis.nutef.com/ws/1
 ```
 
 ### release-check (o que se roda antes de publicar a beta)

@@ -4,7 +4,9 @@ import bcrypt from 'bcryptjs';
 import { config } from './config.ts';
 import { pool, closePool } from './db/pool.ts';
 import { EconomyError } from './economy/errors.ts';
-import { getBalances, listTransactions, sendGift } from './economy/EconomyService.ts';
+import {
+  adminAdjustment, getBalances, listTransactions, sendGift,
+} from './economy/EconomyService.ts';
 import {
   RefreshError, issueSessionTokens, loadIdentity, revokeSession, rotateSession,
   signSessionToken,
@@ -34,8 +36,9 @@ import {
   sandboxConfirm, signatureMatches, startCheckout,
 } from './shop/Checkout.ts';
 import {
-  AdminError, applySanction, claimReport, isSanctionAction, listAudit, listReports,
-  resolveReport, searchUsers, userDossier, type Actor, type ReportStatus, type StaffRole,
+  AdminError, applySanction, assertAdmin, audit, claimReport, isSanctionAction, listAllCoinPackages,
+  listAudit, listReports, resolveReport, searchUsers, setEconomyBlock, updateCoinPackage,
+  userDossier, type Actor, type ReportStatus, type StaffRole,
 } from './admin/AdminService.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
@@ -220,6 +223,13 @@ app.get('/auth/demo-accounts', async (_req, res, next) => {
  * demonstração pública para quem soubesse o nome dele — e um 404 aqui é
  * exatamente o que se deve responder, porque para esta porta essa conta não
  * existe mesmo.
+ *
+ * E SÓ contas de JOGADOR. O dia em que o painel administrativo nasceu, esta
+ * porta virou uma escalada de privilégio: `moderador` e `administrador` também
+ * são fixtures, e entrar sem senha numa delas dava a qualquer visitante da
+ * demonstração o poder de banir jogadores e mexer em saldo. A porta aberta
+ * existe para experimentar o JOGO; quem modera apresenta senha, inclusive na
+ * demonstração.
  */
 app.post('/auth/dev-login', rateLimit('auth'), async (req, res, next) => {
   if (!config.devLogin) {
@@ -229,7 +239,8 @@ app.post('/auth/dev-login', rateLimit('auth'), async (req, res, next) => {
   try {
     const username = z.string().min(3).max(24).parse((req.body ?? {}).username);
     const { rows } = await pool.query<{ id: string }>(
-      'SELECT id FROM users WHERE username_lower = lower($1) AND email_lower LIKE $2',
+      `SELECT id FROM users
+        WHERE username_lower = lower($1) AND email_lower LIKE $2 AND role = 'player'`,
       [username, `%${FIXTURE_EMAIL_SUFFIX}`],
     );
     if (!rows[0]) {
@@ -811,6 +822,78 @@ app.post('/admin/users/:id/sanction', ...staff, async (req: AuthedRequest, res, 
       targetId: z.string().uuid().parse(param(req.params.id)),
       action: body.action, reason: body.reason, minutes: body.minutes,
     }));
+  } catch (err) { next(err); }
+});
+
+/**
+ * Ajuste de saldo (PRD §28: "ajustar saldo com motivo obrigatório").
+ *
+ * É a ferramenta de suporte de uma economia com dinheiro de verdade: um
+ * pagamento creditado duas vezes, um estorno do cartão, uma compensação por
+ * falha nossa. Só administrador, porque saldo não é moderação de sala — e o
+ * registro no ledger é imutável, então o ajuste aparece para sempre no extrato
+ * do jogador com o motivo escrito por quem o fez.
+ */
+const adjustSchema = z.object({
+  currency: z.enum(['coins', 'credits']),
+  amount: z.number().int().refine((n) => n !== 0, 'Valor não pode ser zero'),
+  reason: z.string().min(3).max(1_000),
+  idempotencyKey: z.string().min(8).max(120),
+});
+
+app.post('/admin/users/:id/wallet/adjust', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const actor = actorOf(req);
+    await assertAdmin(actor);
+    const body = adjustSchema.parse(req.body);
+    const alvo = z.string().uuid().parse(param(req.params.id));
+    const resultado = await adminAdjustment({
+      adminId: actor.userId, userId: alvo, currency: body.currency,
+      amount: body.amount, reason: body.reason, idempotencyKey: body.idempotencyKey,
+    });
+    res.json({
+      balances: resultado.balances,
+      transactionId: resultado.transaction.id,
+      replayed: resultado.replayed,
+    });
+  } catch (err) { next(err); }
+});
+
+const blockSchemaAdmin = z.object({ blocked: z.boolean(), reason: z.string().min(3).max(1_000) });
+
+app.put('/admin/users/:id/economy-block', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = blockSchemaAdmin.parse(req.body);
+    res.json({
+      user: await setEconomyBlock({
+        actor: actorOf(req), targetId: z.string().uuid().parse(param(req.params.id)),
+        blocked: body.blocked, reason: body.reason,
+      }),
+    });
+  } catch (err) { next(err); }
+});
+
+app.get('/admin/coin-packages', ...staff, async (_req: AuthedRequest, res, next) => {
+  try {
+    res.json({ packages: await listAllCoinPackages() });
+  } catch (err) { next(err); }
+});
+
+const packageSchema = z.object({
+  reason: z.string().min(3).max(1_000),
+  active: z.boolean().optional(),
+  priceCents: z.number().int().positive().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+app.patch('/admin/coin-packages/:id', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = packageSchema.parse(req.body);
+    res.json({
+      package: await updateCoinPackage({
+        actor: actorOf(req), packageId: param(req.params.id).slice(0, 64), ...body,
+      }),
+    });
   } catch (err) { next(err); }
 });
 

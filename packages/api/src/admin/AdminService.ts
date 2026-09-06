@@ -383,6 +383,116 @@ export async function applySanction(input: SanctionInput): Promise<SanctionResul
   return { user: toUser(rows[0]), action: input.action, sessionsRevoked: revogadas };
 }
 
+// -------------------------------------------------------------- economia ---
+
+/**
+ * Economia no painel (PRD §28, §29; SPECs §65).
+ *
+ * Estas três ações exigem o papel de **administrador**, não o de moderador, e a
+ * diferença não é hierarquia por hierarquia: silenciar alguém por uma hora e
+ * creditar 10.000 Coins na carteira de alguém têm raios de explosão diferentes.
+ * Moderação atende ao que acontece na sala; saldo é dinheiro que já foi pago.
+ *
+ * O ajuste em si é o `adminAdjustment` da economia, que existe desde o começo e
+ * até hoje não tinha porta: ele já escreve no ledger imutável, exige motivo e é
+ * idempotente. O que faltava era exatamente isto — a porta, e quem pode abri-la.
+ */
+
+export interface WalletAdjustInput {
+  actor: Actor;
+  targetId: string;
+  currency: 'coins' | 'credits';
+  /** Assinado: positivo credita, negativo debita. */
+  amount: number;
+  reason: string;
+  /** Sem ela, um duplo-clique no painel credita duas vezes. */
+  idempotencyKey: string;
+}
+
+export async function assertAdmin(actor: Actor): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new AdminError('FORBIDDEN', 'Só um administrador mexe em saldo.', 403);
+  }
+}
+
+export async function setEconomyBlock(input: {
+  actor: Actor; targetId: string; blocked: boolean; reason: string;
+}): Promise<UserRow> {
+  await assertAdmin(input.actor);
+  const motivo = assertReason(input.reason);
+  if (input.targetId === input.actor.userId) {
+    throw new AdminError('SELF_TARGET', 'Não dá para bloquear a própria carteira.', 400);
+  }
+  const { rowCount } = await pool.query(
+    'UPDATE users SET economy_blocked = $2, updated_at = now() WHERE id = $1',
+    [input.targetId, input.blocked],
+  );
+  if (!rowCount) throw new AdminError('NOT_FOUND', 'Conta não encontrada.', 404);
+
+  await audit({
+    actor: input.actor,
+    action: input.blocked ? 'economy.block' : 'economy.unblock',
+    targetType: 'user', targetId: input.targetId, reason: motivo,
+  });
+  const { rows } = await pool.query(`${USER_SELECT} WHERE u.id = $1`, [input.targetId]);
+  return toUser(rows[0]);
+}
+
+export interface AdminCoinPackage {
+  id: string; name: string; coins: number; bonusCoins: number;
+  priceCents: number; currency: string; sortOrder: number; active: boolean;
+}
+
+/** A vitrine pública mostra só o que está ativo; o painel precisa ver tudo. */
+export async function listAllCoinPackages(): Promise<AdminCoinPackage[]> {
+  const { rows } = await pool.query(
+    `SELECT id, name, coins, bonus_coins, price_cents, currency, sort_order, active
+       FROM coin_packages ORDER BY sort_order, price_cents`,
+  );
+  return rows.map((r) => ({
+    id: r.id, name: r.name, coins: Number(r.coins), bonusCoins: Number(r.bonus_coins),
+    priceCents: r.price_cents, currency: r.currency, sortOrder: r.sort_order, active: r.active,
+  }));
+}
+
+/**
+ * "Configurar pacotes" (§28). Preço e disponibilidade mudam; a QUANTIDADE de
+ * Coins não muda por aqui de propósito: alterar quantos Coins um pacote entrega
+ * reescreve, na prática, o que quem já comprou pagou. Pacote com outra
+ * quantidade é pacote NOVO, e o antigo se desativa.
+ */
+export async function updateCoinPackage(input: {
+  actor: Actor; packageId: string; reason: string;
+  active?: boolean; priceCents?: number; sortOrder?: number;
+}): Promise<AdminCoinPackage> {
+  await assertAdmin(input.actor);
+  const motivo = assertReason(input.reason);
+  const campos: string[] = [];
+  const args: unknown[] = [input.packageId];
+  if (input.active !== undefined) { args.push(input.active); campos.push(`active = $${args.length}`); }
+  if (input.priceCents !== undefined) {
+    if (!Number.isInteger(input.priceCents) || input.priceCents <= 0) {
+      throw new AdminError('INVALID_ACTION', 'Preço deve ser inteiro positivo em centavos.', 400);
+    }
+    args.push(input.priceCents); campos.push(`price_cents = $${args.length}`);
+  }
+  if (input.sortOrder !== undefined) { args.push(input.sortOrder); campos.push(`sort_order = $${args.length}`); }
+  if (campos.length === 0) throw new AdminError('INVALID_ACTION', 'Nada a mudar.', 400);
+
+  const { rowCount } = await pool.query(
+    `UPDATE coin_packages SET ${campos.join(', ')} WHERE id = $1`, args,
+  );
+  if (!rowCount) throw new AdminError('NOT_FOUND', 'Pacote não encontrado.', 404);
+
+  await audit({
+    actor: input.actor, action: 'economy.package_update', targetType: 'coin_package',
+    targetId: input.packageId, reason: motivo,
+    metadata: { active: input.active, priceCents: input.priceCents, sortOrder: input.sortOrder },
+  });
+  const todos = await listAllCoinPackages();
+  return todos.find((p) => p.id === input.packageId) as AdminCoinPackage;
+}
+
 // ----------------------------------------------------------------- log ---
 
 export interface AuditEntry {

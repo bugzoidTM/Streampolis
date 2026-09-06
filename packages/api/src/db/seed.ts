@@ -108,6 +108,10 @@ const DEV_USERS: DevUser[] = [
     },
   },
   { username: 'moderador', email: 'mod@dev.streampolis', coins: 0, credits: 0, role: 'moderator' },
+  // O painel separa moderação de dinheiro: silenciar é do moderador, mexer em
+  // saldo é do administrador. Sem uma conta de cada, metade do painel não tem
+  // como ser exercitada em desenvolvimento.
+  { username: 'administrador', email: 'admin@dev.streampolis', coins: 0, credits: 0, role: 'admin' },
 ];
 
 async function seedUser(user: DevUser, passwordHash: string): Promise<string> {

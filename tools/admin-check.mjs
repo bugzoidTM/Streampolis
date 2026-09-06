@@ -44,11 +44,27 @@ async function api(path, init = {}) {
 }
 const como = (token) => ({ authorization: `Bearer ${token}` });
 
+/** Jogador comum: entra pela porta aberta da demonstração. */
 async function entrar(username) {
   const { status, body } = await api('/auth/dev-login', {
     method: 'POST', body: JSON.stringify({ username }),
   });
   if (status !== 200) throw new Error(`entrar como ${username} falhou (${status})`);
+  return body;
+}
+
+/**
+ * Equipe: entra com SENHA, mesmo na demonstração.
+ *
+ * `dev-login` não abre conta de staff de propósito — seria dar poder de banir a
+ * qualquer visitante. A senha aqui é a do `seed`, que é conhecida porque o seed
+ * é de desenvolvimento; em produção, a mesma rota com a senha de verdade.
+ */
+async function entrarComSenha(username, password = process.env.STAFF_PASSWORD ?? 'streampolis-dev') {
+  const { status, body } = await api('/auth/login', {
+    method: 'POST', body: JSON.stringify({ username, password }),
+  });
+  if (status !== 200) throw new Error(`login de ${username} falhou (${status}): ${JSON.stringify(body)}`);
   return body;
 }
 
@@ -58,11 +74,20 @@ async function main() {
   const saude = await api('/health');
   if (saude.status !== 200) { console.error(`API fora do ar em ${API}`); process.exit(2); }
 
-  const mod = await entrar('moderador');
+  const mod = await entrarComSenha('moderador');
   const ana = await entrar('ana');
   const beto = await entrar('beto');
 
   passo('1) A porta: painel é do papel, não do pedido');
+  // A porta aberta da demonstração não pode dar poder de moderação a ninguém.
+  const semSenha = await api('/auth/dev-login', {
+    method: 'POST', body: JSON.stringify({ username: 'moderador' }),
+  });
+  check('dev-login NÃO abre conta de equipe (404)', semSenha.status === 404, `status=${semSenha.status}`);
+  const semSenhaAdm = await api('/auth/dev-login', {
+    method: 'POST', body: JSON.stringify({ username: 'administrador' }),
+  });
+  check('nem a de administrador', semSenhaAdm.status === 404, `status=${semSenhaAdm.status}`);
   check('sem token, 401', (await api('/admin/reports')).status === 401);
   const jogador = await api('/admin/reports', { headers: como(ana.token) });
   check('com token de jogador comum, 403', jogador.status === 403, `status=${jogador.status}`);
@@ -189,6 +214,98 @@ async function main() {
     body: JSON.stringify({ action: 'ban', reason: 'admin-check: auto-banimento' }),
   });
   check('não dá para se punir', contraSiMesmo.status === 400, `status=${contraSiMesmo.status}`);
+
+  passo('12) Dinheiro é de administrador, não de moderador');
+  // Sem conta de administrador o ambiente não tem como exercitar esta parte —
+  // e um gate que MORRE por isso deixa de ser gate. Ele avisa e segue.
+  let adm = null;
+  try {
+    adm = await entrarComSenha('administrador');
+  } catch (err) {
+    console.log(`  · sem conta de administrador neste ambiente: passos 12–14 pulados (${String(err?.message ?? err).slice(0, 80)})`);
+  }
+  if (adm) {
+    const chave = `admin_check_${Date.now()}`;
+    const tentativaMod = await api(`/admin/users/${beto.identity.userId}/wallet/adjust`, {
+      method: 'POST', headers: como(mod.token),
+      body: JSON.stringify({ currency: 'coins', amount: 100, reason: 'moderador tentando creditar', idempotencyKey: chave }),
+    });
+    check('moderador NÃO ajusta saldo (403)', tentativaMod.status === 403, `status=${tentativaMod.status}`);
+
+    const semMotivoAjuste = await api(`/admin/users/${beto.identity.userId}/wallet/adjust`, {
+      method: 'POST', headers: como(adm.token),
+      body: JSON.stringify({ currency: 'coins', amount: 100, reason: 'x', idempotencyKey: `${chave}_a` }),
+    });
+    check('ajuste sem motivo é recusado', semMotivoAjuste.status === 400, `status=${semMotivoAjuste.status}`);
+
+    const antes = (await api('/me/wallet', { headers: como(beto.token) })).body;
+    const ajuste = await api(`/admin/users/${beto.identity.userId}/wallet/adjust`, {
+      method: 'POST', headers: como(adm.token),
+      body: JSON.stringify({ currency: 'coins', amount: 250, reason: 'admin-check: compensação de teste', idempotencyKey: chave }),
+    });
+    check('administrador ajusta com motivo', ajuste.status === 200, JSON.stringify(ajuste.body).slice(0, 120));
+    check('o saldo mudou exatamente pelo valor pedido', ajuste.body.balances?.coins === antes.coins + 250,
+      `${antes.coins} → ${ajuste.body.balances?.coins}`);
+
+    const denovoAjuste = await api(`/admin/users/${beto.identity.userId}/wallet/adjust`, {
+      method: 'POST', headers: como(adm.token),
+      body: JSON.stringify({ currency: 'coins', amount: 250, reason: 'admin-check: duplo-clique', idempotencyKey: chave }),
+    });
+    check('duplo-clique com a mesma chave não credita de novo',
+      denovoAjuste.body.balances?.coins === ajuste.body.balances?.coins,
+      `${ajuste.body.balances?.coins} → ${denovoAjuste.body.balances?.coins}`);
+
+    const extrato = (await api('/me/ledger?limit=3', { headers: como(beto.token) })).body.entries ?? [];
+    check('o ajuste aparece no extrato do jogador', extrato[0]?.amount === 250 && extrato[0]?.type === 'admin_adjustment',
+      JSON.stringify(extrato[0]).slice(0, 120));
+
+    passo('13) Bloquear a carteira realmente impede a economia');
+    const bloqueio = await api(`/admin/users/${beto.identity.userId}/economy-block`, {
+      method: 'PUT', headers: como(adm.token),
+      body: JSON.stringify({ blocked: true, reason: 'admin-check: bloqueio de teste' }),
+    });
+    check('bloqueio aplicado', bloqueio.status === 200 && bloqueio.body.user?.economyBlocked === true,
+      JSON.stringify(bloqueio.body.user).slice(0, 120));
+
+    const compraBloqueada = await api('/me/purchases', {
+      method: 'POST', headers: como(beto.token),
+      body: JSON.stringify({ itemId: 'fur_sofa_01', currency: 'credits', idempotencyKey: `${chave}_buy` }),
+    });
+    check('com a carteira bloqueada, a compra é recusada', compraBloqueada.status === 403,
+      `status=${compraBloqueada.status} ${JSON.stringify(compraBloqueada.body).slice(0, 80)}`);
+
+    const desbloqueio = await api(`/admin/users/${beto.identity.userId}/economy-block`, {
+      method: 'PUT', headers: como(adm.token),
+      body: JSON.stringify({ blocked: false, reason: 'admin-check: fim do teste' }),
+    });
+    check('desbloqueio devolve a economia', desbloqueio.body.user?.economyBlocked === false);
+
+    passo('14) Pacotes de Coins: o painel vê o que a vitrine esconde');
+    const todos = (await api('/admin/coin-packages', { headers: como(mod.token) })).body.packages ?? [];
+    check('o painel lista os pacotes', todos.length > 0, `${todos.length} pacotes`);
+    const alvo = todos[0];
+    const desativa = await api(`/admin/coin-packages/${alvo.id}`, {
+      method: 'PATCH', headers: como(adm.token),
+      body: JSON.stringify({ active: false, reason: 'admin-check: desativação temporária' }),
+    });
+    check('administrador desativa um pacote', desativa.body.package?.active === false,
+      JSON.stringify(desativa.body).slice(0, 120));
+    const vitrine = (await api('/shop/coin-packages')).body.packages ?? [];
+    check('e ele some da vitrine pública', !vitrine.some((p) => p.id === alvo.id),
+      `${vitrine.length} na vitrine`);
+    await api(`/admin/coin-packages/${alvo.id}`, {
+      method: 'PATCH', headers: como(adm.token),
+      body: JSON.stringify({ active: true, reason: 'admin-check: religando' }),
+    });
+    const voltou = (await api('/shop/coin-packages')).body.packages ?? [];
+    check('religar devolve o pacote à vitrine', voltou.some((p) => p.id === alvo.id));
+
+    const logEconomia = (await api('/admin/audit?action=economy.admin_adjustment', { headers: como(adm.token) })).body.entries ?? [];
+    check('o ajuste de saldo deixou rastro com motivo',
+      typeof logEconomia[0]?.reason === 'string' && logEconomia[0].reason.length > 3,
+      JSON.stringify(logEconomia[0]?.reason));
+
+  }
 
   console.log(`\n${falhas === 0 ? '✅' : '❌'} ${total - falhas}/${total} verificações passaram.`);
   process.exit(falhas === 0 ? 0 : 1);
