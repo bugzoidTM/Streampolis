@@ -247,6 +247,22 @@ STAFF_PASSWORD="$SP_STAFF_PASSWORD" node tools/admin-check.mjs \
   --api=https://streampolis.nutef.com/api --ws=wss://streampolis.nutef.com/ws/1
 ```
 
+### critical-check (os três testes que os SPECs chamam de críticos)
+
+§61 carteira, §62 webhook e §63 PK — os três cenários que o documento descreve
+com números e resultado esperado, e que não existiam. Todos são de CORRIDA:
+duas cobranças de 70 numa carteira de 100 disparadas juntas (só uma pode
+passar), o mesmo webhook entregue cinco vezes ao mesmo tempo (credita uma), dois
+presentes simultâneos num PK (o placar soma exatamente os dois e sai um
+resultado só).
+
+```bash
+npm run critical:check
+```
+
+Precisa do token de serviço (`/internal/*` é a porta do game server) e do
+segredo do webhook; em desenvolvimento os dois têm default.
+
 ### agency-check (agências)
 
 Fundar, convidar, aceitar, hierarquia, transferência e dissolução (PRD §19) —

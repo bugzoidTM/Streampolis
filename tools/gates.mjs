@@ -65,6 +65,14 @@ const PORTOES = [
     cmd: 'node', argv: ['tools/admin-check.mjs', `--api=${API}`, `--ws=${WS}`],
   },
   { nome: 'agency-check', grupo: 'e2e', needs: ['api'], cmd: 'node', argv: ['tools/agency-check.mjs', `--api=${API}`] },
+  {
+    nome: 'critical-check', grupo: 'e2e', needs: ['api', 'ws'],
+    // Os três testes que os SPECs chamam de críticos (§61–§63). Contra alvo
+    // remoto precisa dos segredos daquele ambiente: as rotas /internal são a
+    // porta do game server, e o webhook é assinado.
+    env: ALVO_LOCAL ? [] : ['API_SERVICE_TOKEN', 'PAYMENT_WEBHOOK_SECRET'],
+    cmd: 'node', argv: ['tools/critical-check.mjs', `--api=${API}`, `--ws=${WS}`],
+  },
 ];
 
 async function noAr(url, ms = 4_000) {
@@ -136,9 +144,20 @@ async function main() {
 
     process.stdout.write(`  … ${portao.nome}`);
     const r = await rodar(portao);
-    const marca = r.ok ? cor('✓', 32) : cor('✗', 31);
-    process.stdout.write(`\r  ${marca} ${portao.nome} ${cor(`${r.segundos}s`, 90)} ${placar(r.saida)}\n`);
-    resultados.push({ ...portao, estado: r.ok ? 'passou' : 'falhou', saida: r.saida });
+    /**
+     * Um e2e que termina em 0 e NÃO diz quantas verificações passaram é
+     * suspeito, não aprovado. Foi assim que o critical-check "passou" por dois
+     * runs: uma promessa que nunca resolvia drenava o loop de eventos e o Node
+     * encerrava sozinho, com código 0 e sem placar. Confiar só no código de
+     * saída é confiar no silêncio.
+     */
+    const placarDele = placar(r.saida);
+    const mudo = portao.grupo === 'e2e' && r.ok && !placarDele;
+    const ok = r.ok && !mudo;
+    const marca = ok ? cor('✓', 32) : cor('✗', 31);
+    process.stdout.write(`\r  ${marca} ${portao.nome} ${cor(`${r.segundos}s`, 90)} `
+      + `${mudo ? cor('terminou sem placar', 31) : placarDele}\n`);
+    resultados.push({ ...portao, estado: ok ? 'passou' : 'falhou', saida: r.saida });
   }
 
   const falhou = resultados.filter((r) => r.estado === 'falhou');
