@@ -33,6 +33,10 @@ import {
   isSocialKind, markSocial, markSocialBatch, productMetrics, type SocialKind,
 } from './social/SocialActivity.ts';
 import { RegisterError, registerAccount } from './auth/register.ts';
+import {
+  AgencyError, acceptInvite, agencyOf, createAgency, declineInvite, disbandAgency, getAgency,
+  inviteToAgency, listAgencies, listInvites, removeMember, setMemberRole, transferOwnership,
+} from './social/Agencies.ts';
 import { listInventory, purchaseItem } from './shop/Purchases.ts';
 import {
   GIFT_DISCLOSURE, handlePaymentWebhook, listCoinPackages, listPayments,
@@ -41,7 +45,8 @@ import {
 import {
   AdminError, ackCommand, applySanction, assertAdmin, audit, claimReport, closeLiveByOrder,
   isSanctionAction, listActiveLives, listAllCoinPackages, listAudit, listReports, resolveReport,
-  searchUsers, setEconomyBlock, takeCommandsFor, updateCoinPackage, userDossier,
+  disbandAgencyByAdmin, listAgenciesForAdmin, searchUsers, setEconomyBlock, takeCommandsFor,
+  updateCoinPackage, userDossier,
   type Actor, type ReportStatus, type StaffRole,
 } from './admin/AdminService.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
@@ -687,6 +692,133 @@ app.get('/friends/:userId/location', requireUser, async (req: AuthedRequest, res
   }
 });
 
+// -------------------------------------------------------------- agências ---
+/**
+ * Agências (PRD §19).
+ *
+ * O nome da agência já viajava assinado no token e a cidade já sabia desenhá-lo
+ * ao lado do nome do jogador — faltava a forma de entrar em uma. Entrar é ato de
+ * DUAS vontades: a agência convida, a pessoa aceita. Não existe rota para
+ * adicionar alguém.
+ *
+ * A sessão só passa a mostrar a agência no próximo token (até 15 min, §36), do
+ * mesmo jeito que a troca de roupa e o silêncio da moderação.
+ */
+const agencyNameSchema = z.object({ name: z.string().min(3).max(24) });
+
+app.get('/agencies', async (_req, res, next) => {
+  try {
+    res.json({ agencies: await listAgencies() });
+  } catch (err) { next(err); }
+});
+
+app.get('/agencies/:agencyId', optionalUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const agencia = await getAgency(z.string().uuid().parse(param(req.params.agencyId)));
+    if (!agencia) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.json({ agency: agencia });
+  } catch (err) { next(err); }
+});
+
+app.post('/agencies', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = agencyNameSchema.parse(req.body);
+    res.status(201).json({ agency: await createAgency(req.userId as string, body.name) });
+  } catch (err) { next(err); }
+});
+
+app.get('/me/agency', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const meu = await agencyOf(req.userId as string);
+    res.json({
+      agency: meu?.agency ?? null,
+      role: meu?.role ?? null,
+      invites: await listInvites(req.userId as string),
+    });
+  } catch (err) { next(err); }
+});
+
+app.post('/agencies/:agencyId/invites/:userId', rateLimit('social'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      res.json(await inviteToAgency({
+        agencyId: z.string().uuid().parse(param(req.params.agencyId)),
+        actorId: req.userId as string,
+        targetId: z.string().uuid().parse(param(req.params.userId)),
+      }));
+    } catch (err) { next(err); }
+  });
+
+app.post('/me/agency/invites/:agencyId/accept', rateLimit('social'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      res.json({
+        agency: await acceptInvite(
+          req.userId as string, z.string().uuid().parse(param(req.params.agencyId)),
+        ),
+      });
+    } catch (err) { next(err); }
+  });
+
+app.post('/me/agency/invites/:agencyId/decline', rateLimit('social'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      res.json(await declineInvite(
+        req.userId as string, z.string().uuid().parse(param(req.params.agencyId)),
+      ));
+    } catch (err) { next(err); }
+  });
+
+app.delete('/agencies/:agencyId/members/:userId', rateLimit('social'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      res.json(await removeMember({
+        agencyId: z.string().uuid().parse(param(req.params.agencyId)),
+        actorId: req.userId as string,
+        targetId: z.string().uuid().parse(param(req.params.userId)),
+      }));
+    } catch (err) { next(err); }
+  });
+
+const agencyRoleSchema = z.object({ role: z.enum(['manager', 'member']) });
+
+app.put('/agencies/:agencyId/members/:userId/role', rateLimit('social'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const body = agencyRoleSchema.parse(req.body);
+      res.json({
+        agency: await setMemberRole({
+          agencyId: z.string().uuid().parse(param(req.params.agencyId)),
+          actorId: req.userId as string,
+          targetId: z.string().uuid().parse(param(req.params.userId)),
+          role: body.role,
+        }),
+      });
+    } catch (err) { next(err); }
+  });
+
+app.post('/agencies/:agencyId/transfer/:userId', rateLimit('social'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      res.json({
+        agency: await transferOwnership({
+          agencyId: z.string().uuid().parse(param(req.params.agencyId)),
+          actorId: req.userId as string,
+          targetId: z.string().uuid().parse(param(req.params.userId)),
+        }),
+      });
+    } catch (err) { next(err); }
+  });
+
+app.delete('/agencies/:agencyId', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await disbandAgency(z.string().uuid().parse(param(req.params.agencyId)), req.userId as string));
+  } catch (err) { next(err); }
+});
+
 // ------------------------------------------------------------- moderação ---
 /**
  * A ponta do jogador (PRD §27, SPECs §39). Bloquear é privado e instantâneo;
@@ -947,6 +1079,24 @@ app.get('/admin/metrics', ...staff, async (req: AuthedRequest, res, next) => {
   try {
     const dias = Number(req.query.days ?? 7);
     res.json(await productMetrics(Number.isFinite(dias) ? dias : 7));
+  } catch (err) { next(err); }
+});
+
+app.get('/admin/agencies', ...staff, async (_req: AuthedRequest, res, next) => {
+  try {
+    res.json({ agencies: await listAgenciesForAdmin() });
+  } catch (err) { next(err); }
+});
+
+const disbandSchema = z.object({ reason: z.string().min(3).max(1_000) });
+
+app.delete('/admin/agencies/:agencyId', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const body = disbandSchema.parse(req.body);
+    res.json(await disbandAgencyByAdmin({
+      actor: actorOf(req), agencyId: z.string().uuid().parse(param(req.params.agencyId)),
+      reason: body.reason,
+    }));
   } catch (err) { next(err); }
 });
 
@@ -1263,6 +1413,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   // jogador ler: a tela mostra a frase em vez de traduzir um número de erro.
   if (err instanceof EconomyError
     || err instanceof AdminError
+    || err instanceof AgencyError
     || err instanceof FriendshipError
     || err instanceof ModerationError
     || err instanceof RegisterError) {

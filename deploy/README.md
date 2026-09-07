@@ -221,6 +221,18 @@ STAFF_PASSWORD="$SP_STAFF_PASSWORD" node tools/admin-check.mjs \
   --api=https://streampolis.nutef.com/api --ws=wss://streampolis.nutef.com/ws/1
 ```
 
+### agency-check (agências)
+
+Fundar, convidar, aceitar, hierarquia, transferência e dissolução (PRD §19) —
+com as três provas que separam uma organização de uma lista de nomes: quem NÃO
+pode convidar, quem NÃO desliga quem, e o dono que não consegue deixar a agência
+órfã. Cria três contas novas por rodada (`ag_<carimbo>_a/b/c`), então funciona
+nos dois modos.
+
+```bash
+npm run agency:check
+```
+
 ### release-check (o que se roda antes de publicar a beta)
 
 Duas contas novas, criadas pelo formulário, fazendo a volta inteira: cadastro,

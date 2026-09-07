@@ -621,6 +621,60 @@ export async function ackCommand(commandId: string, result: string): Promise<voi
   );
 }
 
+// -------------------------------------------------------------- agências ---
+
+export interface AdminAgencyView {
+  agencyId: string; name: string; level: number; memberCount: number;
+  owner: { userId: string; username: string }; createdAt: string;
+}
+
+/** "Agências: consultar" (§28). */
+export async function listAgenciesForAdmin(): Promise<AdminAgencyView[]> {
+  const { rows } = await pool.query(
+    `SELECT a.id, a.name, a.level, a.created_at, u.id AS owner_id, u.username,
+            count(m.user_id)::int AS members
+       FROM agencies a
+       JOIN users u ON u.id = a.owner_id
+       LEFT JOIN agency_members m ON m.agency_id = a.id
+      GROUP BY a.id, u.id ORDER BY members DESC, a.created_at LIMIT 100`,
+  );
+  return rows.map((r) => ({
+    agencyId: r.id, name: r.name, level: r.level, memberCount: r.members,
+    owner: { userId: r.owner_id, username: r.username },
+    createdAt: r.created_at.toISOString(),
+  }));
+}
+
+/**
+ * Dissolver pelo painel (§28: "suspender").
+ *
+ * Sem meio-termo de propósito: uma agência "suspensa" precisaria de um estado
+ * novo que nada no jogo lê — nem o token, nem a cidade, nem o ranking —, e um
+ * estado que ninguém lê é uma promessa que a interface faz e o mundo não cumpre.
+ * O que a moderação precisa hoje é desmanchar o nome que está no avatar de um
+ * bando de gente; o dia em que "suspensa" tiver significado, ela nasce com ele.
+ */
+export async function disbandAgencyByAdmin(input: {
+  actor: Actor; agencyId: string; reason: string;
+}): Promise<{ disbanded: boolean; members: number }> {
+  const motivo = assertReason(input.reason);
+  const { rows } = await pool.query<{ name: string; membros: string }>(
+    `SELECT a.name, count(m.user_id) AS membros FROM agencies a
+       LEFT JOIN agency_members m ON m.agency_id = a.id
+      WHERE a.id = $1 GROUP BY a.id`,
+    [input.agencyId],
+  );
+  if (!rows[0]) throw new AdminError('NOT_FOUND', 'Agência não encontrada.', 404);
+
+  await pool.query('DELETE FROM agencies WHERE id = $1', [input.agencyId]);
+  await audit({
+    actor: input.actor, action: 'agency.disband', targetType: 'agency',
+    targetId: input.agencyId, reason: motivo,
+    metadata: { name: rows[0].name, members: Number(rows[0].membros) },
+  });
+  return { disbanded: true, members: Number(rows[0].membros) };
+}
+
 // ----------------------------------------------------------------- log ---
 
 export interface AuditEntry {

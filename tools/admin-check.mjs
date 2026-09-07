@@ -436,6 +436,20 @@ async function main() {
   check('jogador comum não vê o painel de produto (403)', semPapel.status === 403,
     `status=${semPapel.status}`);
 
+  passo('17) Agências no painel (§28)');
+  const listaAg = await api('/admin/agencies', { headers: como(mod.token) });
+  check('o painel lista agências', listaAg.status === 200 && Array.isArray(listaAg.body.agencies),
+    JSON.stringify(listaAg.body).slice(0, 100));
+  const semMotivoAg = await api('/admin/agencies/00000000-0000-0000-0000-000000000000', {
+    method: 'DELETE', headers: como(mod.token), body: JSON.stringify({ reason: 'x' }),
+  });
+  check('dissolver sem motivo é recusado', semMotivoAg.status === 400, `status=${semMotivoAg.status}`);
+  const inexistente = await api('/admin/agencies/00000000-0000-0000-0000-000000000000', {
+    method: 'DELETE', headers: como(mod.token),
+    body: JSON.stringify({ reason: 'admin-check: agência que não existe' }),
+  });
+  check('agência inexistente responde 404', inexistente.status === 404, `status=${inexistente.status}`);
+
   console.log(`\n${falhas === 0 ? '✅' : '❌'} ${total - falhas}/${total} verificações passaram.`);
   process.exit(falhas === 0 ? 0 : 1);
 }
