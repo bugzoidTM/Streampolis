@@ -34,7 +34,21 @@ page.on('pageerror', (e) => errors.push(String(e.message)));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 console.log(`\n1) Primeira visita a ${URL_BASE}`);
-await page.goto(URL_BASE, { waitUntil: 'networkidle', timeout: 60_000 });
+/**
+ * `domcontentloaded`, e nunca `networkidle`.
+ *
+ * O telão da praça toca um vídeo em laço, e um vídeo em laço é uma conexão de
+ * mídia que não fecha. `networkidle` espera meio segundo sem NENHUMA conexão —
+ * uma condição que uma página com vídeo por desenho jamais satisfaz. O sintoma
+ * é cruel: a primeira navegação passa (o resto do carregamento ainda está
+ * ocupando a rede quando a espera é satisfeita) e só o RELOAD trava, porque ali
+ * o mundo já está quente e o vídeo é a única coisa que sobrou na rede.
+ *
+ * `networkidle` sempre foi um substituto para "o mundo terminou de carregar", e
+ * este repositório tem o sinal de verdade uma linha abaixo: `window.__ready`,
+ * que o próprio laço do World levanta no 12º quadro. É ele que decide.
+ */
+await page.goto(URL_BASE, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 await page.waitForSelector('.enter__title', { timeout: 30_000 });
 check('a porta de entrada aparece', true);
 
@@ -59,7 +73,7 @@ check('o avatar do jogador está em cena', (stats?.actors ?? 0) >= 1);
 await page.screenshot({ path: `${dir}/mundo.png` });
 
 console.log('\n3) A sessão sobrevive a um recarregamento');
-await page.reload({ waitUntil: 'networkidle', timeout: 60_000 });
+await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
 await page.waitForFunction(() => window.__ready === true, { timeout: 90_000 }).catch(() => {});
 await page.waitForTimeout(1_500);
 const again = await page.evaluate(() => window.__lab?.stats?.() ?? null);

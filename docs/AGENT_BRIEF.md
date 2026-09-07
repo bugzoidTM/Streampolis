@@ -661,7 +661,19 @@ pode ser negado — o primeiro clique ou tecla na página tenta uma vez mais.
 O arquivo mora em `packages/client/public/assets/video/`, que está no
 `.gitignore` como todo material de terceiro: o repositório guarda a receita, a
 mídia vem de fora. `public/` é copiado para `dist/` no build, e é o `dist/` que
-o nginx serve.
+o nginx serve. A receita é `npm run assets:telao` — ela baixa, converte para
+H.264 720×1280 **sem faixa de áudio nenhuma** e falha se sobrar uma. Sem ela,
+um clone limpo constrói um telão sem vídeo e o painel volta ao LED em silêncio:
+bonito, e por isso mesmo difícil de notar que faltou alguma coisa.
+
+**A armadilha que ele criou, e que vai pegar de novo:** um vídeo em laço é uma
+conexão de mídia que nunca fecha, e `waitUntil: 'networkidle'` do Playwright
+espera meio segundo sem NENHUMA conexão. Qualquer portão que abra a praça e
+recarregue a página trava para sempre ali. O sintoma engana: a primeira
+navegação passa (o resto do carregamento ainda ocupa a rede) e só o RELOAD
+pendura. O sinal certo sempre foi `window.__ready`, que o laço do World levanta
+no 12º quadro — `networkidle` era só um substituto. Foi o que quebrou o
+`prod-check` no dia em que o vídeo entrou.
 
 ## Correr
 
