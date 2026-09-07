@@ -21,6 +21,7 @@
  * baixo há um commit inteiro sem ninguém ver.
  *
  *   node tools/telao-shot.mjs [--out=shots/telao.png] [--alvo=-11]
+ *   node tools/telao-shot.mjs --scene=noir_district --tx=14 --tz=9 --alvo=-4 --alt=9
  */
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
@@ -34,7 +35,12 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 const CLIENT = args.client ?? 'http://127.0.0.1:5273';
 const API = args.api ?? 'http://127.0.0.1:8787';
 const OUT = args.out ?? 'shots/telao.png';
-/** X para onde a câmera olha. O telão está em x=0; mirar ao lado o desentope. */
+const SCENE = args.scene ?? 'central_plaza';
+/** Onde o telão está, e a que altura fica o centro dele. */
+const TX = Number(args.tx ?? 0);
+const TZ = Number(args.tz ?? -34);
+const ALT = Number(args.alt ?? 8.6);
+/** X para onde a câmera olha. Mirar AO LADO do painel o tira de trás do avatar. */
 const ALVO_X = Number(args.alvo ?? -11);
 
 const res = await fetch(`${API}/auth/dev-login`, {
@@ -54,21 +60,21 @@ const page = await browser.newPage({ viewport: { width: 900, height: 560 } });
 try {
   // `domcontentloaded`, nunca `networkidle`: o telão toca vídeo em laço, e uma
   // conexão de mídia que não fecha nunca deixa a rede ficar ociosa.
-  await page.goto(`${CLIENT}/?view=world&scene=central_plaza&token=${token}&name=Ana`,
+  await page.goto(`${CLIENT}/?view=world&scene=${SCENE}&token=${token}&name=Ana`,
     { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await page.waitForFunction(() => window.__ready === true, { timeout: 60_000 });
   await page.waitForTimeout(3_500);
 
-  const estado = await page.evaluate((alvoX) => {
+  const estado = await page.evaluate(({ alvoX, tz, alt }) => {
     const w = window.__world;
     const c = w.connection.predictor.current;
     const cam = w.camera;
     const dx = alvoX - c.x;
-    const dz = -34 - c.z;
+    const dz = tz - c.z;
     const d = Math.hypot(dx, dz);
     cam.yaw = Math.atan2(-dx, -dz);
-    // O centro do painel está a ~8 m do chão; `pitch` positivo olha para BAIXO.
-    cam.pitch = -Math.atan2(8.6 - 1.2, d);
+    // `pitch` positivo olha para BAIXO, daí o sinal.
+    cam.pitch = -Math.atan2(alt - 1.2, d);
     cam.distance = 2.4;
     if ('smoothDistance' in cam) cam.smoothDistance = 2.4;
 
@@ -87,7 +93,7 @@ try {
       };
     });
     return { video };
-  }, ALVO_X);
+  }, { alvoX: ALVO_X, tz: TZ, alt: ALT });
 
   await page.waitForTimeout(2_500);
   await page.screenshot({ path: OUT });

@@ -35,6 +35,7 @@
     "run:check": "node tools/run-check.mjs",
     "district:plan": "node tools/district-plan.mjs",
     "telao:shot": "node tools/telao-shot.mjs",
+    "telao:check": "node tools/telao-check.mjs",
     "gate:plan": "node tools/room-plan-check.mjs",
     "test:avatar-motion": "node tools/avatar-motion-check.mjs"
   },

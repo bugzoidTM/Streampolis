@@ -151,13 +151,120 @@ export interface VideoWallOpts {
   video?: string;
 }
 
+/**
+ * O vídeo dos telões — UM para o jogo inteiro.
+ *
+ * A praça tem um telão, a arena tem quatro, a loja, o saguão, a torre de
+ * agência e a sala de live têm o seu, o apartamento tem uma TV e o Distrito
+ * Sombra ganhou um painel na fachada. O pedido é que todos mostrem a MESMA
+ * coisa, ao mesmo tempo.
+ *
+ * A forma barata de "sincronizar" seria dar um `<video>` a cada painel e
+ * mandar todos tocarem juntos. Isso não é sincronia — é uma corrida: cada
+ * elemento decodifica no seu ritmo, começa quando o seu arquivo chega, e dois
+ * painéis lado a lado na arena mostrariam quadros diferentes do mesmo filme.
+ *
+ * Aqui existe UM elemento de vídeo e UMA textura, e todos os painéis amostram
+ * ela. Não é que eles estejam sincronizados: é que eles são o mesmo quadro,
+ * por construção. E o custo cai junto — quatro telas na arena decodificam uma
+ * vez, não quatro.
+ *
+ * ## Ele atravessa a troca de cena
+ *
+ * O elemento não é destruído quando uma cena morre; só é PAUSADO quando o
+ * último painel o solta. Quem sai da praça e entra na torre encontra o vídeo
+ * onde ele estava, e não recomeçando do zero — que é o que "estar passando a
+ * mesma coisa" quer dizer para quem atravessa uma porta.
+ */
+/**
+ * O que passa nos telões. UM caminho para o jogo inteiro.
+ *
+ * Mora aqui, e não na cena da praça onde nasceu, porque deixou de ser
+ * decoração de um lugar: é o conteúdo de todas as telas do jogo ao mesmo
+ * tempo. Servido pelo próprio site (mesma origem — vídeo de outro domínio
+ * precisaria de CORS e mancharia a textura), e o arquivo vem de
+ * `npm run assets:telao`.
+ *
+ * É uma linha de propósito: é o que vai mudar primeiro, no dia em que o §6
+ * ganhar a regra de "o que passa e quando".
+ */
+export const TELAO_SRC = '/assets/video/telao.mp4';
+
+interface TelaoCompartilhado {
+  video: HTMLVideoElement;
+  tex: THREE.VideoTexture;
+  src: string;
+  usos: number;
+}
+
+let telao: TelaoCompartilhado | null = null;
+
+function criarTelao(src: string): TelaoCompartilhado {
+  const v = document.createElement('video');
+  // A ordem importa: mudo e inline ANTES da fonte. Definidos depois, o Safari
+  // já decidiu que o elemento tem áudio e recusa o autoplay.
+  v.muted = true;
+  v.defaultMuted = true;
+  v.playsInline = true;
+  v.loop = true;
+  v.autoplay = true;
+  v.preload = 'auto';
+  v.src = src;
+
+  const tex = new THREE.VideoTexture(v);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  // Sem mipmaps: o quadro muda toda hora e gerar a pirâmide a cada quadro é
+  // caro para uma superfície que se olha de frente.
+  tex.generateMipmaps = false;
+
+  const tentar = () => { void v.play().catch(() => undefined); };
+
+  // Aba escondida: parar de decodificar. Quadros que ninguém vê são bateria.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) v.pause();
+    else if (telao && telao.usos > 0) tentar();
+  });
+
+  // Alguns navegadores (e a economia de dados de outros) barram até o autoplay
+  // mudo. A recuperação é um gesto do jogador, uma vez só.
+  const noGesto = () => {
+    if (telao && telao.usos > 0) tentar();
+    window.removeEventListener('pointerdown', noGesto);
+    window.removeEventListener('keydown', noGesto);
+  };
+  window.addEventListener('pointerdown', noGesto);
+  window.addEventListener('keydown', noGesto);
+
+  tentar();
+  return { video: v, tex, src, usos: 0 };
+}
+
+/** Pega o vídeo compartilhado, criando-o na primeira vez. */
+function pegarTelao(src: string): TelaoCompartilhado | null {
+  if (typeof document === 'undefined') return null;
+  // Fonte diferente da que já toca: quem manda é a primeira: os telões mostram
+  // a mesma coisa por definição, e duas fontes seriam duas verdades. O dia em
+  // que o telão precisar TROCAR de conteúdo, quem troca é a fonte de todos.
+  if (!telao) telao = criarTelao(src);
+  telao.usos += 1;
+  if (telao.usos === 1 && !document.hidden) void telao.video.play().catch(() => undefined);
+  return telao;
+}
+
+/** Solta um uso. Sem ninguém olhando, o vídeo pausa — mas não morre. */
+function soltarTelao(): void {
+  if (!telao) return;
+  telao.usos = Math.max(0, telao.usos - 1);
+  if (telao.usos === 0) telao.video.pause();
+}
+
 /** A framed LED wall with its own animation clock. */
 export class VideoWall {
   readonly group = new THREE.Group();
   private mat: THREE.ShaderMaterial;
   private geos: THREE.BufferGeometry[] = [];
-  private video: HTMLVideoElement | null = null;
-  private videoTex: THREE.VideoTexture | null = null;
+  private usaTelao = false;
   private solto: Array<() => void> = [];
 
   constructor(lib: MatLib, opts: VideoWallOpts) {
@@ -194,62 +301,36 @@ export class VideoWall {
     this.group.add(frameMesh);
     this.geos.push(frame);
 
-    if (opts.video) this.playVideo(opts.video, W, H);
+    if (opts.video) this.attachVideo(opts.video, W, H);
   }
 
   /**
-   * Põe um arquivo no painel: em laço, mudo, e sem nunca virar caminho crítico.
+   * Liga este painel ao vídeo COMPARTILHADO do jogo (ver `telao` acima).
    *
-   * ## Mudo não é uma propriedade, é a condição de tocar
+   * O painel não cria nem possui vídeo nenhum: ele pega a textura que já
+   * existe, mede o próprio retângulo e devolve o uso quando morre. É o que faz
+   * quatro telas na arena mostrarem o mesmo quadro sem combinarem nada.
    *
-   * Nenhum navegador deixa um vídeo com som começar sozinho — a política de
-   * autoplay existe justamente contra isso. `muted` mais `playsInline` é o que
-   * torna o autoplay permitido, e é por isso que os dois são escritos ANTES do
-   * `src`: definidos depois, o Safari já decidiu que o elemento tem áudio e
-   * recusa a reprodução. (`defaultMuted` é o que fixa o atributo no HTML, e não
-   * só a propriedade — a mesma armadilha, do outro lado.)
-   *
-   * ## E mesmo assim o `play()` pode ser recusado
-   *
-   * Alguns navegadores (e a "economia de dados" de outros) bloqueiam até o
-   * autoplay mudo. A recuperação é um gesto do jogador: o primeiro clique ou
-   * tecla na página tenta de novo, uma vez. Sem isso o telão ficaria parado no
-   * primeiro quadro em uma fatia real dos aparelhos.
+   * O `uHasVideo` só vira 1 quando há quadro pronto. Arquivo ausente, formato
+   * recusado ou autoplay barrado deixam o painel como sempre foi — uma cena
+   * cujo telão é um retângulo preto seria pior do que uma sem vídeo.
    */
-  private playVideo(src: string, W: number, H: number): void {
-    if (typeof document === 'undefined') return;
-    const v = document.createElement('video');
-    // A ordem importa: mudo e inline ANTES da fonte (ver o comentário acima).
-    v.muted = true;
-    v.defaultMuted = true;
-    v.playsInline = true;
-    v.loop = true;
-    v.autoplay = true;
-    v.preload = 'auto';
-    v.src = src;
-    this.video = v;
-
-    const tex = new THREE.VideoTexture(v);
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    // Sem mipmaps: o quadro muda toda hora e gerar a pirâmide a cada quadro é
-    // caro para uma superfície que se olha de frente.
-    tex.generateMipmaps = false;
-    this.videoTex = tex;
-    this.mat.uniforms.uVideo.value = tex;
-
-    const tentar = () => { void v.play().catch(() => undefined); };
+  private attachVideo(src: string, W: number, H: number): void {
+    const compartilhado = pegarTelao(src);
+    if (!compartilhado) return;
+    this.usaTelao = true;
+    const v = compartilhado.video;
+    this.mat.uniforms.uVideo.value = compartilhado.tex;
 
     /**
-     * O retângulo do vídeo dentro do painel, por CONTER e nunca por cortar.
+     * O retângulo do vídeo DENTRO deste painel, por conter e nunca por cortar.
      *
-     * O telão da praça é deitado (13,5 × 7,4) e o arquivo pode ser vertical.
-     * Preencher cortaria o vídeo pelos lados — num vídeo vertical, isso corta
-     * exatamente o meio, que é onde está tudo. Contido, sobra onda de LED dos
-     * dois lados e o painel lê como um telão de palco mostrando um celular.
+     * É a única parte que não pode ser compartilhada: a praça é 13,5 × 7,4, a
+     * TV do apartamento é 1,9 × 1,06 e a arena tem telas de proporções
+     * diferentes entre si. O mesmo filme cabe em cada uma de um jeito.
      *
-     * O aspecto vem do ARQUIVO (`videoWidth/videoHeight`), nunca presumido:
-     * trocar o vídeo por um deitado passa a preencher o painel sozinho.
+     * O aspecto vem do ARQUIVO, nunca presumido: trocar por um vídeo deitado
+     * passa a preencher os painéis deitados sozinho.
      */
     const encaixar = () => {
       if (!v.videoWidth || !v.videoHeight) return;
@@ -263,44 +344,23 @@ export class VideoWall {
     const pronto = () => {
       if (v.readyState < 2) return;
       encaixar();
-      // Só agora o shader passa a amostrar. Antes disto o painel desenharia um
-      // retângulo preto — pior do que não ter vídeo nenhum.
       this.mat.uniforms.uHasVideo.value = 1;
     };
 
-    const ouvir = (alvo: EventTarget, evento: string, fn: () => void) => {
-      alvo.addEventListener(evento, fn);
-      this.solto.push(() => alvo.removeEventListener(evento, fn));
+    const ouvir = (evento: string, fn: () => void) => {
+      v.addEventListener(evento, fn);
+      this.solto.push(() => v.removeEventListener(evento, fn));
     };
 
-    ouvir(v, 'loadedmetadata', encaixar);
-    ouvir(v, 'loadeddata', pronto);
-    ouvir(v, 'canplay', () => { pronto(); tentar(); });
-    // Arquivo ausente ou formato recusado: o telão volta a ser o de sempre, sem
-    // barulho no console do jogador.
-    ouvir(v, 'error', () => { this.mat.uniforms.uHasVideo.value = 0; });
+    ouvir('loadedmetadata', encaixar);
+    ouvir('loadeddata', pronto);
+    ouvir('canplay', pronto);
+    ouvir('error', () => { this.mat.uniforms.uHasVideo.value = 0; });
 
-    // Aba escondida: parar de decodificar. Um vídeo rodando numa aba de fundo
-    // é CPU gasta em quadros que ninguém vê — e num telefone é bateria.
-    ouvir(document, 'visibilitychange', () => {
-      if (document.hidden) v.pause();
-      else tentar();
-    });
-
-    // O gesto de recuperação, uma vez só.
-    const noGesto = () => {
-      tentar();
-      window.removeEventListener('pointerdown', noGesto);
-      window.removeEventListener('keydown', noGesto);
-    };
-    window.addEventListener('pointerdown', noGesto);
-    window.addEventListener('keydown', noGesto);
-    this.solto.push(() => {
-      window.removeEventListener('pointerdown', noGesto);
-      window.removeEventListener('keydown', noGesto);
-    });
-
-    tentar();
+    // O elemento pode já estar tocando (outro painel o ligou antes, ou a cena
+    // anterior): nesse caso nenhum evento vai chegar, e sem esta linha o
+    // segundo telão do jogo ficaria para sempre sem vídeo.
+    pronto();
   }
 
   update(dt: number) { this.mat.uniforms.uTime.value += dt; }
@@ -308,17 +368,14 @@ export class VideoWall {
   dispose() {
     for (const off of this.solto) off();
     this.solto = [];
-    if (this.video) {
-      this.video.pause();
-      // Esvaziar a fonte e recarregar é o que solta o decodificador. Só soltar
-      // a referência deixa o elemento vivo baixando o arquivo até o coletor
-      // passar — e trocar de cena é exatamente quando isso mais custa.
-      this.video.removeAttribute('src');
-      this.video.load();
-      this.video = null;
+    // A textura e o elemento são compartilhados: este painel devolve o USO, não
+    // destrói nada. Dispor a textura aqui apagaria o vídeo dos outros telões da
+    // cena — e o da cena seguinte.
+    if (this.usaTelao) {
+      soltarTelao();
+      this.usaTelao = false;
     }
-    this.videoTex?.dispose();
-    this.videoTex = null;
+    this.mat.uniforms.uVideo.value = null;
     this.mat.dispose();
     for (const g of this.geos) g.dispose();
   }

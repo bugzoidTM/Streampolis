@@ -212,13 +212,35 @@ export const PLAZA = {
     { x: Math.cos(2.35) * 27.6, z: Math.sin(2.35) * 27.6, ry: -2.35 + Math.PI, width: 3.2, depth: 2.6 },
   ],
 
-  /** Three canopy variants interleaved so the tree line is not one stamp. */
+  /**
+   * Three canopy variants interleaved so the tree line is not one stamp.
+   *
+   * ## A clareira na frente do telão
+   *
+   * As árvores nascem num anel de raio 32–35 e o telão está em `(0, -34)` —
+   * ou seja, DENTRO do anel. Uma delas caía bem na frente do painel e tapava
+   * o vídeo.
+   *
+   * Apagar aquela árvore à mão não resolveria nada por muito tempo: elas são
+   * geradas, e mudar a contagem de 44 para 45 poria outra no mesmo lugar. O
+   * que se abre aqui é uma CLAREIRA — a fatia do anel na direção do telão fica
+   * vazia, e continua vazia mesmo que a fórmula mude.
+   *
+   * A janela é a largura angular do painel (13,5 m a 34 m de distância dão
+   * ±0,20 rad) mais uma folga para quem olha de lado. Praça com telão tem
+   * praça na frente dele; é assim em qualquer praça de verdade.
+   */
   trees: Array.from({ length: 44 }, (_, i) => {
     const variant = i % 3;
     const a = (i / 44) * TAU + variant * 0.037;
     const r = 32 + ((i * 7) % 11) * 0.3;
-    return { x: Math.cos(a) * r, z: Math.sin(a) * r, ry: (i * 1.37) % TAU, s: 0.92 + ((i * 5) % 7) * 0.043, variant };
-  }) as Placement[],
+    return { x: Math.cos(a) * r, z: Math.sin(a) * r, ry: (i * 1.37) % TAU, s: 0.92 + ((i * 5) % 7) * 0.043, variant, a };
+  }).filter(({ a }) => {
+    // Direção do telão vista do centro da praça: `atan2(-34, 0)`.
+    const alvo = Math.atan2(-34, 0);
+    const d = Math.abs(((a - alvo + Math.PI) % TAU + TAU) % TAU - Math.PI);
+    return d > 0.34;
+  }).map(({ a, ...arvore }) => arvore) as Placement[],
 
   shrubs: Array.from({ length: 36 }, (_, i) => {
     const a = (i / 36) * TAU + 0.7;
@@ -668,6 +690,22 @@ export const NOIR = {
 
   /** O tambor aceso do beco — a fogueira é a segunda fonte de luz da cena. */
   barrel: { x: 5.4, z: -18.2 },
+
+  /**
+   * O telão do bairro, na fachada sul da avenida.
+   *
+   * Todo ambiente do jogo tem uma tela, e esta é a do Distrito Sombra. Ela é
+   * alta (base a 6 m) e presa na parede, não de chão: uma tela plantada na
+   * calçada numa rua de 18 m viraria obstáculo no meio do caminho, e o bairro
+   * é sobre atravessar.
+   *
+   * Fica num vão entre letreiros (os da fileira sul estão em x = -51, -37, 2,
+   * 26 e 52), de frente para quem anda na avenida. E é o único painel do jogo
+   * que a gradação vai desbotar: o `LOOK_NOIR` preserva só uma janela de
+   * matiz, então o vídeo aparece aqui em preto e branco com o vermelho vivo —
+   * o que é exatamente o que a cena faz com todo o resto.
+   */
+  screen: { x: 14, z: NOIR_STREET_HALF - 0.2, ry: Math.PI, width: 10, height: 5.6, base: 6.0 },
 
   /**
    * As PARADAS dos bicos (`gigs.ts`).

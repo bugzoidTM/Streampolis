@@ -90,6 +90,12 @@ const PORTOES = [
     cmd: 'node', argv: ['tools/run-check.mjs', `--api=${API}`, `--server=${WS}`, `--client=${CLIENT}`],
   },
   {
+    nome: 'telao-check', grupo: 'e2e', needs: ['api', 'ws', 'client'],
+    // Os telões (§6): um em cada ambiente, e todos com o MESMO quadro. A prova
+    // da sincronia é identidade de textura, não comparação de relógios.
+    cmd: 'node', argv: ['tools/telao-check.mjs', `--api=${API}`, `--client=${CLIENT}`],
+  },
+  {
     nome: 'events-check', grupo: 'e2e', needs: ['api'],
     // Eventos da cidade (§22/§28). Não precisa do game server: o que ele prova
     // é a APURAÇÃO — a única rotina do jogo que emite Credits sem ninguém

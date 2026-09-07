@@ -632,13 +632,43 @@ mais grossa que o corpo (raio 0,28) de propósito: grade fina "passa" por fresta
 que o jogador não atravessa, e um teste que aprova o que o jogo recusa é pior
 que nenhum teste.
 
-## O telão da praça
+## Os telões
 
-`PLAZA.screen` + `VideoWall` (`props/Screen.ts`). Ele pode tocar um arquivo em
-laço e mudo; hoje a fonte é uma constante de uma linha em `PlazaScene`
-(`TELAO`), e é ali que entra o dia em que existir uma regra de "o que passa e
-quando" (§6 quer o feed da cidade). O painel não decide fonte — só toca o que
-recebe.
+Todo ambiente do jogo tem um: praça, Distrito Sombra, saguão, loja, torre de
+agência, sala de live, apartamento (uma TV) e a arena (quatro telas). A fonte é
+`TELAO_SRC`, uma constante de uma linha em `props/Screen.ts`, e é ali que entra
+o dia em que existir uma regra de "o que passa e quando" (§6 quer o feed da
+cidade). O painel não decide fonte — só toca o que recebe.
+
+**Eles não estão sincronizados: eles são o mesmo quadro.** Existe UM elemento
+de vídeo e UMA textura para o jogo inteiro, e todos os painéis amostram ela.
+Dar um `<video>` a cada painel e mandar todos tocarem juntos não é sincronia, é
+uma corrida — cada elemento decodifica no seu ritmo, e duas telas lado a lado na
+arena mostrariam quadros diferentes do mesmo filme. Por construção não há o que
+dessincronizar, e o custo cai junto: a arena decodifica uma vez, não quatro.
+
+O elemento atravessa a troca de cena (só é pausado quando o último painel o
+solta), então quem sai da praça e entra na torre encontra o vídeo onde ele
+estava — que é o que "está passando a mesma coisa" quer dizer para quem
+atravessa uma porta. Por isso `VideoWall.dispose()` devolve o USO e nunca dispõe
+a textura: dispor apagaria o vídeo dos outros painéis da cena e o da seguinte.
+
+O que NÃO é compartilhado é o retângulo de encaixe: a praça é 13,5 × 7,4, a TV
+do apartamento é 1,9 × 1,06, e o mesmo filme cabe em cada uma de um jeito.
+
+`npm run telao:check` prova as duas exigências nos oito ambientes, e a prova da
+sincronia é IDENTIDADE de textura, não comparação de relógios — dois vídeos
+tocando "juntos" passariam num teste de tempo aproximado e ainda assim
+mostrariam quadros diferentes.
+
+### A clareira na frente do telão da praça
+
+As árvores da praça nascem num anel de raio 32–35 e o telão está em `(0, -34)`,
+ou seja DENTRO do anel: uma delas caía bem na frente do painel. Apagar aquela
+árvore à mão não resolveria — elas são geradas, e mudar a contagem poria outra
+no mesmo lugar. O que existe é uma CLAREIRA: a fatia do anel na direção do
+telão é filtrada fora (44 → 40 árvores), e continua vazia mesmo que a fórmula
+mude.
 
 Três decisões que não são gosto:
 

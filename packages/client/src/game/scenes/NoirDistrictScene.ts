@@ -10,6 +10,7 @@ import {
 import { backdropBlock, facadeBuilding } from '../props/Buildings.js';
 import { lampPost, litterBin } from '../props/Urban.js';
 import { neonSign } from '../props/Stage.js';
+import { TELAO_SRC, VideoWall } from '../props/Screen.js';
 import { AmbientCrowd } from '../AmbientCrowd.js';
 import { Rain } from '../fx/Rain.js';
 import { SceneBase } from './GameScene.js';
@@ -65,6 +66,7 @@ export class NoirDistrictScene extends SceneBase {
   override readonly maxBoom = 6.4;
 
   private crowd: AmbientCrowd | null = null;
+  private wall: VideoWall | null = null;
   private rain: Rain | null = null;
   /** Carimbos usados só como fonte de instanciação; liberados após o build. */
   private stamps: Prop[] = [];
@@ -84,6 +86,7 @@ export class NoirDistrictScene extends SceneBase {
     this.buildStreetFurniture();
     this.buildSigns(tier);
     this.buildAlley();
+    this.buildScreen();
     this.buildRain(tier);
 
     for (const s of SCENE_SPAWNS.noir_district) {
@@ -434,6 +437,33 @@ export class NoirDistrictScene extends SceneBase {
    * não lê como chuva — lê como sujeira na tela —, e a rua molhada continua
    * molhada sem ela: quem faz o chão brilhar é o material, não a gota.
    */
+  /**
+   * O telão do bairro (PRD §6): a mesma coisa que a praça está passando.
+   *
+   * Preso na fachada e alto, não de chão: uma tela plantada na calçada de uma
+   * rua de 18 m viraria obstáculo no meio do caminho, e este bairro é sobre
+   * atravessar. `freestanding: false` tira o mastro e as escoras justamente
+   * por isso.
+   *
+   * O ganho é o mais baixo do jogo. A cena inteira vive de preenchimento quase
+   * zero (ver `STREET_NIGHT`), e um painel de dez metros brilhando como o da
+   * praça acenderia a rua de um lado só — apagando o noir que os letreiros
+   * levaram três armadilhas para conseguir.
+   */
+  private buildScreen(): void {
+    const s = NOIR.screen;
+    const wall = new VideoWall(this.mats, {
+      width: s.width, height: s.height, base: s.base, freestanding: false,
+      colors: [0xff2d55, 0x2fd8ff], gain: 1.15,
+      video: TELAO_SRC,
+    });
+    wall.group.position.set(s.x, 0, s.z);
+    wall.group.rotation.y = s.ry;
+    this.add(wall.group);
+    this.own(wall);
+    this.wall = wall;
+  }
+
   private buildRain(tier: QualityTier): void {
     const gotas = tier === 'high' ? 3000 : tier === 'medium' ? 1400 : 0;
     if (gotas === 0) return;
@@ -451,6 +481,7 @@ export class NoirDistrictScene extends SceneBase {
    * noturna parecer uma maquete — o que se lembra de um néon é ele oscilando.
    */
   override update(dt: number, camera: THREE.Camera): void {
+    this.wall?.update(dt);
     super.update(dt, camera);
     this.crowd?.update(dt);
     this.rain?.update(dt, camera);

@@ -9,7 +9,7 @@ import type { InteriorParams } from '../Environment.js';
 import { bakeProps, disposeProp, singleProp, xform, type Prop } from '../props/Geometry.js';
 import type { MatLib } from '../props/Materials.js';
 import { buildRoomShell, type ShellStyle } from '../props/Room.js';
-import { VideoWall } from '../props/Screen.js';
+import { TELAO_SRC, VideoWall } from '../props/Screen.js';
 import {
   armchair, bed, ceilingLamp, coffeeTable, desk, deskChair, deskGear, floorLamp,
   kitchenette, ledStrip, micBoom, monitor, pcTower, potPlant, rug, shelf, sofa,
@@ -296,6 +296,10 @@ export class InteriorScene extends SceneBase {
           // takes the whole frame with it once the bloom pass sees it.
           colors: [f.color ?? a, b], gain: f.kind === 'tv' ? 1.05 : 1.35,
           bars: f.kind !== 'tv',
+          // A MESMA fonte da praça, e o mesmo elemento de vídeo: as quatro
+          // telas da arena não tocam quatro cópias combinadas — elas amostram
+          // a mesma textura, então mostram o mesmo quadro por construção.
+          video: TELAO_SRC,
         });
         wall.group.position.set(f.x, 0, f.z);
         wall.group.rotation.y = f.ry ?? 0;
