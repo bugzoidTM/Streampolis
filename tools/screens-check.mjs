@@ -75,6 +75,32 @@ await page.waitForSelector('.feed__grid .card', { timeout: 20_000 }).catch(() =>
 await page.waitForFunction(() => document.querySelector('.card__poster') !== null, { timeout: 30_000 })
   .then(() => check('o card mostra o avatar do host renderizado em 3D', true))
   .catch(() => check('o card mostra o avatar do host renderizado em 3D', false));
+/**
+ * A faixa de evento (PRD §22) mora no topo do feed, e ela é CONDICIONAL: só
+ * existe enquanto houver evento no ar. Por isso o teste não é "a faixa está
+ * lá" — é "a faixa concorda com a API". Uma faixa que some com evento
+ * correndo e uma faixa que fica com o quadro vazio são o mesmo defeito visto
+ * de dois lados, e nenhum dos dois aparece num teste de API.
+ */
+const quadro = await (await fetch(`${API}/events`)).json();
+const noAr = (quadro.running ?? []).length > 0;
+const faixa = await page.locator('.evtbanner').count();
+check(
+  noAr ? 'com evento no ar, a faixa aparece no feed' : 'sem evento no ar, o feed não reserva lugar',
+  noAr ? faixa === 1 : faixa === 0,
+  `${(quadro.running ?? []).length} no ar, ${faixa} faixa(s)`,
+);
+if (noAr) {
+  await page.locator('.evtbanner').click();
+  await page.waitForSelector('.evt__card', { timeout: 20_000 })
+    .then(() => check('a faixa leva para a tela de eventos', true))
+    .catch(() => check('a faixa leva para a tela de eventos', false));
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${dir}/eventos.png` });
+  await page.getByRole('button', { name: 'Lives' }).click();
+  await page.waitForSelector('.feed__grid', { timeout: 20_000 }).catch(() => {});
+}
+
 await page.waitForTimeout(600);
 await page.screenshot({ path: `${dir}/feed.png` });
 

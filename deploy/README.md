@@ -275,6 +275,26 @@ nos dois modos.
 npm run agency:check
 ```
 
+### events-check (eventos da cidade)
+
+Eventos (PRD §22/§28) são a única rotina do jogo que **emite Credits sem ninguém
+pedir**: a apuração paga sozinha, para várias pessoas, num instante em que
+talvez ninguém esteja olhando. O portão cria um evento de verdade com janela de
+seis segundos, produz os fatos que ele mede (seguidores novos), espera o relógio
+virar e confere o banco pela API — inclusive **apurando duas vezes de propósito**,
+que é a prova de que a idempotência do ledger segura o pódio.
+
+Também prova o que separa um evento de uma tabela com prêmio: o placar vivo bate
+com o pódio pago, quem não é da equipe não cria evento, janela que colide na
+mesma métrica é recusada, e subir no pódio mexe na fama (a oitava fonte do §22).
+
+```bash
+npm run events:check
+```
+
+Criar evento é rota de equipe, então contra a produção ele precisa de
+`STAFF_PASSWORD` — como o `admin-check`. Não precisa do game server.
+
 ### release-check (o que se roda antes de publicar a beta)
 
 Duas contas novas, criadas pelo formulário, fazendo a volta inteira: cadastro,

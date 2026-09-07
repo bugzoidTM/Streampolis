@@ -46,6 +46,7 @@ export const FLAGS_EM_USO: ReadonlySet<string> = new Set([
   'real_payments',
   'agencies_enabled',
   'pk_enabled',
+  'events_enabled',
 ]);
 
 const CACHE_MS = 15_000;

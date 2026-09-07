@@ -43,6 +43,8 @@ export interface FameParts {
   pkWins: number;
   pkMatches: number;
   missions: number;
+  /** Pódios em eventos da cidade (§22). Colocações, não pontuação. */
+  eventPodiums: number;
   creatorPoints: number;
   /** Dias distintos com interação social — a parcela que não se compra. */
   activeDays: number;
@@ -62,6 +64,17 @@ export const FAME_WEIGHTS = {
   pkWin: 25,
   pkMatch: 10,
   mission: 15,
+  /**
+   * Por PÓDIO em evento, não por ponto marcado nele.
+   *
+   * A diferença é a regra em negrito do §22 aplicada a uma feature nova. Um
+   * evento de "presentes recebidos" mede, no fundo, dinheiro que outra pessoa
+   * gastou; se a fama viesse da pontuação, bastaria um presenteador rico numa
+   * semana para comprar um lugar no ranking de notoriedade. Vindo da
+   * COLOCAÇÃO, o teto de um evento é um pódio — e um pódio vale menos do que
+   * um dia de presença.
+   */
+  eventPodium: 20,
   /**
    * Por √(Creator Points): 10 mil pontos → 100 → 800 de fama.
    *
@@ -90,12 +103,13 @@ export function fameFrom(parts: FameParts): number {
     + w.pkWin * Math.max(0, parts.pkWins)
     + w.pkMatch * Math.max(0, parts.pkMatches)
     + w.mission * Math.max(0, parts.missions)
+    + w.eventPodium * Math.max(0, parts.eventPodiums)
     + w.creatorPointRoot * Math.sqrt(Math.max(0, parts.creatorPoints))
     + w.activeDay * Math.max(0, parts.activeDays);
   return Math.round(total);
 }
 
-/** De onde vem cada parcela. Uma consulta só — são sete tabelas. */
+/** De onde vem cada parcela. Uma consulta só — são oito tabelas. */
 async function partsOf(userId: string): Promise<FameParts> {
   const { rows } = await pool.query(
     `SELECT
@@ -105,6 +119,7 @@ async function partsOf(userId: string): Promise<FameParts> {
        (SELECT count(*) FROM pk_matches WHERE winner_id = $1) AS pk_wins,
        (SELECT count(*) FROM pk_matches WHERE host_a = $1 OR host_b = $1) AS pk_matches,
        (SELECT count(*) FROM mission_claims WHERE user_id = $1) AS missions,
+       (SELECT count(*) FROM event_awards WHERE user_id = $1) AS event_podiums,
        (SELECT coalesce(creator_points, 0) FROM player_stats WHERE user_id = $1) AS creator_points,
        (SELECT count(DISTINCT day) FROM social_activity WHERE user_id = $1) AS active_days`,
     [userId],
@@ -117,6 +132,7 @@ async function partsOf(userId: string): Promise<FameParts> {
     pkWins: Number(r.pk_wins ?? 0),
     pkMatches: Number(r.pk_matches ?? 0),
     missions: Number(r.missions ?? 0),
+    eventPodiums: Number(r.event_podiums ?? 0),
     creatorPoints: Number(r.creator_points ?? 0),
     activeDays: Number(r.active_days ?? 0),
   };
@@ -141,6 +157,7 @@ export async function fameOf(userId: string): Promise<FameView> {
       lives: w.live * parts.lives,
       pk: w.pkWin * parts.pkWins + w.pkMatch * parts.pkMatches,
       missoes: w.mission * parts.missions,
+      eventos: w.eventPodium * parts.eventPodiums,
       creatorPoints: Math.round(w.creatorPointRoot * Math.sqrt(parts.creatorPoints)),
       consistencia: w.activeDay * parts.activeDays,
     },

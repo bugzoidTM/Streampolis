@@ -80,6 +80,15 @@ const PORTOES = [
     env: ALVO_LOCAL ? [] : ['API_SERVICE_TOKEN'],
     cmd: 'node', argv: ['tools/gigs-check.mjs', `--api=${API}`, `--server=${WS}`],
   },
+  {
+    nome: 'events-check', grupo: 'e2e', needs: ['api'],
+    // Eventos da cidade (§22/§28). Não precisa do game server: o que ele prova
+    // é a APURAÇÃO — a única rotina do jogo que emite Credits sem ninguém
+    // pedir. Criar evento é rota de equipe, e a senha da produção não é a do
+    // seed.
+    env: ALVO_LOCAL ? [] : ['STAFF_PASSWORD'],
+    cmd: 'node', argv: ['tools/events-check.mjs', `--api=${API}`],
+  },
 ];
 
 async function noAr(url, ms = 4_000) {

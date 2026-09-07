@@ -10,7 +10,7 @@ import { FAME_WEIGHTS, fameFrom, type FameParts } from '../src/profile/Fame.ts';
  */
 const zero: FameParts = {
   viewers: 0, followers: 0, lives: 0, pkWins: 0, pkMatches: 0,
-  missions: 0, creatorPoints: 0, activeDays: 0,
+  missions: 0, eventPodiums: 0, creatorPoints: 0, activeDays: 0,
 };
 
 describe('fama (PRD §22)', () => {
@@ -45,9 +45,25 @@ describe('fama (PRD §22)', () => {
   });
 
   it('cada fonte do §22 soma alguma coisa', () => {
-    for (const campo of ['viewers', 'followers', 'lives', 'pkWins', 'pkMatches', 'missions', 'activeDays'] as const) {
+    for (const campo of ['viewers', 'followers', 'lives', 'pkWins', 'pkMatches',
+      'missions', 'eventPodiums', 'activeDays'] as const) {
       assert.ok(fameFrom({ ...zero, [campo]: 1 }) > 0, `${campo} não somou nada`);
     }
+  });
+
+  /**
+   * O §22 lista eventos entre as fontes, e um evento pode medir presentes
+   * recebidos — ou seja, dinheiro de terceiros. Se a fama de evento viesse da
+   * PONTUAÇÃO, a regra em negrito estaria furada por uma porta lateral. Vindo
+   * da colocação, o teto de um evento é um pódio, e é isto que este teste
+   * amarra: dez pódios ainda perdem para um mês de presença.
+   */
+  it('pódio em evento vale menos do que aparecer — o evento não é atalho', () => {
+    const dezPodios = fameFrom({ ...zero, eventPodiums: 10 });
+    const umMes = fameFrom({ ...zero, activeDays: 30 });
+    assert.ok(dezPodios > 0, 'pódio precisa somar alguma coisa');
+    assert.ok(umMes > dezPodios,
+      `presença (${umMes}) deveria passar de dez pódios (${dezPodios})`);
   });
 
   it('número negativo (dado sujo) não vira fama negativa', () => {

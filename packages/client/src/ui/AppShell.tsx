@@ -13,6 +13,7 @@ import { FeedView } from './FeedView.js';
 import { ProfileView } from './ProfileView.js';
 import { StoreView } from './StoreView.js';
 import { RankingsView } from './RankingsView.js';
+import { EventsView } from './EventsView.js';
 import { AvatarView } from './AvatarView.js';
 import { IconBag, IconClose, IconFlame, IconPlus, IconUser } from './Icons.js';
 import { Button } from './primitives/Controls.js';
@@ -30,7 +31,7 @@ import './screens.css';
  * viagem. Um card do feed navega; a aba Loja não.
  */
 
-type Tab = 'world' | 'feed' | 'store' | 'profile' | 'look' | 'rankings' | 'friends';
+type Tab = 'world' | 'feed' | 'store' | 'profile' | 'look' | 'rankings' | 'friends' | 'events';
 
 export interface AppShellProps {
   intent: WorldIntent;
@@ -214,6 +215,7 @@ export function AppShell(props: AppShellProps) {
           onOpenProfile={(id) => openProfile(id)}
           onGoLive={() => setGoLiveOpen(true)}
           onOpenRankings={() => setTab('rankings')}
+          onOpenEvents={() => setTab('events')}
         />
       )}
 
@@ -224,6 +226,15 @@ export function AppShell(props: AppShellProps) {
           é o feed. */}
       {tab === 'rankings' && (
         <RankingsView onOpenProfile={openProfile} onClose={() => setTab('feed')} />
+      )}
+
+      {/* Eventos também não é aba do rodapé, e por um motivo mais forte do que
+          a falta de espaço: um evento tem PRAZO. A porta dele é a faixa no topo
+          do feed, que só existe enquanto houver um no ar — um ícone permanente
+          para uma coisa temporária levaria a uma tela vazia na maior parte do
+          ano. */}
+      {tab === 'events' && (
+        <EventsView onOpenProfile={openProfile} onClose={() => setTab('feed')} />
       )}
 
       {/* O criador não é uma aba do rodapé: chega-se a ele pelo perfil, que é

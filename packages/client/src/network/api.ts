@@ -254,6 +254,49 @@ export interface GigBoard {
   active: GigRun | null;
 }
 
+// ------------------------------------------------------------- eventos ---
+
+export type EventPhase = 'upcoming' | 'running' | 'settled' | 'cancelled';
+
+export interface EventStanding {
+  rank: number;
+  userId: string;
+  displayName: string;
+  score: number;
+  /** Quanto esta colocação paga. Projeção enquanto corre; fato depois. */
+  credits: number;
+  awarded: boolean;
+}
+
+export interface CityEvent {
+  id: string;
+  slug: string;
+  title: string;
+  flavor: string;
+  metric: string;
+  metricLabel: string;
+  unit: string;
+  hint: string;
+  scene: string | null;
+  startsAt: string;
+  endsAt: string;
+  podium: number[];
+  minScore: number;
+  phase: EventPhase;
+  /** Do servidor, no instante da resposta. A tela desconta o próprio relógio. */
+  msLeft: number;
+  standings: EventStanding[];
+  you: EventStanding | null;
+  participants: number;
+}
+
+export interface EventsBoard {
+  running: CityEvent[];
+  upcoming: CityEvent[];
+  recent: CityEvent[];
+  pendingCredits: number;
+}
+
 export type AgencyRole = 'owner' | 'manager' | 'member';
 
 export interface AgencyMember {
@@ -517,6 +560,22 @@ export class ApiClient {
 
   abandonGig(): Promise<{ abandoned: boolean }> {
     return this.call('/me/gigs', { method: 'DELETE' });
+  }
+
+  // --------------------------------------------------------------- eventos ---
+
+  /**
+   * O quadro de eventos (PRD §22/§28).
+   *
+   * Sem token também responde — o servidor devolve o mesmo quadro sem a linha
+   * "você". É o que permite a tela existir antes de a sessão abrir.
+   */
+  events(): Promise<EventsBoard> {
+    return this.call('/events');
+  }
+
+  event(slug: string): Promise<CityEvent> {
+    return this.call(`/events/${encodeURIComponent(slug)}`);
   }
 
   // -------------------------------------------------------------- agências ---

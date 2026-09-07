@@ -57,6 +57,10 @@ import {
   flagsSnapshot, isEnabled, listFlags, setFlag,
 } from './platform/FeatureFlags.ts';
 import { abandonGig, acceptGig, gigBoard, reachCheckpoint } from './work/Gigs.ts';
+import {
+  EVENT_METRICS, cancelEvent, createEvent, eventBySlug, eventsBoard, isEventMetric,
+  listEventsForAdmin, settleEvent,
+} from './world/CityEvents.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
 import { secureHeaders } from './http/middleware/secureHeaders.ts';
@@ -1175,6 +1179,73 @@ app.put('/admin/flags/:key', ...staff, async (req: AuthedRequest, res, next) => 
   } catch (err) { next(err); }
 });
 
+/**
+ * Eventos, do lado de quem administra (PRD §28: "conteúdo: [...] eventos").
+ *
+ * Criar é a única rota de admin que EMITE Credits sem um jogador do outro lado
+ * pedindo — por isso vai para o `audit_log` com o pódio inteiro dentro. Um
+ * evento de dez mil Credits criado às três da manhã precisa ter nome e hora.
+ */
+app.get('/admin/events', ...staff, async (_req: AuthedRequest, res, next) => {
+  try {
+    res.json({ events: await listEventsForAdmin() });
+  } catch (err) { next(err); }
+});
+
+const eventSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,48}$/),
+  title: z.string().trim().min(3).max(60),
+  flavor: z.string().max(200).optional(),
+  metric: z.string().refine(isEventMetric, 'métrica desconhecida'),
+  scene: z.string().max(40).nullable().optional(),
+  startsAt: z.coerce.date(),
+  endsAt: z.coerce.date(),
+  podium: z.array(z.number().int().min(0).max(20_000)).min(1).max(20),
+  minScore: z.number().int().min(1).max(1_000_000).optional(),
+});
+
+app.post('/admin/events', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const input = eventSchema.parse(req.body);
+    const event = await createEvent(input, req.userId as string);
+    await audit({
+      actor: actorOf(req), action: 'event.create', targetType: 'event', targetId: event.id,
+      metadata: { slug: event.slug, metric: event.metric, podium: event.podium },
+    });
+    res.status(201).json({ event });
+  } catch (err) { next(err); }
+});
+
+app.post('/admin/events/:id/cancel', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const id = param(req.params.id);
+    await cancelEvent(id);
+    await audit({ actor: actorOf(req), action: 'event.cancel', targetType: 'event', targetId: id });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+/**
+ * Apurar agora.
+ *
+ * A apuração normal pega carona em quem abre o quadro, e isso basta para um
+ * mundo com gente dentro. Este botão existe para o mundo sem gente dentro:
+ * evento fechou de madrugada, ninguém abriu a tela, e o operador quer o pódio
+ * pago antes de anunciar o resultado. Não força nada — só chama a mesma
+ * apuração reentrante, que recusa evento que ainda não venceu.
+ */
+app.post('/admin/events/:id/settle', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const id = param(req.params.id);
+    const result = await settleEvent(id);
+    await audit({
+      actor: actorOf(req), action: 'event.settle', targetType: 'event', targetId: id,
+      metadata: { awarded: result?.awarded ?? 0, credits: result?.credits ?? 0 },
+    });
+    res.json({ settled: result });
+  } catch (err) { next(err); }
+});
+
 app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
   try {
     res.json({
@@ -1279,6 +1350,37 @@ app.post('/me/gigs', rateLimit('economy'), requireUser, async (req: AuthedReques
 app.delete('/me/gigs', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
   try {
     res.json(await abandonGig(req.userId as string));
+  } catch (err) { next(err); }
+});
+
+// -------------------------------------------------------------- eventos ---
+
+/**
+ * Eventos da cidade (PRD §22/§28).
+ *
+ * `optionalUser` e não `requireUser`: o quadro de eventos é vitrine. Quem ainda
+ * não entrou consegue ver o que está acontecendo na cidade — e é justamente
+ * isso que faz um evento servir de convite. Com sessão, a mesma resposta ganha
+ * a linha "onde VOCÊ está".
+ */
+app.get('/events', optionalUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await eventsBoard(req.userId ?? null));
+  } catch (err) { next(err); }
+});
+
+/** As métricas possíveis. Serve o formulário do painel, e só ele. */
+app.get('/events/metrics', ...staff, async (_req: AuthedRequest, res) => {
+  res.json({
+    metrics: EVENT_METRICS.map((m) => ({
+      id: m.id, label: m.label, unit: m.unit, hint: m.hint,
+    })),
+  });
+});
+
+app.get('/events/:slug', optionalUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await eventBySlug(param(req.params.slug), req.userId ?? null));
   } catch (err) { next(err); }
 });
 

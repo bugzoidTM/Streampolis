@@ -6,6 +6,7 @@ import { short, since } from '../state/format.js';
 import { usePoster } from './usePoster.js';
 import { Button, LiveDot, Segmented } from './primitives/Controls.js';
 import { IconEye, IconHeartFilled, IconSwords, IconUser } from './Icons.js';
+import { EventBanner } from './EventBanner.js';
 
 /**
  * Feed (PRD §11).
@@ -29,9 +30,13 @@ export interface FeedViewProps {
   /** O placar (PRD §23) mora aqui: descobrir quem está ao vivo e descobrir
    *  quem está ganhando são a mesma vontade. */
   onOpenRankings: () => void;
+  /** A faixa de evento leva para cá. Só aparece quando há evento no ar. */
+  onOpenEvents: () => void;
 }
 
-export function FeedView({ onWatch, onOpenProfile, onGoLive, onOpenRankings }: FeedViewProps) {
+export function FeedView(
+  { onWatch, onOpenProfile, onGoLive, onOpenRankings, onOpenEvents }: FeedViewProps,
+) {
   const lives = useAccountStore((s) => s.lives);
   const status = useAccountStore((s) => s.livesState);
   const following = useAccountStore((s) => s.following);
@@ -58,6 +63,11 @@ export function FeedView({ onWatch, onOpenProfile, onGoLive, onOpenRankings }: F
           <Button variant="live" onClick={onGoLive}>Abrir live</Button>
         </div>
       </header>
+
+      {/* Acima do filtro e abaixo do cabeçalho: um evento com prazo compete
+          com as lives por atenção, e perder essa competição é o desenho certo —
+          a live é o produto. Ela some sozinha quando não há evento no ar. */}
+      <EventBanner onOpen={onOpenEvents} />
 
       <Segmented
         value={filter}

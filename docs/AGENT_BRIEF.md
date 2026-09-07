@@ -622,6 +622,72 @@ de ser CRESCENTE. O servidor descarta `seq` menor ou igual ao último aceito
 (`stale_seq`), então um número aleatório por envio congela o corpo no primeiro
 sorteio alto — o jogador anda um metro e meio e para.
 
+## Eventos da cidade: o placar que ninguém anota
+
+PRD §22 e §28. "Eventos" aparece sete vezes no PRD e nunca teve seção própria —
+é fonte de fama, é conteúdo que o admin administra, é o que a Arena sedia, é o
+que agências disputam. Um evento aqui é a menor coisa que atende todas essas
+frases: **uma janela de tempo, uma métrica e um pódio**.
+
+A decisão que organiza a feature inteira: **não existe contador**. Nenhuma
+tabela de pontuação, nenhum incremento quando alguém presenteia ou entrega um
+bico. Cada métrica de `api/src/world/CityEvents.ts` é um SELECT sobre os fatos
+que a cidade já registrava (`gift_events`, `stream_sessions`, `pk_matches`,
+`gig_runs`, `follows`), recortado pela janela. É a mesma escolha das missões e
+da fama, e paga três vezes:
+
+- um evento pode nascer com a janela JÁ correndo (ou fechada) e o placar sai
+  certo — ninguém perdeu ponto por ter jogado antes de alguém apertar "criar";
+- a API pode cair no meio do evento sem que nada se perca;
+- não existe a segunda verdade ("mandei o presente e o placar não subiu"),
+  porque não existe um segundo lugar onde o presente é anotado.
+
+Só o RESULTADO é gravado (`event_awards`), e aí sim congelado: um evento apurado
+não muda de vencedor porque alguém apagou a conta ou porque a fórmula mudou no
+mês seguinte.
+
+**Empate desempata por quem chegou primeiro àquele número** — cada métrica
+devolve `last_at`, o instante do último ato que contou, e o menor vence.
+Desempatar por id ou por conta mais antiga seria um sorteio disfarçado de regra.
+
+**Apuração é preguiçosa e reentrante.** Não há agendador na API (a fama usa o
+mesmo truque): quem abre `GET /events` dispara `settleDue`. Três travas em
+camadas, cada uma cobrindo a falha da anterior — `pg_try_advisory_xact_lock`
+contra duas apurações simultâneas, `ON CONFLICT DO NOTHING` no pódio contra
+uma queda depois de gravar, e a chave `event_<evento>_<pessoa>` do ledger contra
+pagar duas vezes. O `status` só vira `settled` no fim, e é isso que faz uma
+queda no meio ser recuperável. `POST /admin/events/:id/settle` chama a MESMA
+rotina — serve ao mundo sem gente dentro, não força nada.
+
+Duas coisas que parecem descuido e não são:
+
+- **não existe métrica de presentes DADOS.** Ela premiaria quem gastou mais
+  dinheiro real e o pódio da cidade viraria o extrato de quem tem o cartão
+  maior. Quem presenteia tem o §17;
+- **a fama de evento vem do PÓDIO, não da pontuação** (`FAME_WEIGHTS.eventPodium`,
+  a oitava fonte do §22). Um evento de "presentes recebidos" mede, no fundo,
+  dinheiro de terceiros; vindo da colocação, o teto de um evento é um pódio, e
+  um pódio vale menos que um dia de presença.
+
+A janela que se sobrepõe (dois eventos da mesma métrica ao mesmo tempo) é
+recusada em `createEvent`, não no banco: expressá-la em SQL pediria
+`EXCLUDE USING gist` e a extensão `btree_gist`, ou seja, superusuário no boot da
+migration. Está escrito na 0020 — e o dinheiro está protegido de qualquer forma
+pela chave de idempotência.
+
+Na tela: `EventBanner` no topo do feed (some sozinha quando não há evento no ar
+— um lugar permanentemente reservado para "nenhum evento" é pior que nenhum
+lugar) e `EventsView` atrás dela. Nada é calculado no navegador exceto o
+relógio, e ele é derivado do carimbo da resposta, não de um contador local.
+Eventos não é aba do rodapé por um motivo mais forte que a falta de espaço: um
+evento tem PRAZO, e um ícone permanente para uma coisa temporária levaria a uma
+tela vazia na maior parte do ano.
+
+`npm run events:check` cria um evento de verdade com janela de seis segundos,
+mexe nos fatos que ele mede, espera o relógio virar e confere o banco pela API —
+inclusive apurando duas vezes de propósito. A flag `events_enabled` (§64) para o
+PAGAMENTO, nunca a leitura.
+
 ## Animação: do estado na rede ao corpo na tela
 
 `state.anim` viajar não é o avatar se mexer. O caminho completo:
