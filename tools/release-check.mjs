@@ -599,6 +599,23 @@ async function main() {
   check('missão inexistente responde 404', inexistente.status === 404, `status=${inexistente.status}`);
 
 
+  step('13) Fama: a conta que o §22 exige que NÃO seja o extrato de ninguém');
+  const fama = (await api('/me/fame', { headers: asUser(A.token) })).body;
+  check('a fama responde com a conta aberta', typeof fama.fame === 'number' && Boolean(fama.breakdown),
+    JSON.stringify(fama).slice(0, 140));
+  check('quem transmitiu e apareceu tem fama > 0', fama.fame > 0, `fama=${fama.fame}`);
+  check('a consistência (dias em que apareceu) entrou na conta',
+    (fama.breakdown?.consistencia ?? 0) > 0, JSON.stringify(fama.breakdown));
+  check('a live entrou na conta', (fama.breakdown?.lives ?? 0) > 0, JSON.stringify(fama.breakdown));
+  check('o PK entrou na conta', (fama.breakdown?.pk ?? 0) > 0, JSON.stringify(fama.breakdown));
+  const somaPartes = Object.values(fama.breakdown ?? {}).reduce((a, b) => a + b, 0);
+  check('as parcelas somam o total (com folga de arredondamento)',
+    Math.abs(somaPartes - fama.fame) <= 1, `${somaPartes} vs ${fama.fame}`);
+
+  const perfilA = (await api(`/users/${A.userId}`, { headers: asUser(B.token) })).body.profile;
+  check('e o perfil público mostra a mesma fama', perfilA?.fame === fama.fame,
+    `perfil=${perfilA?.fame} vs /me/fame=${fama.fame}`);
+
   console.log(`\n${failures === 0 ? '✅' : '❌'} ${checks - failures}/${checks} verificações passaram.`);
   console.log(`   contas desta rodada: ${A.username} / ${B.username} (ficam no banco, por causa do extrato)`);
   for (const n of notes) console.log(`   · ${n}`);

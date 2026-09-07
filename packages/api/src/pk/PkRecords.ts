@@ -42,9 +42,6 @@ export interface PKResultRecord {
   resultKind: 'a' | 'b' | 'draw';
 }
 
-/** Fama por vitória de PK (PRD §22). Empate não distribui nada. */
-const FAME_PER_WIN = 250;
-
 function validate(input: PKResultInput): 'a' | 'b' | 'draw' {
   if (!input.battleId) throw new EconomyError('INVALID_AMOUNT', 'battleId ausente.', 400);
   if (input.hostA === input.hostB) {
@@ -130,9 +127,21 @@ export async function recordPKResult(input: PKResultInput): Promise<PKResultReco
     const matchId = rows[0].id;
 
     if (!input.draw) {
+      /**
+       * A fama do vencedor NÃO é somada aqui.
+       *
+       * Desde o §22 virar conta derivada (`profile/Fame.ts`), fama é o
+       * resultado de uma consulta sobre fatos — e a vitória de PK é um desses
+       * fatos, contada em `pk_matches`. Incrementar aqui somaria duas vezes até
+       * o próximo recálculo e seria apagado por ele em seguida: o pior dos dois
+       * mundos, um número que sobe e depois volta sozinho.
+       *
+       * Marcar a data como velha é o que basta: o próximo perfil aberto paga o
+       * recálculo, e a vitória entra por lá.
+       */
       await client.query(
-        `UPDATE player_stats SET fame = fame + $2, updated_at = now() WHERE user_id = $1`,
-        [input.winnerId, FAME_PER_WIN],
+        'UPDATE player_stats SET fame_updated_at = NULL, updated_at = now() WHERE user_id = $1',
+        [input.winnerId],
       );
     }
 

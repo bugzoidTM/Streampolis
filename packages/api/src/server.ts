@@ -19,6 +19,7 @@ import {
   optionalUser, requirePermission, requireService, requireUser, type AuthedRequest,
 } from './http/middleware/auth.ts';
 import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
+import { fameOf, refreshFame } from './profile/Fame.ts';
 import { getRanking, isBoard, isRange } from './social/Rankings.ts';
 import { presenceDirectory } from './social/PresenceDirectory.ts';
 import {
@@ -583,9 +584,16 @@ app.post('/payments/sandbox/:paymentId/confirm', rateLimit('economy'), requireUs
   } catch (err) { next(err); }
 });
 
+/**
+ * O perfil é o lugar onde a fama é OLHADA, então é onde ela é atualizada: quem
+ * abre um perfil com a fama velha paga o recálculo daquela pessoa, e de mais
+ * ninguém. É o que dá recálculo contínuo sem agendador (PRD §22).
+ */
 app.get('/users/:userId', optionalUser, async (req: AuthedRequest, res, next) => {
   try {
-    const profile = await getPublicProfile(param(req.params.userId), req.userId);
+    const alvo = param(req.params.userId);
+    await refreshFame(alvo);
+    const profile = await getPublicProfile(alvo, req.userId);
     if (!profile) {
       res.status(404).json({ error: 'not_found' });
       return;
@@ -1109,6 +1117,21 @@ app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
         action: typeof req.query.action === 'string' ? req.query.action : undefined,
       }),
     });
+  } catch (err) { next(err); }
+});
+
+/**
+ * De onde veio a minha fama (§22).
+ *
+ * Um número de notoriedade sem explicação é um mistério, e mistério em cima de
+ * ranking gera teoria da conspiração. Aqui o jogador vê a conta: quanto veio de
+ * plateia, de seguidores, de live, de PK, de missão, de presente e de ter
+ * aparecido.
+ */
+app.get('/me/fame', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    await refreshFame(req.userId as string, 0);
+    res.json(await fameOf(req.userId as string));
   } catch (err) { next(err); }
 });
 
