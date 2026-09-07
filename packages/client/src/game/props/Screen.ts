@@ -89,7 +89,11 @@ void main() {
     float dentro = d.x * d.y;
     if (dentro > 0.0) {
       vec2 vuv = (uv - uRect.xy) / max(uRect.zw - uRect.xy, vec2(1e-4));
-      vec3 quadro = texture2D(uVideo, vec2(vuv.x, 1.0 - vuv.y)).rgb;
+      // Sem inverter o V à mão: a VideoTexture do Three já nasce com flipY, e
+      // inverter de novo aqui punha o vídeo de cabeça para baixo. Dois flips
+      // são zero flips, e o defeito é invisível num vídeo abstrato — só
+      // aparece quando entra alguém em pé no quadro.
+      vec3 quadro = texture2D(uVideo, vuv).rgb;
       quadro = pow(quadro, vec3(2.2));
       // O ganho do vídeo é 1.0: ele não passa pelo uGain do painel. Um
       // filme multiplicado por 2 estoura no bloom e vira um borrão branco, que

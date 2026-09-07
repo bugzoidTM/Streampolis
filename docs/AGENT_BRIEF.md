@@ -666,6 +666,13 @@ H.264 720×1280 **sem faixa de áudio nenhuma** e falha se sobrar uma. Sem ela,
 um clone limpo constrói um telão sem vídeo e o painel volta ao LED em silêncio:
 bonito, e por isso mesmo difícil de notar que faltou alguma coisa.
 
+**Não inverta o V à mão.** A `VideoTexture` do Three já nasce com `flipY`;
+inverter de novo no shader são dois flips, ou seja zero — e o vídeo fica de
+cabeça para baixo. O defeito é invisível num vídeo abstrato e só aparece quando
+entra alguém em pé no quadro, que foi exatamente como ele sobreviveu a um commit
+inteiro. `npm run telao:shot` fotografa o painel enquadrado e imprime o estado
+do vídeo junto; use antes de dizer que está certo.
+
 **A armadilha que ele criou, e que vai pegar de novo:** um vídeo em laço é uma
 conexão de mídia que nunca fecha, e `waitUntil: 'networkidle'` do Playwright
 espera meio segundo sem NENHUMA conexão. Qualquer portão que abra a praça e
