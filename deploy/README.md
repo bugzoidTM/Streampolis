@@ -184,9 +184,18 @@ mesma coisa que portão que não existe:
 ```bash
 npm run gates                                  # tudo (contra o ambiente local)
 npm run gates -- --only=unit                   # só o que não precisa de servidor
-npm run gates -- --api=https://streampolis.nutef.com/api \
-                 --ws=wss://streampolis.nutef.com/ws/1   # contra a produção
+
+# contra a produção, da máquina: o release-check fica de fora porque ele precisa
+# do banco da stack, que não é alcançável do host (ver a seção dele)
+source /root/streampolis-deploy/.env
+STAFF_PASSWORD="$SP_STAFF_PASSWORD" npm run gates -- \
+  --api=https://streampolis.nutef.com/api \
+  --ws=wss://streampolis.nutef.com/ws/1 --skip=release
 ```
+
+Faltar variável de ambiente (a senha da equipe, o banco) faz o portão ser
+**pulado com o motivo escrito**, não falhar: portão vermelho porque quem rodou
+esqueceu de exportar uma senha é ruído que ensina a ignorar vermelho.
 
 Ele NÃO sobe servidor de propósito: o que se quer saber é se os portões passam
 contra o que está no ar. Sem API ou game server respondendo, os e2e que dependem

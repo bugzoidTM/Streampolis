@@ -29,6 +29,7 @@ import {
   ModerationError, blockUser, listBlocked, reportUser, unblockUser,
 } from './social/Moderation.ts';
 import { getOnboarding, markStep, observePresence } from './social/Onboarding.ts';
+import { claimMission, listMissions } from './social/Missions.ts';
 import {
   isSocialKind, markSocial, markSocialBatch, productMetrics, type SocialKind,
 } from './social/SocialActivity.ts';
@@ -1110,6 +1111,25 @@ app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
     });
   } catch (err) { next(err); }
 });
+
+// -------------------------------------------------------------- missões ---
+/**
+ * Missões (PRD §24). O progresso é derivado dos fatos que o sistema já
+ * registra — não existe contador para sair do lugar. O que se guarda é só se a
+ * recompensa foi paga.
+ */
+app.get('/me/missions', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await listMissions(req.userId as string));
+  } catch (err) { next(err); }
+});
+
+app.post('/me/missions/:missionId/claim', rateLimit('economy'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      res.json(await claimMission(req.userId as string, param(req.params.missionId).slice(0, 32)));
+    } catch (err) { next(err); }
+  });
 
 // ------------------------------------------------------------------ feed ---
 

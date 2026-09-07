@@ -43,13 +43,27 @@ const cor = (t, c) => `[${c}m${t}[0m`;
  * honestidade em vez de falhar por motivo errado — um e2e vermelho porque a API
  * está desligada não é informação sobre o código.
  */
+/** A API sob teste é a local? Muda o que cada portão exige do ambiente. */
+const ALVO_LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost)\b/.test(API);
+
 const PORTOES = [
   { nome: 'typecheck:api', grupo: 'unit', cmd: 'npm', argv: ['run', 'typecheck', '--workspace', '@streampolis/api'] },
   { nome: 'typecheck:client', grupo: 'unit', cmd: 'npm', argv: ['run', 'typecheck', '--workspace', '@streampolis/client'] },
   { nome: 'test:api', grupo: 'unit', cmd: 'npm', argv: ['test', '--workspace', '@streampolis/api'] },
   { nome: 'test:game-server', grupo: 'unit', cmd: 'npm', argv: ['test', '--workspace', '@streampolis/game-server'] },
-  { nome: 'release-check', grupo: 'e2e', needs: ['api', 'ws'], cmd: 'node', argv: ['tools/release-check.mjs', `--api=${API}`, `--ws=${WS}`] },
-  { nome: 'admin-check', grupo: 'e2e', needs: ['api', 'ws'], cmd: 'node', argv: ['tools/admin-check.mjs', `--api=${API}`, `--ws=${WS}`] },
+  {
+    nome: 'release-check', grupo: 'e2e', needs: ['api', 'ws'],
+    // Contra um alvo remoto sem provedor de pagamento, ele credita a conta de
+    // teste por dentro — e para isso precisa do banco daquele ambiente.
+    env: ALVO_LOCAL ? [] : ['DATABASE_URL'],
+    cmd: 'node', argv: ['tools/release-check.mjs', `--api=${API}`, `--ws=${WS}`],
+  },
+  {
+    nome: 'admin-check', grupo: 'e2e', needs: ['api', 'ws'],
+    // A equipe entra com senha, e a senha da produção não é a do seed.
+    env: ALVO_LOCAL ? [] : ['STAFF_PASSWORD'],
+    cmd: 'node', argv: ['tools/admin-check.mjs', `--api=${API}`, `--ws=${WS}`],
+  },
   { nome: 'agency-check', grupo: 'e2e', needs: ['api'], cmd: 'node', argv: ['tools/agency-check.mjs', `--api=${API}`] },
 ];
 
@@ -106,9 +120,17 @@ async function main() {
       continue;
     }
     const falta = (portao.needs ?? []).filter((n) => !disponivel[n]);
-    if (falta.length > 0) {
-      resultados.push({ ...portao, estado: 'pulado', motivo: `sem ${falta.join(' e ')}` });
-      console.log(`  ${cor('–', 33)} ${portao.nome} ${cor(`(pulado: sem ${falta.join(' e ')})`, 33)}`);
+    // Faltar variável de ambiente é motivo de PULAR, não de falhar: um portão
+    // vermelho porque quem rodou esqueceu de exportar uma senha não é
+    // informação sobre o código — é ruído que ensina a ignorar vermelho.
+    const faltaEnv = (portao.env ?? []).filter((v) => !process.env[v]);
+    if (falta.length > 0 || faltaEnv.length > 0) {
+      const motivo = [
+        falta.length ? `sem ${falta.join(' e ')}` : '',
+        faltaEnv.length ? `sem ${faltaEnv.join(' e ')} no ambiente` : '',
+      ].filter(Boolean).join(', ');
+      resultados.push({ ...portao, estado: 'pulado', motivo });
+      console.log(`  ${cor('–', 33)} ${portao.nome} ${cor(`(pulado: ${motivo})`, 33)}`);
       continue;
     }
 
@@ -136,6 +158,7 @@ async function main() {
 
   if (pulados.length > 0 && falhou.length === 0) {
     console.log(cor('   atenção: portão pulado não é portão verde.', 33));
+    for (const p of pulados) console.log(cor(`   · ${p.nome}: ${p.motivo}`, 90));
   }
   process.exit(falhou.length === 0 ? 0 : 1);
 }

@@ -562,6 +562,43 @@ async function main() {
   check('a sessão se renova depois de tudo (senão o jogo cai em "offline" aos 15 min)',
     renovado.status === 200 && Boolean(renovado.body.token), `status=${renovado.status}`);
 
+  step('12) Missões: o que a volta guiada ensinou, e o que ela paga (§24)');
+  const missoes = (await api('/me/missions', { headers: asUser(A.token) })).body;
+  check('a lista de missões responde', (missoes.missions ?? []).length === 9,
+    `${(missoes.missions ?? []).length} missões`);
+  const feitas = (missoes.missions ?? []).filter((m) => m.done).map((m) => m.id);
+  check('as missões da volta guiada estão cumpridas',
+    ['avatar', 'plaza', 'apartment', 'go_live', 'friend'].every((id) => feitas.includes(id)),
+    feitas.join(', '));
+  check('e nenhuma foi resgatada ainda', (missoes.missions ?? []).every((m) => !m.claimed));
+  check('o contador de resgatáveis bate com a lista',
+    missoes.claimable === feitas.length, `${missoes.claimable} vs ${feitas.length}`);
+
+  const naoFeita = (missoes.missions ?? []).find((m) => !m.done);
+  if (naoFeita) {
+    const cedo = await api(`/me/missions/${naoFeita.id}/claim`, { method: 'POST', headers: asUser(A.token) });
+    check('missão não cumprida não paga (409)', cedo.status === 409, `status=${cedo.status}`);
+  }
+
+  const carteiraAntes = (await api('/me/wallet', { headers: asUser(A.token) })).body;
+  const resgate = await api('/me/missions/avatar/claim', { method: 'POST', headers: asUser(A.token) });
+  check('resgatar paga os Credits da missão', resgate.status === 200
+    && resgate.body.balances?.credits === carteiraAntes.credits + 50,
+    `${carteiraAntes.credits} → ${resgate.body.balances?.credits}`);
+
+  const dobro = await api('/me/missions/avatar/claim', { method: 'POST', headers: asUser(A.token) });
+  check('resgatar de novo não paga de novo',
+    dobro.body.balances?.credits === resgate.body.balances?.credits && dobro.body.replayed === true,
+    JSON.stringify(dobro.body).slice(0, 120));
+
+  const depoisResgate = (await api('/me/missions', { headers: asUser(A.token) })).body;
+  check('a missão fica marcada como resgatada',
+    depoisResgate.missions.find((m) => m.id === 'avatar')?.claimed === true);
+
+  const inexistente = await api('/me/missions/voar/claim', { method: 'POST', headers: asUser(A.token) });
+  check('missão inexistente responde 404', inexistente.status === 404, `status=${inexistente.status}`);
+
+
   console.log(`\n${failures === 0 ? '✅' : '❌'} ${checks - failures}/${checks} verificações passaram.`);
   console.log(`   contas desta rodada: ${A.username} / ${B.username} (ficam no banco, por causa do extrato)`);
   for (const n of notes) console.log(`   · ${n}`);
