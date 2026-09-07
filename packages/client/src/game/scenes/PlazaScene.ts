@@ -9,6 +9,18 @@ import {
 } from '../props/Geometry.js';
 import { backdropBlock, cityBlock, facadeBuilding } from '../props/Buildings.js';
 import { VideoWall } from '../props/Screen.js';
+
+/**
+ * O que passa no telão da praça.
+ *
+ * Um caminho servido pelo próprio site (mesma origem — vídeo de outro domínio
+ * precisaria de CORS e mancharia a textura). O arquivo mora em
+ * `packages/client/public/assets/video/`, que fica FORA do git como todo
+ * material de terceiro do projeto: o repositório guarda a receita, não a mídia.
+ *
+ * Está aqui, numa constante de uma linha, porque é o que vai mudar primeiro.
+ */
+const TELAO = '/assets/video/telao.mp4';
 import {
   awning, banner, bench, bollard, flowerBush, fountain, kiosk, lampPost, litterBin, palm, planter, shrub, stairRing, tree,
 } from '../props/Urban.js';
@@ -427,12 +439,24 @@ export class PlazaScene extends SceneBase {
     this.stamps.push(bakedFar);
   }
 
-  /** The plaza's live billboard (PRD §6): the feed, visible from the ground. */
+  /**
+   * The plaza's live billboard (PRD §6): the feed, visible from the ground.
+   *
+   * Hoje ele toca UM arquivo, em laço e mudo (`TELAO`). Isso é provisório e
+   * está escrito assim de propósito: o §6 quer que o telão mostre o que a
+   * cidade está transmitindo, e o dia em que existir uma regra de "o que passa
+   * e quando" ela entra AQUI — a decisão de qual fonte tocar é da cena, não do
+   * painel. `VideoWall` só sabe tocar o que recebe.
+   *
+   * Se o arquivo não estiver lá, o painel volta a ser a onda de LED de sempre;
+   * ninguém vê um retângulo preto (ver `props/Screen.ts`).
+   */
   private buildScreen(): void {
     const s = PLAZA.screen;
     const wall = new VideoWall(this.mats, {
       width: s.width, height: s.height, base: s.base, freestanding: true,
       colors: [0xff3d7f, 0x2f7bff], gain: 2.0,
+      video: TELAO,
     });
     wall.group.position.set(s.x, 0, s.z);
     wall.group.rotation.y = s.ry;

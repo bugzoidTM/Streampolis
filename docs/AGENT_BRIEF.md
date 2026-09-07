@@ -632,6 +632,37 @@ mais grossa que o corpo (raio 0,28) de propósito: grade fina "passa" por fresta
 que o jogador não atravessa, e um teste que aprova o que o jogo recusa é pior
 que nenhum teste.
 
+## O telão da praça
+
+`PLAZA.screen` + `VideoWall` (`props/Screen.ts`). Ele pode tocar um arquivo em
+laço e mudo; hoje a fonte é uma constante de uma linha em `PlazaScene`
+(`TELAO`), e é ali que entra o dia em que existir uma regra de "o que passa e
+quando" (§6 quer o feed da cidade). O painel não decide fonte — só toca o que
+recebe.
+
+Três decisões que não são gosto:
+
+- **o vídeo entra no MESMO material**, como uma amostra dentro do shader do
+  painel. Um segundo plano por cima seria outra chamada de desenho, outro
+  material para dispor e um z-fighting para resolver. Fora do retângulo do
+  vídeo continua a onda de LED, e as scanlines passam por cima de tudo;
+- **contém, nunca corta.** O telão é deitado (13,5 × 7,4) e o arquivo pode ser
+  vertical; preencher cortaria o meio de um vídeo 9:16, que é onde está tudo. O
+  aspecto vem de `videoWidth/videoHeight`, então trocar por um vídeo deitado
+  passa a preencher sozinho;
+- **`uHasVideo` só vira 1 com quadro pronto.** Arquivo ausente, formato
+  recusado ou autoplay barrado deixam o telão como sempre foi. Uma praça com um
+  retângulo preto no meio seria pior do que uma praça sem vídeo.
+
+`muted` e `playsInline` são escritos ANTES do `src`: depois, o Safari já
+decidiu que o elemento tem áudio e recusa o autoplay. E ainda assim o `play()`
+pode ser negado — o primeiro clique ou tecla na página tenta uma vez mais.
+
+O arquivo mora em `packages/client/public/assets/video/`, que está no
+`.gitignore` como todo material de terceiro: o repositório guarda a receita, a
+mídia vem de fora. `public/` é copiado para `dist/` no build, e é o `dist/` que
+o nginx serve.
+
 ## Correr
 
 `MoveIntent.run` existe desde o primeiro dia e o servidor sempre validou 5,2 m/s
