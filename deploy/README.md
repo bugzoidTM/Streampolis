@@ -177,6 +177,23 @@ ninguém olhar.
 
 ## Verificar
 
+Um comando roda todos os portões e diz, no fim, quantos passaram, quantos
+falharam e **quantos foram pulados** — porque portão pulado em silêncio é a
+mesma coisa que portão que não existe:
+
+```bash
+npm run gates                                  # tudo (contra o ambiente local)
+npm run gates -- --only=unit                   # só o que não precisa de servidor
+npm run gates -- --api=https://streampolis.nutef.com/api \
+                 --ws=wss://streampolis.nutef.com/ws/1   # contra a produção
+```
+
+Ele NÃO sobe servidor de propósito: o que se quer saber é se os portões passam
+contra o que está no ar. Sem API ou game server respondendo, os e2e que dependem
+deles são pulados com aviso, em vez de falharem por motivo errado.
+
+Os portões, um a um:
+
 ```bash
 node tools/prod-check.mjs                      # primeira visita, entrar, mundo
 node tools/screens-check.mjs --client=https://streampolis.nutef.com \
