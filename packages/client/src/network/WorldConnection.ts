@@ -12,6 +12,7 @@ import {
   type Collider,
   type FollowEvent,
   type GiftEvent,
+  type GigUpdate,
   type LikeTotals,
   type HomePlacement,
   type MoveCorrection,
@@ -35,6 +36,13 @@ export interface WorldEvents {
   pkResult: (result: PKResult) => void;
   /** The host offered this client a seat on stage; it expires (SPECs §17). */
   stageInvite: (invite: StageInvite) => void;
+  /**
+   * A sala viu o jogador chegar numa parada de bico (PRD §26).
+   *
+   * Vem do servidor porque é ele que tem a posição, e traz o pagamento e o
+   * saldo já apurados pela API. A tela não soma nada: ela mostra.
+   */
+  gigUpdate: (update: GigUpdate) => void;
   /** Fired after every state patch, for UI that mirrors room state. */
   state: (state: WorldStateView) => void;
   left: (code: number) => void;
@@ -98,7 +106,7 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   private listeners: { [K in keyof WorldEvents]: Set<Listener<K>> } = {
     chat: new Set(), gift: new Set(), likes: new Set(), follow: new Set(),
     notice: new Set(), pkResult: new Set(), stageInvite: new Set(),
-    state: new Set(), left: new Set(), error: new Set(),
+    gigUpdate: new Set(), state: new Set(), left: new Set(), error: new Set(),
   };
   /**
    * O relógio do movimento. Mora fora desta classe porque o modo offline
@@ -240,6 +248,7 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
     this.room.onMessage(MSG.notice, (n: SystemNotice) => this.emit('notice', n));
     this.room.onMessage(MSG.pkResult, (r: PKResult) => this.emit('pkResult', r));
     this.room.onMessage(MSG.stageInvite, (i: StageInvite) => this.emit('stageInvite', i));
+    this.room.onMessage(MSG.gigUpdate, (u: GigUpdate) => this.emit('gigUpdate', u));
     this.room.onMessage(MSG.correction, (c: MoveCorrection) => this.predictor.reconcile(c));
 
     let placed = false;
@@ -289,6 +298,19 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   redecorated(): void {
     if (this.disposed) return;
     this.room.send(MSG.redecorate, {});
+  }
+
+  /**
+   * "Aceitei/larguei um bico": a sala que releia a corrida na API.
+   *
+   * Um aviso, exatamente como `redecorated`. O bico, as paradas e o pagamento
+   * são da API; se este método mandasse a corrida, o navegador estaria
+   * escolhendo a própria rota. Sem ele, quem aceita um bico só passaria a ser
+   * seguido ao sair e voltar ao bairro.
+   */
+  gigSync(): void {
+    if (this.disposed) return;
+    this.room.send(MSG.gigSync, {});
   }
 
   /**

@@ -188,7 +188,7 @@ export class PlazaScene extends SceneBase {
     // ela, a fatia vazia do anel é um buraco na fileira; com ela, é uma rua —
     // e é a rua que faz a cidade continuar em vez de acabar.
     const streetMat = this.mats.asphalt();
-    for (const angle of PLAZA.paths.slice(0, 3)) {
+    for (const angle of PLAZA.streets) {
       const len = 58;
       const strip = new THREE.PlaneGeometry(10, len);
       boxUV(strip, 6);

@@ -211,6 +211,49 @@ export interface DailyClaim {
   replayed: boolean;
 }
 
+/** Uma parada de bico, com o endereço que a tela desenha no mundo. */
+export interface GigStop {
+  id: string;
+  hint: string;
+  x: number;
+  z: number;
+  label: string;
+  done: boolean;
+}
+
+export interface GigRun {
+  runId: string;
+  gigId: string;
+  title: string;
+  heat: number;
+  credits: number;
+  deadlineAt: string;
+  startedAt: string;
+  stopsDone: number;
+  stops: GigStop[];
+  next: GigStop | null;
+}
+
+export interface GigOffer {
+  id: string;
+  title: string;
+  flavor: string;
+  stops: number;
+  /** Já corrigido pelo nível de atenção: é o que vai ser pago. */
+  credits: number;
+  seconds: number;
+}
+
+export interface GigBoard {
+  heat: number;
+  heatMax: number;
+  runsInWindow: number;
+  toNextLevel: number | null;
+  windowHours: number;
+  offers: GigOffer[];
+  active: GigRun | null;
+}
+
 export type AgencyRole = 'owner' | 'manager' | 'member';
 
 export interface AgencyMember {
@@ -458,6 +501,22 @@ export class ApiClient {
 
   claimDailyTask(taskId: string): Promise<DailyClaim> {
     return this.call(`/me/daily/${encodeURIComponent(taskId)}/claim`, { method: 'POST' });
+  }
+
+  /**
+   * Bicos de rua (PRD §26). Não existe "cheguei" aqui de propósito: quem vê a
+   * chegada é o game server, que tem a posição — a tela só aceita e larga.
+   */
+  gigs(): Promise<GigBoard> {
+    return this.call('/me/gigs');
+  }
+
+  acceptGig(gigId: string): Promise<{ run: GigRun }> {
+    return this.call('/me/gigs', { method: 'POST', body: JSON.stringify({ gigId }) });
+  }
+
+  abandonGig(): Promise<{ abandoned: boolean }> {
+    return this.call('/me/gigs', { method: 'DELETE' });
   }
 
   // -------------------------------------------------------------- agências ---

@@ -73,6 +73,13 @@ const PORTOES = [
     env: ALVO_LOCAL ? [] : ['API_SERVICE_TOKEN', 'PAYMENT_WEBHOOK_SECRET'],
     cmd: 'node', argv: ['tools/critical-check.mjs', `--api=${API}`, `--ws=${WS}`],
   },
+  {
+    nome: 'gigs-check', grupo: 'e2e', needs: ['api', 'ws'],
+    // Os bicos de rua (§26) atravessam as três autoridades, e os dois passos
+    // que provam idempotência e ordem entram pela porta do game server.
+    env: ALVO_LOCAL ? [] : ['API_SERVICE_TOKEN'],
+    cmd: 'node', argv: ['tools/gigs-check.mjs', `--api=${API}`, `--server=${WS}`],
+  },
 ];
 
 async function noAr(url, ms = 4_000) {

@@ -1,0 +1,256 @@
+/*
+ * Bicos de rua (PRD §26).
+ *
+ * Duas peças com finalidades opostas, e por isso desenhos opostos:
+ *
+ *   * a FAIXA (`.gigtrack`) é lida de relance, com o jogador andando. Fica no
+ *     alto, longe do rodapé e do chat, e não tem nada clicável — se ela pedisse
+ *     um clique, pediria numa hora em que as duas mãos estão no teclado;
+ *   * o QUADRO (`.gig`) é lido parado. É uma folha, cobre o mundo e tem botões.
+ *
+ * O acento é o âmbar (`--sp-gold`), o mesmo do pilar de luz no mundo. O
+ * Distrito Sombra preserva o vermelho na gradação e apaga o resto: um HUD
+ * vermelho competiria com todos os letreiros da rua, que é onde ele mais
+ * precisa se destacar.
+ */
+
+/* ------------------------------------------------------------ a faixa --- */
+
+.gigtrack {
+  position: fixed;
+  top: calc(var(--sp-s4) + 54px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 42;
+  width: min(460px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 194, 71, 0.28);
+  border-radius: var(--sp-r-md);
+  background: rgba(10, 12, 20, 0.82);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.gigtrack__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s3);
+}
+
+.gigtrack__title {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sp-text);
+}
+
+.gigtrack__heat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--sp-orange);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gigtrack__clock {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--sp-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Vermelho só no fim: um relógio alarmado desde o início é ruído, e no minuto
+   em que ele importa ninguém repara mais nele. */
+.gigtrack__clock.is-tight { color: var(--sp-red); }
+
+.gigtrack__stop {
+  margin: 5px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-s2);
+  font-size: 12.5px;
+  color: var(--sp-text-2);
+}
+
+.gigtrack__step {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--sp-r-pill);
+  background: rgba(255, 194, 71, 0.16);
+  color: var(--sp-gold);
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.gigtrack--paid {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s3);
+  border-color: rgba(57, 217, 138, 0.4);
+  color: var(--sp-green);
+}
+
+.gigtrack--paid .gigtrack__title { color: var(--sp-green); }
+
+.gigtrack__pay {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sp-credits);
+  font-weight: 800;
+}
+
+/* ------------------------------------------------------- o botão e a folha */
+
+.gigdock {
+  position: fixed;
+  right: var(--sp-s4);
+  bottom: calc(var(--sp-s6) + 96px);
+  z-index: 44;
+}
+
+.gigsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: end center;
+  background: rgba(5, 6, 11, 0.62);
+  backdrop-filter: blur(6px);
+}
+
+.gig {
+  width: min(560px, 100vw);
+  max-height: min(84vh, 720px);
+  overflow-y: auto;
+  padding: 0 var(--sp-s4) var(--sp-s5);
+  border-radius: var(--sp-r-lg) var(--sp-r-lg) 0 0;
+  border: 1px solid var(--sp-line-2);
+  border-bottom: none;
+  background: var(--sp-surface);
+}
+
+/* --------------------------------------------------------- a atenção --- */
+
+.gig__status {
+  padding: var(--sp-s3);
+  border-radius: var(--sp-r-sm);
+  background: var(--sp-surface-2);
+}
+
+.gig__statusrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s3);
+}
+
+.gig__heat { display: inline-flex; gap: 2px; }
+
+/* A chama apagada continua desenhada: uma escada em que os degraus vazios
+   somem não mostra escada nenhuma. */
+.gig__flame { color: var(--sp-line-3); }
+.gig__flame.is-on { color: var(--sp-orange); }
+
+.gig__statustext { font-size: 13px; font-weight: 600; color: var(--sp-text); }
+
+.gig__statushint {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--sp-text-3);
+}
+
+/* ------------------------------------------------ a corrida em andamento */
+
+.gig__active {
+  margin-top: var(--sp-s3);
+  padding: var(--sp-s3);
+  border: 1px solid rgba(255, 194, 71, 0.28);
+  border-radius: var(--sp-r-sm);
+  background: rgba(255, 194, 71, 0.06);
+}
+
+.gig__activetop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-s3);
+}
+
+.gig__activetitle { font-size: 14px; font-weight: 700; }
+
+.gig__stops {
+  margin: var(--sp-s3) 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.gig__stop {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s2);
+  font-size: 13px;
+  color: var(--sp-text-2);
+}
+
+/* A parada cumprida não some da lista — ela fica marcada. Uma rota que apaga
+   o que já foi feito rouba a única sensação de avanço que ela tem a dar. */
+.gig__stop.is-done { color: var(--sp-green); text-decoration: line-through; }
+
+.gig__stopnum {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--sp-line-3);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+/* ------------------------------------------------------------ ofertas --- */
+
+.gig__offers {
+  margin: var(--sp-s4) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--sp-s2);
+}
+
+.gig__offer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-s3);
+  padding: var(--sp-s3);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-sm);
+  background: var(--sp-surface-2);
+}
+
+.gig__offertext { min-width: 0; }
+.gig__offertitle { font-size: 14px; font-weight: 700; }
+
+.gig__offerflavor {
+  margin: 2px 0 4px;
+  font-size: 12.5px;
+  color: var(--sp-text-2);
+}
+
+.gig__offermeta { font-size: 11.5px; color: var(--sp-text-3); }
+
+.gig__offerside {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+@media (max-width: 520px) {
+  .gig__offer { flex-direction: column; align-items: stretch; }
+  .gig__offerside { justify-items: stretch; }
+}

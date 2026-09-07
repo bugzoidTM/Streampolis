@@ -29,6 +29,7 @@
     "admin:check": "node tools/admin-check.mjs",
     "agency:check": "node tools/agency-check.mjs",
     "critical:check": "node tools/critical-check.mjs",
+    "gigs:check": "node tools/gigs-check.mjs",
     "gate:plan": "node tools/room-plan-check.mjs",
     "test:avatar-motion": "node tools/avatar-motion-check.mjs"
   },

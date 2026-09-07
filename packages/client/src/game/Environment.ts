@@ -291,6 +291,55 @@ export const ROOM_NIGHT: InteriorParams = {
 };
 
 /**
+ * A rua do Distrito Sombra, de madrugada e com chuva.
+ *
+ * Usa o rig de INTERIOR, e isso não é um atalho: um corredor de fachadas de
+ * onze andares é um cômodo sem teto. O rig de exterior traria o céu de
+ * Preetham, que abaixo do horizonte não vira noite — vira um pôr do sol
+ * alaranjado ou um preto chapado —, e traria um sol que aqui não existe.
+ *
+ * A luz-chave é a lua, fraca e fria, vindo quase de cima: ela não ILUMINA a
+ * rua, ela só recorta a silhueta dos volumes contra o chão molhado. Quem
+ * ilumina são os letreiros, que a cena acende como luzes pontuais — e é por
+ * isso que `ambientIntensity` é tão baixo. Preenchimento é o inimigo aqui: com
+ * ambiente alto, o beco fica cinza uniforme e a única coisa que o néon faz é
+ * mudar de cor uma parede que já se via.
+ *
+ * `keyRadius` cobre a avenida inteira (68 m de ponta a ponta) porque a sombra
+ * projetada é o desenho: em Sin City, o que se vê de uma pessoa é a sombra
+ * dela na parede.
+ */
+export const STREET_NIGHT: InteriorParams = {
+  // O `floorColor` do hemisfério é o RETORNO DO CHÃO, e aqui ele não é um
+  // detalhe: numa rua sem sol, o que ilumina uma pessoa de baixo para cima é o
+  // asfalto molhado devolvendo o néon. Com ele quase preto (0x0d0f14, a
+  // primeira versão) o jogador ficava literalmente invisível — uma silhueta
+  // preta contra uma rua preta, e a captura de prova não tinha avatar nenhum.
+  /**
+   * As duas cores do hemisfério são CLARAS, e o escuro vem depois.
+   *
+   * A primeira versão pintou a noite aqui: azul-escuro em cima, quase preto
+   * embaixo. O resultado é que a luz da cena não tinha energia nenhuma para
+   * dar, e subir a intensidade não resolvia — multiplicar 0x0d0f14 por dois
+   * continua sendo quase preto. O avatar, que veste terno escuro, ficava
+   * literalmente invisível contra o asfalto: a captura de prova mostrava a rua
+   * sem ninguém nela, com o jogador no centro exato do quadro.
+   *
+   * Quem escurece esta cena é o `LOOK_NOIR` — exposição, contraste e o passe de
+   * preto e branco. A luz entrega faixa dinâmica; a gradação decide o que é
+   * preto. Pintar a noite duas vezes só apaga a metade que importa.
+   */
+  ceilingColor: 0x93a9d6, floorColor: 0x5d6880, ambientIntensity: 0.85,
+  // Raking, não vertical. A luz reta de cima ilumina o asfalto e deixa as duas
+  // fileiras de fachadas na mesma penumbra — e as fachadas SÃO as paredes da
+  // rua. Inclinada, ela acende uma fileira e deixa a outra no escuro, que é a
+  // decisão de luz que define o gênero.
+  keyDirection: [-0.34, -0.66, 0.67], keyColor: 0xa8bdf0, keyIntensity: 2.4, keyRadius: 34,
+  envTop: 0x1d2a44, envSide: 0x1c1f28, envFloor: 0x0b0d11, envWindow: 0x3d4c6e,
+  envIntensity: 1.05, fogColor: 0x0c0f16, fogNear: 22, fogFar: 110,
+};
+
+/**
  * Lighting for a room.
  *
  * No sky, no PMREM of a sky: an interior lit by the outdoor rig looks like a

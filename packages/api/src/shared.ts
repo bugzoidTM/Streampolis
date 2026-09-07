@@ -14,6 +14,11 @@
  * do índice.
  */
 export * from '../../shared/src/placeables.ts';
+// Bicos de rua (§26) e a planta do bairro onde eles acontecem. `gigs.ts` não
+// importa ninguém de propósito, e `layout.ts` também não — as duas condições
+// que fazem este caminho relativo funcionar no modo sem compilação.
+export * from '../../shared/src/gigs.ts';
+export { NOIR } from '../../shared/src/layout.ts';
 export { HOME_BOUNDS } from '../../shared/src/interiors.ts';
 export { ITEM_CATALOG, BODY_ITEM } from '../../shared/src/items.ts';
 export type { ItemDef, ItemType } from '../../shared/src/items.ts';

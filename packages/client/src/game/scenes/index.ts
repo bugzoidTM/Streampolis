@@ -5,6 +5,7 @@ import { ApartmentScene } from './ApartmentScene.js';
 import { LiveRoomScene } from './LiveRoomScene.js';
 import { PkArenaScene } from './PkArenaScene.js';
 import { AgencyScene, LobbyScene, StoreScene } from './PublicScenes.js';
+import { NoirDistrictScene } from './NoirDistrictScene.js';
 
 /**
  * Scene registry.
@@ -23,6 +24,7 @@ const SCENES: Record<SceneId, () => GameScene> = {
   agency_tower: () => new AgencyScene(),
   pk_arena: () => new PkArenaScene(),
   live_room: () => new LiveRoomScene(),
+  noir_district: () => new NoirDistrictScene(),
 };
 
 export function createScene(id: SceneId): GameScene {
@@ -34,5 +36,8 @@ export function createScene(id: SceneId): GameScene {
   return make();
 }
 
-export { PlazaScene, ApartmentScene, LiveRoomScene, PkArenaScene, LobbyScene, StoreScene, AgencyScene };
+export {
+  PlazaScene, ApartmentScene, LiveRoomScene, PkArenaScene,
+  LobbyScene, StoreScene, AgencyScene, NoirDistrictScene,
+};
 export type { GameScene };

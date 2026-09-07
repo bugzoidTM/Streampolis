@@ -19,6 +19,20 @@ export interface GradeLook {
   aberration: number;
   grain: number;
   exposure: number;
+  /**
+   * Passe noir: quanto da imagem vai a preto e branco (0 desliga).
+   *
+   * Opcional porque só uma cena o usa, e um campo obrigatório obrigaria os
+   * outros três looks a declarar `noir: 0` — um número que não quer dizer nada
+   * lá. Quem não declara não paga: o `if` no shader sai do caminho.
+   */
+  noir?: number;
+  /** O matiz que sobrevive ao preto e branco, em voltas. 0 = vermelho. */
+  keepHue?: number;
+  /** Meia-largura da janela de matiz preservada, em voltas. */
+  keepWidth?: number;
+  /** Ganho de saturação do que sobreviveu. */
+  keepBoost?: number;
   bloomStrength: number;
   bloomThreshold: number;
   bloomRadius: number;
@@ -36,6 +50,32 @@ export const LOOK_LIVE: GradeLook = {
   lift: [0.012, 0.0, 0.026], gamma: [0.99, 1.0, 1.02], gain: [1.05, 0.99, 1.06],
   saturation: 1.18, contrast: 1.09, vignette: 0.42, aberration: 0.0026,
   grain: 0.028, exposure: 1.05, bloomStrength: 0.62, bloomThreshold: 0.72, bloomRadius: 0.62,
+};
+
+/**
+ * Noir: preto e branco de alto contraste com o VERMELHO preservado.
+ *
+ * Os três números que fazem a leitura, e o porquê de cada um:
+ *
+ *   * `saturation: 0.9` antes do passe noir, não 0. Dessaturar duas vezes
+ *     mata o pouco de cor que o néon precisa ter para atravessar a janela de
+ *     matiz — quem tira a cor aqui é `noir`, e ele tira com critério;
+ *   * `contrast: 1.34` é o que transforma cinza em preto e branco. Sem ele o
+ *     resultado é uma foto dessaturada, que é a coisa mais distante deste
+ *     alvo: o assunto é a SILHUETA, e silhueta é preto contra branco;
+ *   * `grain: 0.055`, mais que o dobro do dia. Grão é o que separa "noite" de
+ *     "escuro", e uma imagem quase sem cor tem espaço de sobra para ele.
+ *
+ * O bloom fica alto e com limiar baixo porque a única luz da cena é letreiro:
+ * o halo do néon na chuva é metade da imagem.
+ */
+export const LOOK_NOIR: GradeLook = {
+  lift: [0.004, 0.006, 0.016], gamma: [1.02, 1.0, 0.97], gain: [0.98, 0.99, 1.04],
+  saturation: 0.9, contrast: 1.34, vignette: 0.5, aberration: 0.0022,
+  grain: 0.055, exposure: 1.32, bloomStrength: 0.68, bloomThreshold: 0.66, bloomRadius: 0.72,
+  // Janela estreita: ±11° em torno do vermelho. A de ±20° da primeira versão
+  // pegava o laranja do tijolo junto.
+  noir: 0.92, keepHue: 0.0, keepWidth: 0.032, keepBoost: 1.55,
 };
 
 /** Soft, low-contrast interior look. */
@@ -135,6 +175,10 @@ export class Renderer {
       u.uVignette.value = look.vignette;
       u.uAberration.value = look.aberration;
       u.uGrain.value = look.grain;
+      u.uNoir.value = look.noir ?? 0;
+      u.uKeepHue.value = look.keepHue ?? 0;
+      u.uKeepWidth.value = look.keepWidth ?? 0.055;
+      u.uKeepBoost.value = look.keepBoost ?? 1;
     }
   }
 

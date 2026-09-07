@@ -56,6 +56,7 @@ import {
 import {
   flagsSnapshot, isEnabled, listFlags, setFlag,
 } from './platform/FeatureFlags.ts';
+import { abandonGig, acceptGig, gigBoard, reachCheckpoint } from './work/Gigs.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
 import { secureHeaders } from './http/middleware/secureHeaders.ts';
@@ -1252,6 +1253,35 @@ app.post('/me/daily/:taskId/claim', rateLimit('economy'), requireUser,
     } catch (err) { next(err); }
   });
 
+/**
+ * Bicos de rua (PRD §26): "entregas virtuais" e "pequenos gigs".
+ *
+ * O quadro diz o nível de ATENÇÃO da pessoa, as ofertas já corrigidas por ele e
+ * a corrida em andamento. Não existe rota de "cheguei" aqui de propósito: quem
+ * sabe onde alguém está é o game server, e a rota dele é `/internal/gigs/*`.
+ * Uma chegada aceita do navegador seria uma entrega teletransportada.
+ */
+app.get('/me/gigs', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await gigBoard(req.userId as string));
+  } catch (err) { next(err); }
+});
+
+const gigSchema = z.object({ gigId: z.string().min(1).max(64) });
+
+app.post('/me/gigs', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    const { gigId } = gigSchema.parse(req.body);
+    res.status(201).json({ run: await acceptGig(req.userId as string, gigId) });
+  } catch (err) { next(err); }
+});
+
+app.delete('/me/gigs', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await abandonGig(req.userId as string));
+  } catch (err) { next(err); }
+});
+
 // ------------------------------------------------------------------ feed ---
 
 app.get('/lives', async (_req, res, next) => {
@@ -1510,6 +1540,38 @@ app.post('/internal/moderation/ack', rateLimit('service'), requireService, async
     const body = ackSchema.parse(req.body);
     await ackCommand(body.commandId, body.result);
     res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+/**
+ * "Fulano chegou na parada N do bico X."
+ *
+ * Só o game server chama: ele tem o socket e integra o movimento, e é a única
+ * autoridade sobre posição (SPECs §21). O que ele NÃO sabe é se aquela é a
+ * parada da vez, se a corrida é daquela pessoa e se o prazo venceu — e é isso
+ * que `reachCheckpoint` confere antes de deixar a rota avançar.
+ *
+ * O índice da parada viaja na chamada. Sem ele, dar uma volta em torno da MESMA
+ * parada avançaria a rota inteira.
+ */
+const checkpointSchema = z.object({
+  userId: z.string().min(1).max(64),
+  gigId: z.string().min(1).max(64),
+  stopIndex: z.number().int().min(0).max(31),
+});
+
+app.post('/internal/gigs/checkpoint', rateLimit('service'), requireService, async (req, res, next) => {
+  try {
+    const body = checkpointSchema.parse(req.body);
+    res.json(await reachCheckpoint(body.userId, body.gigId, body.stopIndex));
+  } catch (err) { next(err); }
+});
+
+/** A corrida em curso de um jogador, para a sala adotar quem entra correndo. */
+app.get('/internal/gigs/:userId', rateLimit('service'), requireService, async (req, res, next) => {
+  try {
+    const board = await gigBoard(param(req.params.userId));
+    res.json({ run: board.active });
   } catch (err) { next(err); }
 });
 

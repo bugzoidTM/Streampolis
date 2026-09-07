@@ -69,6 +69,29 @@ export interface ModerationCommand {
   reason: string;
 }
 
+/**
+ * Uma corrida de bico em andamento, do ponto de vista de QUEM SÓ TEM O CORPO.
+ *
+ * O game server não guarda a corrida — ela é da API — e não precisa saber quase
+ * nada dela: o bico, qual é a parada da vez e onde ela fica. O resto (prazo,
+ * pagamento, nível de atenção) é contrato entre o jogador e a API, e repetir
+ * isso aqui criaria uma segunda verdade que sai do lugar.
+ */
+export interface GigRunSnapshot {
+  runId: string;
+  gigId: string;
+  stopsDone: number;
+  next: { id: string; x: number; z: number; label: string; hint: string } | null;
+  deadlineAt: string;
+}
+
+export interface GigCheckpointResult {
+  accepted: boolean;
+  delivered: boolean;
+  credits: number;
+  run: GigRunSnapshot | null;
+}
+
 export interface ApiGateway {
   getHome(apartmentId: string): Promise<HomeSnapshot | null>;
   canEnterHome(apartmentId: string, userId: string): Promise<boolean>;
@@ -84,6 +107,16 @@ export interface ApiGateway {
   ackModeration(commandId: string, result: string): Promise<void>;
   /** Interações sociais que só este processo vê (§32): chat, live, PK, visita. */
   reportSocial(entries: Array<{ userId: string; kind: string }>): Promise<void>;
+  /** A corrida de bico em andamento de alguém, para a sala adotar quem chega. */
+  activeGig(userId: string): Promise<GigRunSnapshot | null>;
+  /**
+   * "Fulano chegou na parada N."
+   *
+   * A sala vê a proximidade; quem decide se ela CONTA é a API — ela tem a
+   * ordem das paradas, o prazo e a carteira. Um `accepted: false` não é erro:
+   * é uma parada fora de ordem ou uma corrida que já não existe.
+   */
+  gigCheckpoint(userId: string, gigId: string, stopIndex: number): Promise<GigCheckpointResult | null>;
 }
 
 /**
@@ -173,6 +206,20 @@ export class HttpApiGateway implements ApiGateway {
     });
   }
 
+  async activeGig(userId: string): Promise<GigRunSnapshot | null> {
+    const res = await this.call<{ run: GigRunSnapshot | null }>(
+      `/internal/gigs/${encodeURIComponent(userId)}`,
+    );
+    return res?.run ?? null;
+  }
+
+  gigCheckpoint(userId: string, gigId: string, stopIndex: number): Promise<GigCheckpointResult | null> {
+    return this.call<GigCheckpointResult>('/internal/gigs/checkpoint', {
+      method: 'POST',
+      body: JSON.stringify({ userId, gigId, stopIndex }),
+    });
+  }
+
   async reportSocial(entries: Array<{ userId: string; kind: string }>): Promise<void> {
     const resposta = await this.call('/internal/social', {
       method: 'POST', body: JSON.stringify({ entries }),
@@ -251,6 +298,11 @@ export class InMemoryApiGateway implements ApiGateway {
   async ackModeration(): Promise<void> { /* sem API, sem painel */ }
 
   async reportSocial(): Promise<void> { /* sem API, sem métrica */ }
+  // Sem API não há carteira, e um bico que ninguém pode pagar é melhor
+  // inexistente do que cumprido de mentira: a tela simplesmente não recebe
+  // corrida nenhuma.
+  async activeGig(): Promise<null> { return null; }
+  async gigCheckpoint(): Promise<null> { return null; }
 }
 
 export function defaultApiGateway(): ApiGateway {

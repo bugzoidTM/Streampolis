@@ -89,6 +89,10 @@ export const PORTALS: Partial<Record<SceneId, Portal[]>> = {
     onPlaza('plaza_store', 'stream_store', 'Stream Store', 0),
     onPlaza('plaza_tower', 'residential_lobby', 'Torre Residencial', TAU / 3),
     onPlaza('plaza_agency', 'agency_tower', 'Torre das Agências', (TAU * 2) / 3),
+    // A quarta boca de rua do anel (`PLAZA.streets`) leva ao bairro novo, e é
+    // por isso que ela existe: uma porta que não está no fim de uma rua é uma
+    // porta no meio de uma parede.
+    onPlaza('plaza_noir', 'noir_district', 'Distrito Sombra', TAU / 2),
   ],
 
   stream_store: [exitOf('stream_store', 'central_plaza', 'Voltar à praça')],
@@ -101,6 +105,18 @@ export const PORTALS: Partial<Record<SceneId, Portal[]>> = {
   ],
 
   apartment: [exitOf('apartment', 'residential_lobby', 'Sair')],
+
+  /**
+   * O portão do bairro, na ponta oeste da avenida.
+   *
+   * Não sai de `exitOf`: aquilo lê a abertura sul de um CASCO, e o Distrito
+   * Sombra não tem casco nenhum — a rua acaba onde as fileiras de fachadas
+   * acabam. O raio é o de praça (2,4 m) e não o de interior, porque aqui fora
+   * 1,4 m numa avenida de 18 m é uma porta que só dispara se pisada em cheio.
+   */
+  noir_district: [
+    { id: 'noir_exit', to: 'central_plaza', label: 'Voltar à praça', x: -30.5, z: 0, ry: -Math.PI / 2, r: 2.4 },
+  ],
 };
 
 /** A porta mais próxima de um ponto, se houver alguma ao alcance. */

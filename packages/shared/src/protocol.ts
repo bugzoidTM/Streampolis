@@ -141,6 +141,9 @@ export const PLAY_AREA: Record<SceneId, Bounds> = {
   agency_tower:      { minX: -16, maxX: 16, minZ: -16, maxZ: 16 },
   pk_arena:          { minX: -18, maxX: 18, minZ: -18, maxZ: 18 },
   live_room:         { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
+  // O envelope do bairro é assimétrico em Z porque a rua é: o beco sai da
+  // avenida para o norte e o retângulo tem de contê-lo (ver `NOIR.bounds`).
+  noir_district:     { minX: -40, maxX: 40, minZ: -32, maxZ: 20 },
 };
 
 export interface Kinematic {
@@ -248,6 +251,13 @@ export const MSG = {
    * e sobreposição (SPECs §68). O aviso é só isto: vá perguntar de novo.
    */
   redecorate: 'redecorate',
+  /**
+   * "Aceitei (ou larguei) um bico": o cliente pede que a sala releia a corrida
+   * na API. É um AVISO, não um dado — pelo mesmo motivo de `redecorate`. Quem
+   * sabe qual bico a pessoa está fazendo é a API, e aceitar essa informação do
+   * navegador seria deixá-lo escolher a própria rota e o próprio pagamento.
+   */
+  gigSync: 'gigSync',
   // server -> client
   correction: 'correction',
   chatMessage: 'chatMessage',
@@ -257,9 +267,40 @@ export const MSG = {
   notice: 'notice',
   pkResult: 'pkResult',
   stageInvite: 'stageInvite',
+  /**
+   * "Você chegou na parada" — e, na última, "entregue, tantos Credits".
+   *
+   * Sai da sala porque é ela que vê a chegada; o valor e o saldo vêm da API na
+   * mesma resposta, então a tela não precisa calcular nada nem perguntar de
+   * novo. Uma tela que soma o pagamento sozinha é uma segunda economia.
+   */
+  gigUpdate: 'gigUpdate',
 } as const;
 
 export type ClientMessage = typeof MSG[keyof typeof MSG];
+
+/**
+ * Uma parada de bico cumprida (PRD §26), no fio.
+ *
+ * Mora no protocolo porque é o formato de uma mensagem que atravessa a rede, e
+ * as três pontas precisam concordar com ele: a API produz, a sala repassa, a
+ * tela desenha. `accepted: false` não é erro — é uma chegada fora de ordem, e a
+ * tela não deve mostrar nada.
+ */
+export interface GigUpdate {
+  accepted: boolean;
+  delivered: boolean;
+  /** Credits pagos. Só na entrega, e sempre o número que a API debitou. */
+  credits: number;
+  run: {
+    runId: string;
+    gigId: string;
+    stopsDone: number;
+    deadlineAt: string;
+    next: { id: string; x: number; z: number; label: string; hint: string } | null;
+  } | null;
+  balances?: { coins: number; credits: number };
+}
 
 /** Result of a finished PK battle. Produced by the server, exactly once. */
 export interface PKResult {

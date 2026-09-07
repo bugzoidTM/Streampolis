@@ -13,6 +13,9 @@ import { WorldChat } from './chat/WorldChat.js';
 import { EmoteBar } from './EmoteBar.js';
 import { RosterPanel } from './RosterPanel.js';
 import { PortalPrompt } from './PortalPrompt.js';
+import { GigPanel } from './GigPanel.js';
+import { GigTracker } from './GigTracker.js';
+import { GigDock } from './GigDock.js';
 import type { LoadReport } from '../game/assets/loading.js';
 import type { Portal } from '@streampolis/shared';
 
@@ -264,6 +267,18 @@ export function WorldView(props: WorldViewProps) {
         world={ready}
         apartmentId={props.intent.kind === 'apartment' && !inLive ? ready?.apartmentId ?? null : null}
       />
+      {/*
+        Bicos de rua (PRD §26). Só no bairro que tem rota: em qualquer outra
+        cena o botão abriria um quadro de ofertas que ninguém consegue cumprir
+        dali, e a faixa mostraria uma parada a sessenta metros de distância,
+        atrás de uma porta.
+      */}
+      <GigDock
+        world={ready}
+        active={!inLive && props.paused !== true && status !== 'loading'
+          && ready?.sceneId === 'noir_district'}
+      />
+
       {/* A pílula do canto não fala mais de carregamento: quem faz isso é a
           tela cheia. Ela volta a ser só o que sempre deveria ter sido — o
           aviso de que a partida está sem servidor. */}

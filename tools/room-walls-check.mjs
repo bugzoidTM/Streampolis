@@ -72,6 +72,12 @@ const salas = [
   { nome: 'saguão', query: `scene=residential_lobby` },
   { nome: 'loja', query: `scene=stream_store` },
   { nome: 'agência', query: `scene=agency_tower` },
+  // O bairro entra aqui apesar de não ser um interior: a pergunta deste gate
+  // não é "tem casco?", é "a cena desenhada é a cena em que se colide?". E ela
+  // é MAIS fácil de errar numa rua — as paredes do Distrito Sombra são as
+  // fachadas, e elas são geradas por uma tabela própria (`noirColliders`), não
+  // pelo casco que todos os outros compartilham.
+  { nome: 'distrito', query: `scene=noir_district` },
 ];
 
 for (const sala of salas) {

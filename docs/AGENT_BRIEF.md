@@ -511,6 +511,15 @@ sem cena quebra o build em vez de cair na praça calada.
   iluminação vêm de `packages/shared/src/interiors.ts`, e cada sala
   (`ApartmentScene`, `LiveRoomScene`, `PkArenaScene`, `PublicScenes`) só escolhe
   seu grade, sua luz, suas superfícies e o `dress()` que lhe é próprio.
+- O **Distrito Sombra** (`NoirDistrictScene`) é o segundo cenário autoral e o
+  primeiro "novo bairro" do §34 — ver a seção própria abaixo.
+
+Uma cena pública nova entra em UM lugar: `cityRoom: true` em
+`packages/shared/src/scenes.ts`. Dessa marca sai `CITY_SCENE_IDS`, que o game
+server usa para aceitar o `sceneId` e o cliente usa para não pedir na URL um
+cenário que a sala vai recusar. Eram dois literais idênticos em pacotes
+diferentes, e o defeito que isso produz é mudo: quem pedisse o cenário novo
+cairia na praça sem erro nenhum na tela.
 
 O layout dos interiores mora no pacote shared pelo mesmo motivo que `PLAZA`:
 `collision.ts` gera dali os colliders, a área caminhável e os **spawns** — que o
@@ -518,6 +527,100 @@ servidor lê em `world/Spawns.ts`. Mover um sofá move o collider do sofá.
 
 O mundo só constrói a cena DEPOIS de entrar na sala: quem manda no cômodo é o
 servidor, não a query string.
+
+## O Distrito Sombra: uma RUA, e por que ela é o oposto da praça
+
+`NoirDistrictScene` + `NOIR` em `shared/layout.ts`. A praça é um disco aberto ao
+meio-dia dourado; este é um corredor de fachadas de madrugada, na chuva, em
+preto e branco com o vermelho preservado. O contraste entre os dois é o que faz
+cada um parecer um LUGAR — uma cidade inteira com a mesma luz é um cenário com
+salas diferentes.
+
+A planta em três peças: duas fileiras de fachadas fechando uma avenida de 18 m,
+e um BECO que sai da fileira norte para os fundos. A área andável é UM retângulo
+(`Area` só sabe ser disco ou retângulo), centrado em `z = -6` para caber o beco
+inteiro; o que impede alguém de andar dentro de um prédio são os colisores das
+fachadas (`noirColliders`), não a borda.
+
+Quatro coisas sustentam a leitura noir, e tirar qualquer uma derruba a imagem:
+preenchimento baixo, os letreiros como luzes pontuais coloridas, o chão quase
+espelhado (asfalto de `roughness` 0,14 mais as poças) e a chuva (`fx/Rain.ts`).
+
+Três armadilhas já pagas aqui, nesta ordem:
+
+- **pintar a noite duas vezes.** As cores do hemisfério em `STREET_NIGHT` são
+  CLARAS, e o escuro vem do `LOOK_NOIR` (exposição, contraste, o passe P&B). Na
+  primeira versão elas eram azul-escuro e quase preto: multiplicar `0x0d0f14`
+  por dois continua sendo quase preto, e o avatar de terno escuro ficava
+  literalmente invisível — a captura de prova mostrava a rua sem ninguém nela,
+  com o jogador no centro exato do quadro;
+- **o reboco quente atravessando a janela de cor.** O passe de cor seletiva do
+  `GradeShader` preserva um MATIZ, e um tijolo alaranjado tem matiz vizinha à do
+  néon. Com o corte de saturação em 0,14 a fachada inteira sobrevivia ao preto e
+  branco: uma parede de vinte metros vermelha, o oposto de um acento. Hoje o
+  corte é 0,42–0,64 (néon e fogo passam de 0,6; parede pintada, não) e as
+  fachadas do bairro são pintadas em tons NEUTROS, que fecha a mesma porta do
+  outro lado;
+- **a chegada colada na porta.** A câmera recua até 6,4 m atrás do corpo, e com
+  o spawn a quatro metros do portão ela recuava para DENTRO do arco: a primeira
+  coisa que se via do bairro era a traseira de um portal rosa ocupando meia
+  tela. Quem chega precisa de mais de um braço de câmera de folga atrás de si.
+
+`npm run gate:walls` inclui o distrito, e é ali que se prova a metade que o
+navegador vê: a cena desenhada é a cena em que se colide, e andar em toda
+direção não põe ninguém fora da planta.
+
+## Bicos de rua: as três autoridades numa feature só
+
+PRD §26 pede quatro trabalhos no MVP. As tarefas diárias existiam desde a
+migration 0017, e as outras três tinham um motivo escrito para não existir:
+*pedem mundo que ainda não existe — balcão com NPC, rota de entrega, alguém
+para contratar*. O Distrito Sombra é essa rota, e os bicos são "entregas
+virtuais" e "pequenos gigs".
+
+Um bico é uma sequência de PARADAS, na ordem, dentro de um prazo. Ele atravessa
+as três autoridades, e a divisão é a decisão inteira:
+
+```
+tela           API                     game server
+aceita  ──►  cria a corrida
+             congela prazo+pagamento
+                                   ◄── "fulano chegou na parada N"
+             confere ordem, dono,       (só ele tem a posição)
+             prazo → paga no ledger
+                                   ──► MSG.gigUpdate ──► tela
+```
+
+- `shared/gigs.ts` é o catálogo. **Não importa ninguém**, e isso é requisito:
+  a API roda TypeScript sem compilar e alcança o pacote compartilhado por
+  caminho relativo `.ts`; um módulo compartilhado que importe VALOR de outro
+  pelo especificador `./x.js` mata o serviço no boot. As COORDENADAS das paradas
+  ficam em `NOIR.stops`, com o resto da planta — quem precisa juntar a chave à
+  coordenada faz isso do seu lado;
+- `api/src/work/Gigs.ts` tem a corrida. Uma por vez, e a garantia é um índice
+  parcial no banco, não um `if`: dois aceites simultâneos passam pelo `if` os
+  dois. O prazo expira NA LEITURA (não há cron varrendo o banco), e expirar não
+  custa nada ao jogador — sem multa, sem espera, o §9 aplicado;
+- `game-server/src/world/GigTracker.ts` é um SENSOR, não um juiz. Amostra a
+  4 Hz, uma chamada em voo por jogador, e só existe em salas do bairro;
+- o cliente aceita e larga. `MSG.gigSync` é um AVISO ("vá perguntar de novo"),
+  igual a `redecorate` — se ele carregasse o bico, o navegador estaria
+  escolhendo a própria rota e o próprio pagamento.
+
+O **nível de atenção** é derivado dos fatos, como a fama e as necessidades: uma
+função das corridas fechadas nas últimas 6 h. Não existe coluna, não existe
+rotina de decaimento, e quem passa uma semana fora volta no zero sem ter sido
+punido. Ele paga MAIS e dá MENOS tempo — uma troca, nunca um castigo.
+
+`npm run gigs:check` prova o caminho inteiro sem navegador: aceita, ANDA até as
+paradas com as mesmas intenções que o teclado manda, e espera o BANCO mudar. Ele
+também prova as duas coisas que um teste de unidade não pega — que repetir a
+última chegada não paga de novo, e que pular para a última parada não conta.
+
+Uma armadilha ao escrever teste que anda: o `seq` da intenção de movimento tem
+de ser CRESCENTE. O servidor descarta `seq` menor ou igual ao último aceito
+(`stale_seq`), então um número aleatório por envio congela o corpo no primeiro
+sorteio alto — o jogador anda um metro e meio e para.
 
 ## Animação: do estado na rede ao corpo na tela
 

@@ -11,3 +11,4 @@ export * from './protocol.js';
 export * from './step.js';
 export * from './presence.js';
 export * from './moderation.js';
+export * from './gigs.js';

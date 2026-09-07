@@ -23,6 +23,7 @@ import { createAvatar, isPackaged, isProcedural, preloadAvatarBodies } from './a
 import { NameTag, disposeNameTags } from './NameTag.js';
 import { SpeechBubble } from './SpeechBubble.js';
 import { Portals } from './Portals.js';
+import { GigMarker } from './GigMarker.js';
 import { createScene } from './scenes/index.js';
 import type { GameScene } from './scenes/GameScene.js';
 import { clipReport, type ClipReport } from './anim/Library.js';
@@ -114,7 +115,26 @@ export class World {
   private offChat: (() => void) | null = null;
   private portals: Portals | null = null;
   private nearPortal: Portal | null = null;
-  private sceneId: SceneId = 'central_plaza';
+  /**
+   * A parada da vez de um bico (PRD §26). Vive fora da cena pelo mesmo motivo
+   * das portas: é navegação, não cenário — e o destino muda de lugar sem que a
+   * cena mude nada.
+   */
+  private gigMarker: GigMarker | null = null;
+  private gigTarget: { x: number; z: number } | null = null;
+  private sceneKey: SceneId = 'central_plaza';
+
+  /**
+   * Em que cena o mundo está DE FATO.
+   *
+   * Quem pergunta é a interface, e a resposta tem de vir do MUNDO, nunca da
+   * intenção: `?scene=` é um pedido e a sala pode ter entregue outra coisa. É a
+   * mesma regra de `apartmentId` — "a interface pergunta ao mundo, nunca à
+   * intenção" —, e ela já custou uma rodada quando foi quebrada lá.
+   */
+  get sceneId(): SceneId {
+    return this.sceneKey;
+  }
   /** The boom starts behind the avatar, once, on the first pose it sees. */
   private cameraAligned = false;
   /** Debug override from the screenshot tool; never set during play. */
@@ -142,6 +162,14 @@ export class World {
     this.renderer = new Renderer(opts.canvas, opts.tier);
     this.camera = new CameraManager(1);
     this.input = new InputManager(opts.canvas);
+  }
+
+  /**
+   * A conexão viva, para quem precisa MANDAR intenção (um aviso de bico, por
+   * exemplo). Nula no modo offline, e quem chama tem de aguentar isso.
+   */
+  get link(): AnyWorldConnection | null {
+    return this.connection;
   }
 
   get online(): boolean {
@@ -182,7 +210,7 @@ export class World {
     // abrindo a conexão sozinho, toda sala virava uma CityRoom e uma live
     // acontecia dentro da praça.
     this.connection = this.opts.connection ?? null;
-    this.sceneId = this.connection?.state?.sceneId ?? this.opts.sceneId ?? 'central_plaza';
+    this.sceneKey = this.connection?.state?.sceneId ?? this.opts.sceneId ?? 'central_plaza';
 
     if (this.connection) {
       this.detachStores = attachStores(this.connection);
@@ -220,6 +248,11 @@ export class World {
     // navegação, não cenário, e a tabela que a descreve é compartilhada com o
     // servidor.
     this.portals = new Portals(scene.scene, this.sceneId);
+    this.gigMarker = new GigMarker(scene.scene);
+    // Uma parada adotada antes de a cena existir (entrar no bairro já correndo
+    // um bico) fica guardada e é aplicada aqui: sem isso o marcador só
+    // apareceria na parada SEGUINTE.
+    this.gigMarker.setTarget(this.gigTarget);
 
     this.gifts = new GiftEffectManager(scene.scene, {
       budget: this.renderer.quality.settings.particleBudget,
@@ -354,6 +387,21 @@ export class World {
     this.paused = paused;
   }
 
+  /**
+   * Para onde o jogador tem de ir agora, num bico (PRD §26).
+   *
+   * A interface manda; o mundo desenha. Quem sabe qual é a parada da vez é o
+   * servidor (ele vê a chegada) e a API (ela tem a ordem) — este método é só o
+   * fim do caminho. O alvo também fica GUARDADO, porque a cena pode ainda não
+   * existir quando ele chega: quem entra no bairro já correndo um bico recebe a
+   * corrida antes do primeiro quadro, e sem a guarda o marcador só apareceria
+   * na parada seguinte.
+   */
+  setGigTarget(target: { x: number; z: number } | null): void {
+    this.gigTarget = target;
+    this.gigMarker?.setTarget(target);
+  }
+
   private loop = (): void => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
@@ -419,6 +467,11 @@ export class World {
         this.nearPortal = near;
         this.opts.onPortal?.(near);
       }
+    }
+
+    if (me && this.gigMarker) {
+      const p = me.avatar.root.position;
+      this.gigMarker.update(dt, p.x, p.z);
     }
 
     this.camera.update(dt);
@@ -773,6 +826,7 @@ export class World {
     this.detachStores?.();
     this.offChat?.();
     this.portals?.dispose();
+    this.gigMarker?.dispose();
     void this.connection?.leave();
     for (const [, actor] of this.actors) {
       actor.tag?.dispose();

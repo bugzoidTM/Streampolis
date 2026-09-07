@@ -1,4 +1,4 @@
-import type { SceneId } from '@streampolis/shared';
+import { CITY_SCENE_IDS, type SceneId } from '@streampolis/shared';
 import { NetworkClient } from './NetworkClient.js';
 import type { AnyWorldConnection } from './WorldConnection.js';
 
@@ -33,10 +33,14 @@ export type WorldIntent =
 
 export type IntentKind = WorldIntent['kind'];
 
-/** Cenários que uma CityRoom aceita; os demais têm sala própria. */
-const CITY_SCENES: ReadonlySet<SceneId> = new Set<SceneId>([
-  'central_plaza', 'residential_lobby', 'stream_store', 'agency_tower',
-]);
+/**
+ * Cenários que uma CityRoom aceita; os demais têm sala própria.
+ *
+ * Vem do catálogo compartilhado, não de um literal daqui: era uma cópia da
+ * lista do game server, e uma cena nova entrava numa e não na outra — o
+ * cliente pedia, a sala recusava e o jogador caía na praça em silêncio.
+ */
+const CITY_SCENES = CITY_SCENE_IDS;
 
 /** Cenários que podem hospedar uma transmissão (PRD §10). */
 const LIVE_SCENES: ReadonlySet<SceneId> = new Set<SceneId>([

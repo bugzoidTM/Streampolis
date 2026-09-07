@@ -1,4 +1,4 @@
-import { PLAZA } from './layout.js';
+import { NOIR, PLAZA } from './layout.js';
 import { HOME_BOUNDS, INTERIORS, type Fixture, type SceneLayout } from './interiors.js';
 import { PLACEABLES, placementFits, type HomePlacement } from './placeables.js';
 import type { SceneId } from './types.js';
@@ -162,6 +162,30 @@ function plazaColliders(): Collider[] {
 }
 
 /**
+ * O corredor do Distrito Sombra.
+ *
+ * As duas fileiras de fachadas SÃO as paredes da rua: não há um casco como o
+ * de um interior, e o retângulo andável é largo o bastante para caber o beco,
+ * então sem estes colisores dava para atravessar um prédio a pé. O vão do beco
+ * aparece sozinho — ele é a fatia que a fileira norte não cobre.
+ */
+function noirColliders(): Collider[] {
+  const out: Collider[] = [];
+  for (const b of [...NOIR.facades, NOIR.alleyEnd]) {
+    // As fachadas da fileira sul levam meia-volta, e meia-volta troca largura
+    // por profundidade se a conta for feita ingenuamente. Como `ry` aqui é
+    // sempre 0 ou π, a caixa é a mesma nos dois casos — passar `ry` adiante é
+    // o que mantém isso verdade se algum dia uma fatia sair do eixo.
+    out.push({ kind: 'rect', x: b.x, z: b.z, hw: b.width / 2, hd: b.depth / 2, ry: b.ry });
+  }
+  for (const l of NOIR.lamps) out.push({ kind: 'circle', x: l.x, z: l.z, r: 0.22 });
+  for (const b of NOIR.bins) out.push({ kind: 'circle', x: b.x, z: b.z, r: 0.34 });
+  for (const d of NOIR.dumpsters) out.push({ kind: 'rect', x: d.x, z: d.z, hw: 1.0, hd: 0.62, ry: d.ry });
+  out.push({ kind: 'circle', x: NOIR.barrel.x, z: NOIR.barrel.z, r: 0.36 });
+  return out;
+}
+
+/**
  * Blockers a room's own walls contribute. Doorways are not carved out: an
  * opening you can walk through needs a gap in the collider run, and the four
  * segments below are what produce it — the shell builder in the client reads
@@ -240,6 +264,7 @@ export const SCENE_COLLIDERS: Record<SceneId, readonly Collider[]> = {
   agency_tower: interior('agency_tower'),
   pk_arena: interior('pk_arena'),
   live_room: interior('live_room'),
+  noir_district: noirColliders(),
 };
 
 /**
@@ -267,6 +292,10 @@ export const SCENE_AREA: Partial<Record<SceneId, Area>> = {
   residential_lobby: interiorArea('residential_lobby'),
   stream_store: interiorArea('stream_store'),
   agency_tower: interiorArea('agency_tower'),
+  // Retângulo, e centrado em z = -6 e não em zero: ele precisa cobrir o beco,
+  // que sai da avenida para o norte. O que impede alguém de andar dentro de um
+  // prédio são os colisores das fachadas, não esta borda.
+  noir_district: { kind: 'rect', x: NOIR.bounds.x, z: NOIR.bounds.z, hw: NOIR.bounds.hw, hd: NOIR.bounds.hd },
 };
 
 /**
@@ -331,6 +360,27 @@ function plazaSpawns(): SpawnPoint[] {
   return out;
 }
 
+/**
+ * Chegada no Distrito Sombra: na avenida, olhando para o fundo dela.
+ *
+ * Em fila ao longo da rua e não num anel — um anel numa avenida de 18 m de
+ * largura põe metade dos pontos dentro das fachadas.
+ *
+ * A distância até o portão é o número que importa, e ele foi medido na tela:
+ * a câmera é uma órbita de terceira pessoa que recua até 6,4 m ATRÁS do corpo,
+ * e com a chegada a quatro metros da porta ela recuava para dentro do arco —
+ * a primeira coisa que se via do bairro era a traseira de um portal cor de
+ * rosa ocupando meia tela. Quem chega precisa de mais de um braço de câmera de
+ * folga atrás de si.
+ */
+function noirSpawns(): SpawnPoint[] {
+  return Array.from({ length: 8 }, (_, i) => ({
+    x: -18 + (i % 4) * 2.6,
+    z: (i < 4 ? -1 : 1) * 2.4,
+    yaw: Math.PI / 2,
+  }));
+}
+
 function interiorSpawns(id: SceneId): SpawnPoint[] {
   const layout = INTERIORS[id];
   if (!layout) return [{ x: 0, z: 0, yaw: 0 }];
@@ -351,4 +401,5 @@ export const SCENE_SPAWNS: Record<SceneId, readonly SpawnPoint[]> = {
   agency_tower: interiorSpawns('agency_tower'),
   pk_arena: interiorSpawns('pk_arena'),
   live_room: interiorSpawns('live_room'),
+  noir_district: noirSpawns(),
 };
