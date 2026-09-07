@@ -18,6 +18,7 @@ import { LikeAggregator } from '../social/LikeAggregator.js';
 import { PKEngine, type PKEvent } from '../pk/PKEngine.js';
 import { socialSignals } from '../world/SocialSignals.js';
 import { sanitizeLiveTitle } from '../shared.js';
+import { flagEnabled } from '../api/ApiGateway.js';
 import { BaseWorldRoom, type RoomCreateOptions } from './BaseWorldRoom.js';
 import { LiveState, type RoomRole } from './schema.js';
 
@@ -294,6 +295,17 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
         return;
       }
       const opponentName = this.nameOf(opponentId) || (typeof message?.opponentName === 'string' ? message.opponentName : 'Oponente');
+      /**
+       * §64: o freio de mão do PK. Ele move Coins (o placar é feito de
+       * presentes), então é o tipo de coisa que a operação precisa poder
+       * desligar sem deploy. Falha ABERTA: um worker que acabou de subir e
+       * ainda não recebeu batimento nenhum não pode cancelar batalha por não
+       * saber a resposta.
+       */
+      if (!flagEnabled('pk_enabled', true)) {
+        this.notify(client, 'pk_disabled', 'O PK está temporariamente desativado.');
+        return;
+      }
       socialSignals().mark(this.hostId, 'pk');
       if (this.cohostId) socialSignals().mark(this.cohostId, 'pk');
       const events = this.pk.start(

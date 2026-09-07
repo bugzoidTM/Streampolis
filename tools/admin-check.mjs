@@ -472,7 +472,91 @@ async function main() {
   });
   check('reintegrado volta a entrar', voltou.status === 200, `status=${voltou.status}`);
 
-  passo('18) Agências no painel (§28)');
+  passo('18) Feature flags: o botão que precisa MESMO fazer efeito (§64)');
+  const respostaFlags = await api('/admin/flags', { headers: como(mod.token) });
+  // Ler `body.flags ?? []` sem olhar o status transformava um 404 em "lista
+  // vazia" — o gate acusava a flag de não existir quando a ROTA é que não
+  // existia. Status primeiro.
+  check('a rota de flags existe', respostaFlags.status === 200, `status=${respostaFlags.status}`);
+  const listaFlags = respostaFlags.body.flags ?? [];
+  check('o painel lista as seis flags do §64', listaFlags.length >= 6, `${listaFlags.length} flags`);
+  check('e diz quais são lidas pelo código de verdade',
+    listaFlags.some((f) => f.effective === true) && listaFlags.some((f) => f.effective === false),
+    JSON.stringify(listaFlags.map((f) => [f.key, f.effective])));
+
+  if (adm) {
+    const modTentando = await api('/admin/flags/agencies_enabled', {
+      method: 'PUT', headers: como(mod.token),
+      body: JSON.stringify({ enabled: false, reason: 'moderador tentando mexer em flag' }),
+    });
+    check('moderador NÃO mexe em flag (403)', modTentando.status === 403, `status=${modTentando.status}`);
+
+    const semMotivoFlag = await api('/admin/flags/agencies_enabled', {
+      method: 'PUT', headers: como(adm.token), body: JSON.stringify({ enabled: false, reason: 'x' }),
+    });
+    check('mudar flag sem motivo é recusado', semMotivoFlag.status === 400, `status=${semMotivoFlag.status}`);
+
+    // O teste que importa: desligar precisa DESLIGAR de verdade.
+    const desliga = await api('/admin/flags/agencies_enabled', {
+      method: 'PUT', headers: como(adm.token),
+      body: JSON.stringify({ enabled: false, reason: 'admin-check: desligando agências' }),
+    });
+    check('administrador desliga a flag', desliga.body.flag?.enabled === false,
+      JSON.stringify(desliga.body).slice(0, 120));
+
+    // Conta NOVA: as fixtures podem já pertencer a uma agência de outra rodada,
+    // e aí o 409 esconderia o 503 que este teste quer ver.
+    const carimbo = Date.now().toString(36).slice(-5);
+    const novato = await api('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: `fl_${carimbo}`, email: `fl_${carimbo}@admin-check.streampolis`,
+        password: `Fl!${carimbo}#7a`,
+      }),
+    });
+    const tokenNovato = novato.body.token;
+    const criarComFlagOff = await api('/agencies', {
+      method: 'POST', headers: como(tokenNovato), body: JSON.stringify({ name: `Teste ${carimbo}` }),
+    });
+    check('com a flag desligada, criar agência responde 503', criarComFlagOff.status === 503,
+      `status=${criarComFlagOff.status} ${JSON.stringify(criarComFlagOff.body).slice(0, 80)}`);
+
+    await api('/admin/flags/agencies_enabled', {
+      method: 'PUT', headers: como(adm.token),
+      body: JSON.stringify({ enabled: true, reason: 'admin-check: religando' }),
+    });
+    const depoisDeReligar = await api('/agencies', {
+      method: 'POST', headers: como(tokenNovato), body: JSON.stringify({ name: `Teste ${carimbo}b` }),
+    });
+    check('religada, o recurso volta na hora (cache invalidado)',
+      depoisDeReligar.status !== 503, `status=${depoisDeReligar.status}`);
+    // Limpeza: se a agência foi criada, dissolve.
+    if (depoisDeReligar.status === 201) {
+      await api(`/agencies/${depoisDeReligar.body.agency.agencyId}`, {
+        method: 'DELETE', headers: como(tokenNovato),
+      });
+    }
+
+    const logFlag = (await api('/admin/audit?action=flag.disable', { headers: como(adm.token) })).body.entries ?? [];
+    check('mexer em flag deixa rastro com motivo',
+      typeof logFlag[0]?.reason === 'string' && logFlag[0].reason.includes('admin-check'),
+      JSON.stringify(logFlag[0]?.reason));
+  }
+
+  passo('19) Cabeçalhos de segurança (§37)');
+  const resposta = await fetch(`${API}/health`);
+  const cabecalhos = {
+    nosniff: resposta.headers.get('x-content-type-options'),
+    frame: resposta.headers.get('x-frame-options'),
+    referrer: resposta.headers.get('referrer-policy'),
+    csp: resposta.headers.get('content-security-policy'),
+  };
+  check('a API manda nosniff, frame-options, referrer e CSP',
+    cabecalhos.nosniff === 'nosniff' && cabecalhos.frame === 'DENY'
+    && Boolean(cabecalhos.referrer) && Boolean(cabecalhos.csp),
+    JSON.stringify(cabecalhos));
+
+  passo('20) Agências no painel (§28)');
   const listaAg = await api('/admin/agencies', { headers: como(mod.token) });
   check('o painel lista agências', listaAg.status === 200 && Array.isArray(listaAg.body.agencies),
     JSON.stringify(listaAg.body).slice(0, 100));

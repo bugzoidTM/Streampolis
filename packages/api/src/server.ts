@@ -53,8 +53,12 @@ import {
   updateCoinPackage, userDossier,
   type Actor, type ReportStatus, type StaffRole,
 } from './admin/AdminService.ts';
+import {
+  flagsSnapshot, isEnabled, listFlags, setFlag,
+} from './platform/FeatureFlags.ts';
 import { rateLimit } from './http/middleware/rateLimit.ts';
 import { cors } from './http/middleware/cors.ts';
+import { secureHeaders } from './http/middleware/secureHeaders.ts';
 
 /**
  * API REST (SPECs §51, §52).
@@ -78,6 +82,9 @@ app.use(express.json({
   verify: (req, _res, buf) => { (req as Request & { rawBody?: Buffer }).rawBody = buf; },
 }));
 app.disable('x-powered-by');
+// SPECs §37: cabeçalhos de segurança em TODA resposta, inclusive nas de erro —
+// por isso antes de qualquer rota e antes do limitador.
+app.use(secureHeaders);
 // Atrás de um proxy o IP do cliente vem no X-Forwarded-For; sem isto o
 // limitador conta todo mundo no mesmo balde (o do proxy). Configurável porque
 // confiar no header quando NÃO há proxy é o contrário: qualquer um forja o IP.
@@ -525,6 +532,18 @@ const checkoutSchema = z.object({ packageId: z.string().min(1).max(64) });
 
 app.post('/me/checkout', rateLimit('economy'), requireUser, async (req: AuthedRequest, res, next) => {
   try {
+    /**
+     * §64: `real_payments` é o freio de mão do dinheiro. Falha FECHADA — se o
+     * banco não responder, a compra não acontece. Cobrar quando não se sabe se
+     * pode cobrar é o erro caro dos dois.
+     */
+    if (!(await isEnabled('real_payments', false)) && config.payments.provider !== 'sandbox') {
+      res.status(503).json({
+        error: 'PAYMENTS_UNAVAILABLE',
+        message: 'A compra de Coins está temporariamente indisponível.',
+      });
+      return;
+    }
     const { packageId } = checkoutSchema.parse(req.body);
     res.status(201).json(await startCheckout({ userId: req.userId as string, packageId }));
   } catch (err) { next(err); }
@@ -736,6 +755,16 @@ app.get('/agencies/:agencyId', optionalUser, async (req: AuthedRequest, res, nex
 
 app.post('/agencies', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
   try {
+    // §64: falha ABERTA. Agências não movem dinheiro, e derrubar um recurso
+    // social por causa de uma leitura de flag que falhou é pior do que
+    // mantê-lo no ar por mais quinze segundos.
+    if (!(await isEnabled('agencies_enabled', true))) {
+      res.status(503).json({
+        error: 'FEATURE_DISABLED',
+        message: 'A criação de agências está temporariamente desativada.',
+      });
+      return;
+    }
     const body = agencyNameSchema.parse(req.body);
     res.status(201).json({ agency: await createAgency(req.userId as string, body.name) });
   } catch (err) { next(err); }
@@ -1111,6 +1140,40 @@ app.delete('/admin/agencies/:agencyId', ...staff, async (req: AuthedRequest, res
   } catch (err) { next(err); }
 });
 
+/**
+ * Feature flags no painel (SPECs §64).
+ *
+ * `effective: false` diz que a chave existe e NINGUÉM a lê — é o que impede o
+ * painel de virar uma fileira de botões que prometem efeito nenhum. Mexer em
+ * flag é de administrador: `real_payments` é o freio de mão do dinheiro.
+ */
+app.get('/admin/flags', ...staff, async (_req: AuthedRequest, res, next) => {
+  try {
+    res.json({ flags: await listFlags() });
+  } catch (err) { next(err); }
+});
+
+const flagSchema = z.object({ enabled: z.boolean(), reason: z.string().min(3).max(1_000) });
+
+app.put('/admin/flags/:key', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const actor = actorOf(req);
+    await assertAdmin(actor);
+    const body = flagSchema.parse(req.body);
+    const key = param(req.params.key).slice(0, 64);
+    const flag = await setFlag(key, body.enabled, actor.userId);
+    if (!flag) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    await audit({
+      actor, action: body.enabled ? 'flag.enable' : 'flag.disable',
+      targetType: 'flag', targetId: key, reason: body.reason,
+    });
+    res.json({ flag });
+  } catch (err) { next(err); }
+});
+
 app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
   try {
     res.json({
@@ -1402,7 +1465,13 @@ app.post('/internal/presence', rateLimit('service'), requireService, async (req,
     } catch (err) {
       console.error('[api] falha ao buscar ordens de moderação:', err);
     }
-    res.json({ ok: true, tracked, commands });
+    // §64: as flags vão junto, pelo mesmo canal. O game server não fala com o
+    // banco, e abrir uma rota só para isso seria uma segunda porta para manter.
+    let flags: Record<string, boolean> = {};
+    try {
+      flags = await flagsSnapshot();
+    } catch { /* sem flags, o worker mantém as últimas que recebeu */ }
+    res.json({ ok: true, tracked, commands, flags });
   } catch (err) {
     next(err);
   }

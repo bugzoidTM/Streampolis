@@ -86,6 +86,25 @@ export interface ApiGateway {
   reportSocial(entries: Array<{ userId: string; kind: string }>): Promise<void>;
 }
 
+/**
+ * As flags que o último batimento trouxe (SPECs §64).
+ *
+ * O game server não fala com o banco, e abrir uma rota só para consultar flag
+ * seria uma segunda porta para manter — elas vêm no mesmo canal das ordens de
+ * moderação. Enquanto nenhum batimento tiver chegado, o valor é o `fallback` de
+ * quem pergunta: um processo que acabou de subir não pode desligar o jogo por
+ * não saber a resposta ainda.
+ */
+const flagsRecebidas = new Map<string, boolean>();
+
+export function setFlags(valores: Record<string, boolean>): void {
+  for (const [k, v] of Object.entries(valores)) flagsRecebidas.set(k, v);
+}
+
+export function flagEnabled(key: string, fallback: boolean): boolean {
+  return flagsRecebidas.get(key) ?? fallback;
+}
+
 export class HttpApiGateway implements ApiGateway {
   constructor(
     private readonly baseUrl: string,
@@ -139,9 +158,12 @@ export class HttpApiGateway implements ApiGateway {
   }
 
   async publishPresence(snapshot: PresenceSnapshot): Promise<ModerationCommand[]> {
-    const resposta = await this.call<{ commands?: ModerationCommand[] }>(
+    const resposta = await this.call<{ commands?: ModerationCommand[]; flags?: Record<string, boolean> }>(
       '/internal/presence', { method: 'POST', body: JSON.stringify(snapshot) },
     );
+    // §64: as flags chegam de carona no batimento. Guardar aqui é o que permite
+    // a sala perguntar sem ir à rede no meio de uma ação do jogador.
+    if (resposta?.flags) setFlags(resposta.flags);
     return resposta?.commands ?? [];
   }
 
