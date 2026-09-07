@@ -10,6 +10,7 @@ import { LiveRoom } from './rooms/LiveRoom.js';
 import type { LiveSummary } from './shared.js';
 import { createScaling } from './scaling.js';
 import { presence } from './world/Presence.js';
+import { socialSignals } from './world/SocialSignals.js';
 import { defaultApiGateway, type ModerationCommand } from './api/ApiGateway.js';
 
 /** Um gateway por processo, para o ack das ordens de moderação. */
@@ -170,6 +171,11 @@ gameServer.onShutdown(async () => {
   // onDispose has removed every room; publish the empty slice before exit.
   await presence().flush();
   presence().stop();
+  // O acumulador social segura até 30 s de interações (§32, §26). Num
+  // desligamento limpo elas não têm por que se perder — e a métrica de um dia
+  // inteiro não pode depender de o processo nunca reiniciar.
+  await socialSignals().flush();
+  socialSignals().stop();
 });
 
 // filterBy is what shards the world: a full central-plaza-001 makes the

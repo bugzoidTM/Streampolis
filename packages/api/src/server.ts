@@ -31,6 +31,7 @@ import {
 } from './social/Moderation.ts';
 import { getOnboarding, markStep, observePresence } from './social/Onboarding.ts';
 import { claimMission, listMissions } from './social/Missions.ts';
+import { claimDailyTask, listDailyTasks } from './social/DailyTasks.ts';
 import {
   isSocialKind, markSocial, markSocialBatch, productMetrics, type SocialKind,
 } from './social/SocialActivity.ts';
@@ -1151,6 +1152,27 @@ app.post('/me/missions/:missionId/claim', rateLimit('economy'), requireUser,
   async (req: AuthedRequest, res, next) => {
     try {
       res.json(await claimMission(req.userId as string, param(req.params.missionId).slice(0, 32)));
+    } catch (err) { next(err); }
+  });
+
+// ------------------------------------------------------- tarefas diárias ---
+/**
+ * Trabalhos (PRD §26), a parte que dá para fazer hoje: tarefas diárias.
+ *
+ * Nenhuma delas exige transmitir — é o ponto da seção ("prosperar sem
+ * obrigatoriamente se tornar streamer"). O cumprimento sai da mesma tabela que
+ * responde à North Star; o que se guarda é só se a recompensa do DIA foi paga.
+ */
+app.get('/me/daily', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await listDailyTasks(req.userId as string));
+  } catch (err) { next(err); }
+});
+
+app.post('/me/daily/:taskId/claim', rateLimit('economy'), requireUser,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      res.json(await claimDailyTask(req.userId as string, param(req.params.taskId).slice(0, 32)));
     } catch (err) { next(err); }
   });
 

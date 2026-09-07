@@ -616,6 +616,42 @@ async function main() {
   check('e o perfil público mostra a mesma fama', perfilA?.fame === fama.fame,
     `perfil=${perfilA?.fame} vs /me/fame=${fama.fame}`);
 
+  step('14) Trabalhos: dá para ganhar Credits sem transmitir (§26)');
+  const diarias = (await api('/me/daily', { headers: asUser(B.token) })).body;
+  check('as tarefas do dia respondem', (diarias.tasks ?? []).length === 4,
+    `${(diarias.tasks ?? []).length} tarefas`);
+  check('e dizem quando a lista vira', typeof diarias.resetsAt === 'string', diarias.resetsAt);
+  /**
+   * B passou pela live nesta rodada, mas o worker ACUMULA as interações que só
+   * ele vê e as manda em lote (30 s). Esperar é o certo: forçar envio imediato
+   * faria o teste medir um jogo que não existe — o de verdade paga um POST por
+   * mensagem de chat, que é o que o lote existe para evitar.
+   */
+  const plateiaPronta = await waitForApi('a live virar tarefa cumprida', async () => {
+    const r = await api('/me/daily', { headers: asUser(B.token) });
+    return (r.body.tasks ?? []).some((t) => t.id === 'plateia' && t.done);
+  }, 45_000);
+  check('quem passou por uma live tem a tarefa da plateia pronta', plateiaPronta);
+
+  const atualizadas = (await api('/me/daily', { headers: asUser(B.token) })).body;
+  const naoFeitaHoje = (atualizadas.tasks ?? []).find((t) => !t.done);
+  if (naoFeitaHoje) {
+    const cedo = await api(`/me/daily/${naoFeitaHoje.id}/claim`, { method: 'POST', headers: asUser(B.token) });
+    check('tarefa não cumprida hoje não paga (409)', cedo.status === 409, `status=${cedo.status}`);
+  }
+
+  const antesDiaria = (await api('/me/wallet', { headers: asUser(B.token) })).body;
+  const pagou = await api('/me/daily/plateia/claim', { method: 'POST', headers: asUser(B.token) });
+  check('resgatar a diária paga os Credits', pagou.status === 200
+    && pagou.body.balances?.credits === antesDiaria.credits + 60,
+    `${antesDiaria.credits} → ${pagou.body.balances?.credits}`);
+  const dobrada = await api('/me/daily/plateia/claim', { method: 'POST', headers: asUser(B.token) });
+  check('e não paga duas vezes no mesmo dia',
+    dobrada.body.balances?.credits === pagou.body.balances?.credits && dobrada.body.replayed === true,
+    JSON.stringify(dobrada.body).slice(0, 120));
+  check('a chave do resgate carrega o DIA (senão amanhã não pagaria)',
+    pagou.body.day === diarias.day, `${pagou.body.day} vs ${diarias.day}`);
+
   console.log(`\n${failures === 0 ? '✅' : '❌'} ${checks - failures}/${checks} verificações passaram.`);
   console.log(`   contas desta rodada: ${A.username} / ${B.username} (ficam no banco, por causa do extrato)`);
   for (const n of notes) console.log(`   · ${n}`);

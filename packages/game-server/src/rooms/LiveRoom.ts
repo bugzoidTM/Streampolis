@@ -189,7 +189,16 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
     // Everyone arrives as audience. The stage is granted by the host through an
     // invite the guest accepts — never claimed by asking for it on join.
     super.onJoin(client, options, auth);
-    if (identity) this.uniqueViewers.add(identity.userId);
+    if (identity) {
+      this.uniqueViewers.add(identity.userId);
+      /**
+       * Assistir também é interação (§32) — e é o que a tarefa diária "passe
+       * por uma live" (§26) conta. Antes, só quem TRANSMITIA era marcado, o que
+       * fazia a métrica social enxergar o palco e ignorar a plateia: metade da
+       * live, e justamente a metade maior.
+       */
+      socialSignals().mark(identity.userId, 'live');
+    }
     this.refreshViewers();
   }
 
