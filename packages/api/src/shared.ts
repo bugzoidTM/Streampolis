@@ -17,3 +17,9 @@ export * from '../../shared/src/placeables.ts';
 export { HOME_BOUNDS } from '../../shared/src/interiors.ts';
 export { ITEM_CATALOG, BODY_ITEM } from '../../shared/src/items.ts';
 export type { ItemDef, ItemType } from '../../shared/src/items.ts';
+// Moderação de texto (§27): a MESMA lista que o chat usa no game server. Uma
+// segunda lista aqui ensinaria onde escrever o que não se pode.
+export {
+  checkName, hasBannedTerm, nameRejectionMessage, normaliseText, sanitizeLiveTitle,
+  DEFAULT_TERMS, RESERVED_NAMES, NEUTRAL_LIVE_TITLE,
+} from '../../shared/src/moderation.ts';

@@ -209,6 +209,8 @@ export interface UserRow {
   role: string;
   status: string;
   mutedUntil: string | null;
+  /** Prazo da suspensão (§27). `null` = permanente até alguém reintegrar. */
+  suspendedUntil: string | null;
   economyBlocked: boolean;
   createdAt: string;
 }
@@ -221,13 +223,14 @@ const toUser = (r: any): UserRow => ({
   role: r.role,
   status: r.status,
   mutedUntil: r.chat_muted_until ? r.chat_muted_until.toISOString() : null,
+  suspendedUntil: r.suspended_until ? r.suspended_until.toISOString() : null,
   economyBlocked: r.economy_blocked,
   createdAt: r.created_at.toISOString(),
 });
 
 const USER_SELECT = `
-  SELECT u.id, u.username, u.role, u.status, u.chat_muted_until, u.economy_blocked,
-         u.created_at, p.display_name
+  SELECT u.id, u.username, u.role, u.status, u.chat_muted_until, u.suspended_until,
+         u.economy_blocked, u.created_at, p.display_name
     FROM users u LEFT JOIN profiles p ON p.user_id = u.id`;
 
 /**
@@ -300,7 +303,11 @@ export interface SanctionInput {
   targetId: string;
   action: SanctionAction;
   reason: string;
-  /** Só para `mute`: por quantos minutos. */
+  /**
+   * Duração em minutos. Para `mute`, quanto tempo calado; para `suspend`, o
+   * PRAZO da suspensão (§27) — sem ele a suspensão é permanente até alguém
+   * reintegrar, o que é banimento com outro nome.
+   */
   minutes?: number;
 }
 
@@ -312,6 +319,10 @@ export interface SanctionResult {
 }
 
 const MUTE_MAX_MINUTES = 60 * 24 * 30;
+/** Teto da suspensão temporária: um ano. Mais que isso é banimento, e
+ *  banimento tem nome próprio — chamar as coisas pelo nome é o que faz a
+ *  decisão aparecer no log do jeito que ela foi. */
+const SUSPEND_MAX_MINUTES = 60 * 24 * 365;
 
 export async function applySanction(input: SanctionInput): Promise<SanctionResult> {
   const motivo = assertReason(input.reason);
@@ -333,19 +344,33 @@ export async function applySanction(input: SanctionInput): Promise<SanctionResul
 
   const minutos = input.action === 'mute'
     ? Math.min(Math.max(Math.trunc(input.minutes ?? 60), 1), MUTE_MAX_MINUTES)
-    : 0;
+    : input.action === 'suspend' && input.minutes
+      ? Math.min(Math.max(Math.trunc(input.minutes), 1), SUSPEND_MAX_MINUTES)
+      : 0;
 
   const revogadas = await withTransaction(async (client) => {
     switch (input.action) {
       case 'suspend':
-        await client.query(`UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1`, [input.targetId]);
+        await client.query(
+          `UPDATE users SET status = 'suspended', updated_at = now(),
+                  suspended_until = CASE WHEN $2::int > 0
+                    THEN now() + make_interval(mins => $2::int) ELSE NULL END
+            WHERE id = $1`,
+          [input.targetId, minutos],
+        );
         break;
       case 'ban':
-        await client.query(`UPDATE users SET status = 'banned', updated_at = now() WHERE id = $1`, [input.targetId]);
+        // Banimento não tem prazo, e limpar a data é o que impede uma suspensão
+        // antiga de "expirar" um banimento novo.
+        await client.query(
+          `UPDATE users SET status = 'banned', suspended_until = NULL, updated_at = now() WHERE id = $1`,
+          [input.targetId],
+        );
         break;
       case 'reinstate':
         await client.query(
-          `UPDATE users SET status = 'active', chat_muted_until = NULL, updated_at = now() WHERE id = $1`,
+          `UPDATE users SET status = 'active', chat_muted_until = NULL,
+                  suspended_until = NULL, updated_at = now() WHERE id = $1`,
           [input.targetId],
         );
         break;
@@ -376,7 +401,7 @@ export async function applySanction(input: SanctionInput): Promise<SanctionResul
   await audit({
     actor: input.actor, action: `user.${input.action}`, targetType: 'user',
     targetId: input.targetId, reason: motivo,
-    metadata: input.action === 'mute' ? { minutes: minutos } : {},
+    metadata: minutos > 0 ? { minutes: minutos } : {},
   });
 
   const { rows } = await pool.query(`${USER_SELECT} WHERE u.id = $1`, [input.targetId]);

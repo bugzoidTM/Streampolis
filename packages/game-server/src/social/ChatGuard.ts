@@ -1,4 +1,4 @@
-import { CHAT_RATE_LIMIT, MAX_CHAT_LEN } from '../shared.js';
+import { CHAT_RATE_LIMIT, DEFAULT_TERMS, MAX_CHAT_LEN, normaliseText } from '../shared.js';
 
 export type ChatRejectReason =
   | 'empty'
@@ -13,34 +13,15 @@ export type ChatVerdict =
   | { ok: false; reason: ChatRejectReason; message: string };
 
 /**
- * Baseline pt-BR profanity list. Deliberately small and stored as stems: the
- * real list belongs to the moderation service (SPECs §39/§40), this only stops
- * the obvious from reaching a room before that exists.
- * TODO(moderation): replace with the API-provided list + severity levels.
+ * A lista e a normalização MUDARAM DE CASA: agora moram em `shared/moderation`,
+ * porque o §27 também pede moderação de username e de título de live — e essas
+ * duas acontecem na API. Duas listas seriam pior do que uma incompleta: a
+ * palavra proibida no chat e permitida no nome do perfil ensina exatamente onde
+ * escrever o que não se pode.
+ *
+ * O comportamento do chat não muda: os mesmos radicais, a mesma normalização.
  */
-const DEFAULT_TERMS = [
-  'porra', 'caralho', 'merda', 'buceta', 'foder', 'fodase',
-  'puta', 'viado', 'arrombado', 'cuzao', 'desgraca', 'vadia',
-];
-
-const LEET = new Map<string, string>([
-  ['0', 'o'], ['1', 'i'], ['3', 'e'], ['4', 'a'], ['5', 's'], ['7', 't'], ['@', 'a'], ['$', 's'],
-]);
-
-/** Strips accents, leetspeak and repeated letters so "p0rrrra" still matches. */
-function normalise(text: string): string {
-  const flat = text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-  let out = '';
-  for (const ch of flat) out += LEET.get(ch) ?? ch;
-  // Runs collapse to a SINGLE character, not two: "m3rrrda" has to reduce all
-  // the way to "merda" or the stem never matches. The term list is normalised
-  // through the same function, so a legitimate double ("carro") is compared
-  // against an equally collapsed stem and nothing new starts matching.
-  return out.replace(/(.)\1+/g, '$1').replace(/[^a-z0-9\s]/g, '');
-}
+const normalise = normaliseText;
 
 export interface ChatGuardOptions {
   terms?: string[];

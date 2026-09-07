@@ -436,7 +436,43 @@ async function main() {
   check('jogador comum não vê o painel de produto (403)', semPapel.status === 403,
     `status=${semPapel.status}`);
 
-  passo('17) Agências no painel (§28)');
+  passo('17) Banimento temporário: a punição que acaba sozinha (§27)');
+  const suspensao = await api(`/admin/users/${beto.identity.userId}/sanction`, {
+    method: 'POST', headers: como(mod.token),
+    body: JSON.stringify({ action: 'suspend', reason: 'admin-check: suspensão de 1 minuto', minutes: 1 }),
+  });
+  check('suspender com prazo grava a data de volta',
+    suspensao.status === 200 && Boolean(suspensao.body.user?.suspendedUntil),
+    JSON.stringify(suspensao.body.user).slice(0, 140));
+  check('e derruba a sessão (refresh apagado)', suspensao.body.sessionsRevoked >= 0,
+    `sessões=${suspensao.body.sessionsRevoked}`);
+
+  const entrarSuspenso = await api('/auth/login', {
+    method: 'POST', body: JSON.stringify({ username: 'beto', password: 'streampolis-dev' }),
+  });
+  // 403 e não 401 de propósito: a senha está certa, a CONTA é que está fora.
+  // Responder "credenciais inválidas" mandaria a pessoa trocar a senha à toa.
+  check('suspenso não entra, e a recusa diz que é a conta',
+    entrarSuspenso.status === 403 && entrarSuspenso.body?.error === 'account_unavailable',
+    `status=${entrarSuspenso.status} ${JSON.stringify(entrarSuspenso.body)}`);
+
+  const semPrazo = await api(`/admin/users/${beto.identity.userId}/sanction`, {
+    method: 'POST', headers: como(mod.token),
+    body: JSON.stringify({ action: 'suspend', reason: 'admin-check: suspensão sem prazo' }),
+  });
+  check('sem minutos, a suspensão é permanente até reintegrarem',
+    semPrazo.body.user?.suspendedUntil === null, JSON.stringify(semPrazo.body.user).slice(0, 120));
+
+  await api(`/admin/users/${beto.identity.userId}/sanction`, {
+    method: 'POST', headers: como(mod.token),
+    body: JSON.stringify({ action: 'reinstate', reason: 'admin-check: fim do teste' }),
+  });
+  const voltou = await api('/auth/login', {
+    method: 'POST', body: JSON.stringify({ username: 'beto', password: 'streampolis-dev' }),
+  });
+  check('reintegrado volta a entrar', voltou.status === 200, `status=${voltou.status}`);
+
+  passo('18) Agências no painel (§28)');
   const listaAg = await api('/admin/agencies', { headers: como(mod.token) });
   check('o painel lista agências', listaAg.status === 200 && Array.isArray(listaAg.body.agencies),
     JSON.stringify(listaAg.body).slice(0, 100));

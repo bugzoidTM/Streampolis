@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { checkName, nameRejectionMessage } from '../shared.ts';
 import { withTransaction, isUniqueViolation } from '../db/tx.ts';
 import { DEFAULT_AVATAR_DTO } from './identity.ts';
 
@@ -31,7 +32,8 @@ import { DEFAULT_AVATAR_DTO } from './identity.ts';
  */
 export const PASSWORD_COST = 10;
 
-export type RegisterErrorCode = 'USERNAME_TAKEN' | 'EMAIL_TAKEN' | 'WEAK_PASSWORD';
+export type RegisterErrorCode =
+  | 'USERNAME_TAKEN' | 'EMAIL_TAKEN' | 'WEAK_PASSWORD' | 'USERNAME_REJECTED';
 
 export class RegisterError extends Error {
   readonly code: RegisterErrorCode;
@@ -84,6 +86,17 @@ function assertUsablePassword(input: RegisterInput): void {
  * apartamentos para a mesma pessoa.
  */
 export async function registerAccount(input: RegisterInput): Promise<string> {
+  /**
+   * Moderação de username (PRD §27).
+   *
+   * Recusa, e não mascara: o nome é permanente, aparece em cima da cabeça da
+   * pessoa na praça e num "m****a" ninguém acredita. Vale para palavrão e para
+   * impersonação — um jogador chamado "suporte" consegue pedir a senha de
+   * alguém só com o nome, e o jogo teria ensinado a vítima a confiar nele.
+   */
+  const recusa = checkName(input.username);
+  if (recusa) throw new RegisterError('USERNAME_REJECTED', nameRejectionMessage(recusa), 400);
+
   assertUsablePassword(input);
   const passwordHash = await bcrypt.hash(input.password, PASSWORD_COST);
 

@@ -673,6 +673,51 @@ async function main() {
   check('nenhuma rota do jogo passou a exigir necessidade nenhuma',
     (await api('/me/wallet', { headers: asUser(A.token) })).status === 200);
 
+  step('16) Segurança social: o texto que os outros leem (§27)');
+  const nomeFeio = await api('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      username: `p0rra_${STAMP.slice(0, 4)}`,
+      email: `feio_${STAMP}@release-check.streampolis`, password: 'Senha!Forte#9',
+    }),
+  });
+  check('username com palavrão é RECUSADO no cadastro', nomeFeio.status === 400,
+    `status=${nomeFeio.status} ${JSON.stringify(nomeFeio.body).slice(0, 90)}`);
+
+  const nomeEquipe = await api('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      username: `suporte_${STAMP.slice(0, 3)}`,
+      email: `equipe_${STAMP}@release-check.streampolis`, password: 'Senha!Forte#9',
+    }),
+  });
+  check('username que se passa pela equipe também', nomeEquipe.status === 400,
+    `status=${nomeEquipe.status}`);
+  check('e a recusa explica o motivo para o jogador',
+    typeof nomeEquipe.body?.message === 'string' && nomeEquipe.body.message.length > 20,
+    JSON.stringify(nomeEquipe.body));
+
+  // Título de live: a live ABRE, mas o feed não recebe o termo.
+  const clienteFeio = new Client(WS);
+  const liveFeia = await clienteFeio.create('live', {
+    token: A.token, title: 'live da porra toda', category: 'geral',
+  });
+  const avisosTitulo = [];
+  liveFeia.onMessage('notice', (n) => avisosTitulo.push(n));
+  for (const t of ['chatMessage', 'giftEvent', 'stageInvite', 'pkResult', 'follow']) {
+    liveFeia.onMessage(t, () => {});
+  }
+  await waitFor('a live abrir', () => liveFeia.state?.liveId !== undefined);
+  check('a live com título ruim ABRE (não se derruba a sala por uma palavra)',
+    liveFeia.state?.ended !== true);
+  check('mas o título não vai ao ar', liveFeia.state?.title === 'Live',
+    `título=${liveFeia.state?.title}`);
+  check('e o host é avisado da troca, em privado',
+    avisosTitulo.some((a) => a.code === 'title_replaced'), JSON.stringify(avisosTitulo).slice(0, 120));
+  liveFeia.send('endLive', {});
+  await sleep(800);
+  await liveFeia.leave().catch(() => {});
+
   console.log(`\n${failures === 0 ? '✅' : '❌'} ${checks - failures}/${checks} verificações passaram.`);
   console.log(`   contas desta rodada: ${A.username} / ${B.username} (ficam no banco, por causa do extrato)`);
   for (const n of notes) console.log(`   · ${n}`);

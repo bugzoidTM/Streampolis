@@ -17,6 +17,7 @@ import { defaultApiGateway, type ApiGateway } from '../api/ApiGateway.js';
 import { LikeAggregator } from '../social/LikeAggregator.js';
 import { PKEngine, type PKEvent } from '../pk/PKEngine.js';
 import { socialSignals } from '../world/SocialSignals.js';
+import { sanitizeLiveTitle } from '../shared.js';
 import { BaseWorldRoom, type RoomCreateOptions } from './BaseWorldRoom.js';
 import { LiveState, type RoomRole } from './schema.js';
 
@@ -63,6 +64,9 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
   /** Stage seats by userId, so a rejoin restores the seat, not the sessionId. */
   private hostId = '';
   private cohostId = '';
+  /** O título pedido não podia ir ao ar; o host precisa saber por que mudou. */
+  private titleWasReplaced = false;
+
   /** Pending stage offer. One at a time: two open invites is a race for a seat. */
   private invite: { userId: string; expiresAt: number } | null = null;
   /**
@@ -121,7 +125,18 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
     this.state.liveId = `live_${this.roomId}`;
     this.state.hostId = this.hostId;
     this.state.hostName = host.displayName;
-    this.state.title = (options.title ?? '').trim().slice(0, 80) || 'Live';
+    /**
+     * Moderação do título (PRD §27).
+     *
+     * O título vai para o FEED PÚBLICO — é o texto de jogador mais visível do
+     * produto, e o primeiro que alguém de fora lê. Quando ele não pode ir, a
+     * live continua: o título vira neutro e o host é avisado. Derrubar a
+     * transmissão inteira por causa de uma palavra seria punição
+     * desproporcional, e ninguém aprende nada com uma sala que não abre.
+     */
+    const tituloLimpo = sanitizeLiveTitle(options.title ?? '');
+    this.state.title = tituloLimpo.title;
+    this.titleWasReplaced = tituloLimpo.replaced;
     this.state.category = (options.category ?? 'geral').slice(0, 32);
     this.state.agency = host.agency;
     this.state.startedAt = Date.now();
@@ -189,6 +204,12 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
     // Everyone arrives as audience. The stage is granted by the host through an
     // invite the guest accepts — never claimed by asking for it on join.
     super.onJoin(client, options, auth);
+    // O aviso é privado e só para o host: a plateia não tem nada com o título
+    // que ele tentou usar.
+    if (identity && identity.userId === this.hostId && this.titleWasReplaced) {
+      this.notify(client, 'title_replaced',
+        'O título tinha um termo que não pode ir ao feed; ele foi trocado.');
+    }
     if (identity) {
       this.uniqueViewers.add(identity.userId);
       /**

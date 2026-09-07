@@ -52,6 +52,7 @@ interface IdentityRow {
   role: 'player' | 'moderator' | 'admin';
   status: string;
   chat_muted_until: Date | null;
+  suspended_until: Date | null;
   gifter_level: number | null;
   agency_name: string | null;
   config: AvatarConfigDTO | null;
@@ -87,6 +88,7 @@ export function permissionsFor(
 export async function loadIdentity(userId: string): Promise<SessionIdentity | null> {
   const { rows } = await pool.query<IdentityRow>(
     `SELECT u.id, u.username, p.display_name, u.role, u.status, u.chat_muted_until,
+            u.suspended_until,
             s.gifter_level, a.name AS agency_name, av.config
        FROM users u
        LEFT JOIN profiles p      ON p.user_id = u.id
@@ -101,7 +103,26 @@ export async function loadIdentity(userId: string): Promise<SessionIdentity | nu
   if (!row) return null;
   // Banido ou suspenso não recebe token: barrar no login é mais barato e mais
   // seguro do que barrar em cada sala depois.
-  if (row.status !== 'active') return null;
+  if (row.status !== 'active') {
+    /**
+     * Suspensão com prazo vencido devolve a conta AQUI (PRD §27).
+     *
+     * É o único lugar por onde toda sessão passa, então é onde a punição
+     * temporária acaba sozinha — sem agendador e sem depender de alguém lembrar
+     * de reintegrar. Uma suspensão de três dias que dura três meses porque
+     * ninguém voltou nela não é o que a moderação decidiu aplicar.
+     */
+    if (row.status === 'suspended' && row.suspended_until
+        && row.suspended_until.getTime() <= Date.now()) {
+      await pool.query(
+        `UPDATE users SET status = 'active', suspended_until = NULL, updated_at = now()
+          WHERE id = $1 AND status = 'suspended'`,
+        [row.id],
+      );
+    } else {
+      return null;
+    }
+  }
 
   return {
     userId: row.id,
