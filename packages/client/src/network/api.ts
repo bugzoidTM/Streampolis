@@ -172,6 +172,19 @@ export interface MissionClaim {
   replayed: boolean;
 }
 
+export interface NeedView {
+  id: 'energia' | 'social' | 'humor' | 'conforto';
+  label: string;
+  value: number;
+  /** O que fazer a respeito — é para isto que elas existem (§9). */
+  hint: string;
+}
+
+export interface NeedsView {
+  needs: Record<string, number>;
+  views: NeedView[];
+}
+
 export interface DailyTask {
   id: string;
   title: string;
@@ -431,6 +444,11 @@ export class ApiClient {
 
   claimMission(missionId: string): Promise<MissionClaim> {
     return this.call(`/me/missions/${encodeURIComponent(missionId)}/claim`, { method: 'POST' });
+  }
+
+  /** Necessidades do personagem (PRD §9). Não travam nada — orientam. */
+  needs(): Promise<NeedsView> {
+    return this.call('/me/needs');
   }
 
   /** Tarefas do dia (PRD §26). Viram à meia-noite do fuso do jogador. */

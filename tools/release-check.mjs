@@ -652,6 +652,27 @@ async function main() {
   check('a chave do resgate carrega o DIA (senão amanhã não pagaria)',
     pagou.body.day === diarias.day, `${pagou.body.day} vs ${diarias.day}`);
 
+  step('15) Necessidades: orientam sem punir (§9)');
+  const necessidades = (await api('/me/needs', { headers: asUser(A.token) })).body;
+  const quatro = (necessidades.views ?? []).map((v) => v.id);
+  check('as quatro necessidades respondem',
+    ['energia', 'social', 'humor', 'conforto'].every((id) => quatro.includes(id)), quatro.join(', '));
+  check('todas na faixa 0–100',
+    (necessidades.views ?? []).every((v) => v.value >= 0 && v.value <= 100),
+    JSON.stringify(necessidades.needs));
+  check('cada uma diz o que fazer a respeito',
+    (necessidades.views ?? []).every((v) => typeof v.hint === 'string' && v.hint.length > 10));
+  // Quem acabou de transmitir e lutar PK tem de estar mais cansado que quem
+  // nunca fez nada — é a única direção que o §9 define para a energia.
+  const energiaHost = necessidades.needs?.energia;
+  const doB = (await api('/me/needs', { headers: asUser(B.token) })).body;
+  check('quem acabou de transmitir tem menos energia que quem só assistiu',
+    energiaHost < doB.needs?.energia, `host=${energiaHost} vs plateia=${doB.needs?.energia}`);
+  check('e mesmo cansado, ninguém fica no chão (piso do §9)', energiaHost >= 25,
+    `energia=${energiaHost}`);
+  check('nenhuma rota do jogo passou a exigir necessidade nenhuma',
+    (await api('/me/wallet', { headers: asUser(A.token) })).status === 200);
+
   console.log(`\n${failures === 0 ? '✅' : '❌'} ${checks - failures}/${checks} verificações passaram.`);
   console.log(`   contas desta rodada: ${A.username} / ${B.username} (ficam no banco, por causa do extrato)`);
   for (const n of notes) console.log(`   · ${n}`);

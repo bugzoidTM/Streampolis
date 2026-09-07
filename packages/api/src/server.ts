@@ -20,6 +20,7 @@ import {
 } from './http/middleware/auth.ts';
 import { getPublicProfile, listFollowing, setFollow } from './profile/PublicProfile.ts';
 import { fameOf, refreshFame } from './profile/Fame.ts';
+import { needsOf } from './profile/Needs.ts';
 import { getRanking, isBoard, isRange } from './social/Rankings.ts';
 import { presenceDirectory } from './social/PresenceDirectory.ts';
 import {
@@ -1154,6 +1155,18 @@ app.post('/me/missions/:missionId/claim', rateLimit('economy'), requireUser,
       res.json(await claimMission(req.userId as string, param(req.params.missionId).slice(0, 32)));
     } catch (err) { next(err); }
   });
+
+/**
+ * Necessidades do personagem (PRD §9).
+ *
+ * As quatro são derivadas dos fatos e **não travam nada**: elas existem para
+ * criar decisão e variedade, e cada uma vem com a dica do que fazer a respeito.
+ */
+app.get('/me/needs', requireUser, async (req: AuthedRequest, res, next) => {
+  try {
+    res.json(await needsOf(req.userId as string));
+  } catch (err) { next(err); }
+});
 
 // ------------------------------------------------------- tarefas diárias ---
 /**

@@ -3,6 +3,7 @@ import { GIFTER_TIERS, gifterTierFor } from '@streampolis/shared';
 import { useAccountStore } from '../state/useAccountStore.js';
 import { AgencyPanel } from './AgencyPanel.js';
 import { MissionsPanel } from './MissionsPanel.js';
+import { NeedsCard } from './NeedsCard.js';
 import { useSocialStore } from '../state/useSocialStore.js';
 import type { OnboardingStep, PublicProfile, ReportType } from '../network/api.js';
 import { presenceLabel, short } from '../state/format.js';
@@ -300,6 +301,10 @@ export function ProfileView({
               <Money currency="coins" amount={wallet.coins} icon={<IconCoin size={15} />} />
             </div>
           )}
+
+          {/* §9: só no próprio perfil — o humor dos outros não é da conta de
+              ninguém, e a energia deles seria informação tática. */}
+          {profile.isSelf && <NeedsCard />}
 
           <div className="profile__grid">
             <Stat label="Creator Points" value={short(profile.creatorPoints)} hint="Pontos ganhos transmitindo" />
