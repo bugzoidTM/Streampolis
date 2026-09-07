@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { GIFTER_TIERS, gifterTierFor } from '@streampolis/shared';
 import { useAccountStore } from '../state/useAccountStore.js';
+import { AgencyPanel } from './AgencyPanel.js';
 import { useSocialStore } from '../state/useSocialStore.js';
 import type { OnboardingStep, PublicProfile, ReportType } from '../network/api.js';
 import { presenceLabel, short } from '../state/format.js';
@@ -55,7 +56,22 @@ export function ProfileView({
   /** Resposta curta da última ação social ("Convite enviado", "Bloqueado"). */
   const [recado, setRecado] = useState<string | null>(null);
   const [denunciando, setDenunciando] = useState(false);
+  const [agencyOpen, setAgencyOpen] = useState(false);
+  /**
+   * A minha agência e a minha função nela — carregadas aqui porque decidem se
+   * o botão "Convidar para a agência" existe no perfil de OUTRA pessoa. Um
+   * botão que aparece e responde 403 é pior do que botão nenhum.
+   */
+  const [minhaAgencia, setMinhaAgencia] = useState<{ id: string; role: string } | null>(null);
   const [enviandoDenuncia, setEnviandoDenuncia] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    void api?.myAgency()
+      .then((r) => { if (vivo && r.agency) setMinhaAgencia({ id: r.agency.agencyId, role: r.role ?? 'member' }); })
+      .catch(() => { /* sem agência ou sem sessão: o botão simplesmente não existe */ });
+    return () => { vivo = false; };
+  }, [api]);
 
   useEffect(() => {
     if (!userId) { setProfile(mine); return; }
@@ -182,12 +198,37 @@ export function ProfileView({
               <Button variant="secondary" onClick={() => onMeet(profile.userId)}>Encontrar</Button>
             )}
 
+            {/* Convidar acontece AQUI, no perfil de quem se quer convidar: é
+                onde se decide chamar uma pessoa. E só aparece para quem
+                administra uma agência, olhando alguém que não está em nenhuma. */}
+            {!profile.isSelf && minhaAgencia && minhaAgencia.role !== 'member' && !profile.agency && (
+              <Button
+                variant="secondary"
+                icon={<IconShield size={16} />}
+                onClick={() => void agir(async () => {
+                  await api?.inviteToAgency(minhaAgencia.id, profile.userId);
+                  setRecado('Convite de agência enviado.');
+                })}
+              >
+                Convidar para a agência
+              </Button>
+            )}
+
             {profile.isLive && profile.liveRoomId && (
               <Button variant="live" icon={<IconEye size={16} />} onClick={() => onWatchLive(profile.liveRoomId as string)}>
                 Assistir
               </Button>
             )}
             {profile.isSelf && <Button variant="secondary" onClick={onEditLook}>Editar look</Button>}
+            {profile.isSelf && (
+              <Button
+                variant="secondary"
+                icon={<IconShield size={16} />}
+                onClick={() => setAgencyOpen(true)}
+              >
+                {profile.agency || 'Agência'}
+              </Button>
+            )}
             {profile.isSelf && onOpenFriends && (
               <Button
                 variant="secondary"
@@ -275,6 +316,8 @@ export function ProfileView({
           </p>
         )}
       </div>
+
+      {agencyOpen && <AgencyPanel onClose={() => setAgencyOpen(false)} />}
 
       {denunciando && (
         <SheetDenuncia

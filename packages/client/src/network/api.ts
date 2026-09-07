@@ -145,6 +145,36 @@ export interface PaymentSummary {
   paidAt: string | null;
 }
 
+export type AgencyRole = 'owner' | 'manager' | 'member';
+
+export interface AgencyMember {
+  userId: string;
+  username: string;
+  displayName: string;
+  role: AgencyRole;
+  creatorPoints: number;
+  joinedAt: string;
+}
+
+export interface Agency {
+  agencyId: string;
+  name: string;
+  level: number;
+  /** Soma dos Creator Points de quem está na agência agora — a API soma. */
+  fame: number;
+  ownerId: string;
+  memberCount: number;
+  createdAt: string;
+  members?: AgencyMember[];
+}
+
+export interface AgencyInvite {
+  agencyId: string;
+  name: string;
+  invitedBy: string;
+  createdAt: string;
+}
+
 export interface Wallet { credits: number; coins: number }
 
 export interface DemoAccount {
@@ -334,6 +364,61 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
+  }
+
+  // -------------------------------------------------------------- agências ---
+
+  /**
+   * Agências (PRD §19). O nome da agência já aparecia no perfil e ao lado do
+   * avatar na cidade — o que não existia era como entrar em uma.
+   */
+  myAgency(): Promise<{ agency: Agency | null; role: AgencyRole | null; invites: AgencyInvite[] }> {
+    return this.call('/me/agency');
+  }
+
+  agencies(): Promise<{ agencies: Agency[] }> {
+    return this.call('/agencies');
+  }
+
+  agency(agencyId: string): Promise<{ agency: Agency }> {
+    return this.call(`/agencies/${encodeURIComponent(agencyId)}`);
+  }
+
+  createAgency(name: string): Promise<{ agency: Agency }> {
+    return this.call('/agencies', { method: 'POST', body: JSON.stringify({ name }) });
+  }
+
+  inviteToAgency(agencyId: string, userId: string): Promise<{ invited: boolean }> {
+    return this.call(
+      `/agencies/${encodeURIComponent(agencyId)}/invites/${encodeURIComponent(userId)}`,
+      { method: 'POST' },
+    );
+  }
+
+  acceptAgencyInvite(agencyId: string): Promise<{ agency: Agency }> {
+    return this.call(`/me/agency/invites/${encodeURIComponent(agencyId)}/accept`, { method: 'POST' });
+  }
+
+  declineAgencyInvite(agencyId: string): Promise<{ declined: boolean }> {
+    return this.call(`/me/agency/invites/${encodeURIComponent(agencyId)}/decline`, { method: 'POST' });
+  }
+
+  leaveAgency(agencyId: string, userId: string): Promise<{ removed: boolean }> {
+    return this.call(
+      `/agencies/${encodeURIComponent(agencyId)}/members/${encodeURIComponent(userId)}`,
+      { method: 'DELETE' },
+    );
+  }
+
+  setAgencyRole(agencyId: string, userId: string, role: 'manager' | 'member'): Promise<{ agency: Agency }> {
+    return this.call(
+      `/agencies/${encodeURIComponent(agencyId)}/members/${encodeURIComponent(userId)}/role`,
+      { method: 'PUT', body: JSON.stringify({ role }) },
+    );
+  }
+
+  disbandAgency(agencyId: string): Promise<{ disbanded: boolean }> {
+    return this.call(`/agencies/${encodeURIComponent(agencyId)}`, { method: 'DELETE' });
   }
 
   // --------------------------------------------------------------- amigos ---

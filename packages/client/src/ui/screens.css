@@ -399,6 +399,34 @@
   padding-top: var(--sp-s2);
 }
 
+/* ------------------------------------------------------------- agência */
+
+.agency { width: min(500px, 100%); max-height: min(80vh, 720px); overflow-y: auto; }
+.agency__head { display: flex; align-items: center; justify-content: space-between; }
+.agency__head strong { display: inline-flex; align-items: center; gap: 7px; }
+.agency__level { font-size: 12px; color: var(--sp-text-2); }
+.agency__section { display: flex; flex-direction: column; gap: var(--sp-s2); }
+.agency__title { margin: 0; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sp-text-2); }
+.agency__identity { display: flex; flex-direction: column; gap: 2px; }
+.agency__name { font-size: 17px; }
+.agency__role { font-style: normal; font-size: 11px; color: var(--sp-text-2); margin-left: 6px; }
+.agency__inviteActions { display: flex; gap: 6px; flex: 0 0 auto; }
+.agency__form { display: flex; gap: var(--sp-s2); }
+
+.agency__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: var(--sp-r-md);
+  border: 1px solid var(--sp-line-2);
+  background: var(--sp-glass);
+  color: var(--sp-text);
+  font: inherit;
+}
+
+/* Dissolver e sair ficam por último e em tom neutro: são saídas, não ofertas. */
+.agency__danger { border-top: 1px solid var(--sp-line); padding-top: var(--sp-s3); }
+
 .store__toast {
   position: fixed;
   left: 50%;
