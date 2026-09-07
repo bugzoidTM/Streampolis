@@ -399,6 +399,25 @@
   padding-top: var(--sp-s2);
 }
 
+/* Painéis longos (missões, agência) rolam por dentro — e nesses o "Fechar"
+   não pode cair abaixo da dobra: sair de um diálogo é a ação que sempre precisa
+   estar ao alcance, ainda mais no celular. */
+.agency .store__confirmActions {
+  position: sticky;
+  bottom: calc(var(--sp-s4) * -1);
+  margin-bottom: calc(var(--sp-s4) * -1);
+  padding: var(--sp-s2) 0 var(--sp-s3);
+  background: linear-gradient(to top, var(--sp-surface) 70%, transparent);
+}
+
+/* ------------------------------------------------------------- missões */
+
+.mission.is-done { border-color: rgba(57, 217, 138, 0.35); }
+.mission__reward { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.mission__value { color: var(--sp-green); font-size: 13px; }
+.mission__xp { font-size: 11.5px; color: var(--sp-text-2); }
+.mission__check { display: inline-flex; margin-right: 5px; color: var(--sp-green); vertical-align: -2px; }
+
 /* ------------------------------------------------------------- agência */
 
 .agency { width: min(500px, 100%); max-height: min(80vh, 720px); overflow-y: auto; }

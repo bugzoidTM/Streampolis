@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { GIFTER_TIERS, gifterTierFor } from '@streampolis/shared';
 import { useAccountStore } from '../state/useAccountStore.js';
 import { AgencyPanel } from './AgencyPanel.js';
+import { MissionsPanel } from './MissionsPanel.js';
 import { useSocialStore } from '../state/useSocialStore.js';
 import type { OnboardingStep, PublicProfile, ReportType } from '../network/api.js';
 import { presenceLabel, short } from '../state/format.js';
@@ -57,6 +58,10 @@ export function ProfileView({
   const [recado, setRecado] = useState<string | null>(null);
   const [denunciando, setDenunciando] = useState(false);
   const [agencyOpen, setAgencyOpen] = useState(false);
+  const [missionsOpen, setMissionsOpen] = useState(false);
+  /** Quantas missões estão cumpridas e não resgatadas: é o selo do botão, e o
+   *  único motivo de a tela pedir isso antes de alguém abrir o painel. */
+  const [resgataveis, setResgataveis] = useState(0);
   /**
    * A minha agência e a minha função nela — carregadas aqui porque decidem se
    * o botão "Convidar para a agência" existe no perfil de OUTRA pessoa. Um
@@ -67,6 +72,9 @@ export function ProfileView({
 
   useEffect(() => {
     let vivo = true;
+    void api?.missions()
+      .then((m) => { if (vivo) setResgataveis(m.claimable); })
+      .catch(() => { /* sem sessão: o selo simplesmente não aparece */ });
     void api?.myAgency()
       .then((r) => { if (vivo && r.agency) setMinhaAgencia({ id: r.agency.agencyId, role: r.role ?? 'member' }); })
       .catch(() => { /* sem agência ou sem sessão: o botão simplesmente não existe */ });
@@ -229,6 +237,15 @@ export function ProfileView({
                 {profile.agency || 'Agência'}
               </Button>
             )}
+            {profile.isSelf && (
+              <Button
+                variant={resgataveis > 0 ? 'primary' : 'secondary'}
+                icon={<IconSparkle size={16} />}
+                onClick={() => setMissionsOpen(true)}
+              >
+                Missões{resgataveis > 0 ? ` (${resgataveis})` : ''}
+              </Button>
+            )}
             {profile.isSelf && onOpenFriends && (
               <Button
                 variant="secondary"
@@ -318,6 +335,18 @@ export function ProfileView({
       </div>
 
       {agencyOpen && <AgencyPanel onClose={() => setAgencyOpen(false)} />}
+
+      {missionsOpen && (
+        <MissionsPanel
+          onClose={() => {
+            setMissionsOpen(false);
+            // Fechar o painel é o momento certo de reler o selo: quem resgatou
+            // tudo não pode voltar para um botão dizendo que ainda há o que
+            // resgatar.
+            void api?.missions().then((m) => setResgataveis(m.claimable)).catch(() => {});
+          }}
+        />
+      )}
 
       {denunciando && (
         <SheetDenuncia

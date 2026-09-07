@@ -145,6 +145,33 @@ export interface PaymentSummary {
   paidAt: string | null;
 }
 
+export interface Mission {
+  id: string;
+  title: string;
+  hint: string;
+  credits: number;
+  xp: number;
+  done: boolean;
+  claimed: boolean;
+  claimedAt: string | null;
+}
+
+export interface MissionsView {
+  missions: Mission[];
+  /** Cumpridas e ainda não resgatadas — o número do selo no botão. */
+  claimable: number;
+  completed: number;
+  total: number;
+}
+
+export interface MissionClaim {
+  missionId: string;
+  credits: number;
+  xp: number;
+  balances: Wallet;
+  replayed: boolean;
+}
+
 export type AgencyRole = 'owner' | 'manager' | 'member';
 
 export interface AgencyMember {
@@ -364,6 +391,20 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
+  }
+
+  // --------------------------------------------------------------- missões ---
+
+  /**
+   * Missões (PRD §24). O servidor deriva o cumprido dos fatos; a tela só
+   * desenha e pede o resgate.
+   */
+  missions(): Promise<MissionsView> {
+    return this.call('/me/missions');
+  }
+
+  claimMission(missionId: string): Promise<MissionClaim> {
+    return this.call(`/me/missions/${encodeURIComponent(missionId)}/claim`, { method: 'POST' });
   }
 
   // -------------------------------------------------------------- agências ---
