@@ -157,6 +157,24 @@ Ligar um gateway de verdade é implementar um adaptador que devolva
 webhook, o crédito e a idempotência já estão prontos para ele. Defina também
 `PAYMENTS_RETURN_URL=https://streampolis.nutef.com` para a volta do checkout.
 
+## O painel de produto (North Star)
+
+`GET /api/admin/metrics?days=7`, com sessão de equipe. Responde a métrica que o
+PRD §32 chama de principal — **Weekly Socially Active Players**: quantas pessoas
+tiveram ao menos uma interação social na janela (live, chat, follow, amizade,
+gift, PK, visita, agência) — mais o funil do §31: contas novas, lives, PKs,
+gifts, Coins vendidos e consumidos, conversão para comprador e ARPPU.
+
+Quatro das oito interações não existem em tabela nenhuma (chat não é
+persistido, visita é um join de WebSocket): o worker acumula o que vê e reporta
+em lote a cada 30 s — uma linha por pessoa, por dia, por tipo. Chat de mil
+mensagens vira uma linha, e é por isso que medir não custa nada no caminho
+quente.
+
+Está atrás de `moderate`, e não de `admin`, de propósito: trancar o número que
+diz se o jogo está funcionando atrás do papel mais raro é a melhor forma de
+ninguém olhar.
+
 ## Verificar
 
 ```bash

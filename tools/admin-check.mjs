@@ -388,6 +388,54 @@ async function main() {
     await liveSala.leave().catch(() => {});
   }
 
+  passo('16) O painel de produto responde a North Star (§31, §32)');
+  // Primeiro provocar a interação, depois medir: um gate que só lê a métrica
+  // passa num sistema que nunca a alimentou.
+  await api(`/users/${beto.identity.userId}/follow`, {
+    method: 'PUT', headers: como(ana.token), body: JSON.stringify({ following: true }),
+  });
+  const metricas = (await api('/admin/metrics?days=7', { headers: como(mod.token) })).body;
+  check('as métricas respondem', typeof metricas.weeklySociallyActivePlayers === 'number',
+    JSON.stringify(metricas).slice(0, 120));
+  check('a janela é a pedida', metricas.window?.days === 7, JSON.stringify(metricas.window));
+  check('conta pessoas socialmente ativas', metricas.weeklySociallyActivePlayers >= 1,
+    `WSAP=${metricas.weeklySociallyActivePlayers}`);
+  check('e sabe por qual tipo de interação', typeof metricas.socialByKind === 'object'
+    && Object.keys(metricas.socialByKind ?? {}).length > 0, JSON.stringify(metricas.socialByKind));
+  check('o follow que acabou de acontecer está lá',
+    (metricas.socialByKind ?? {}).follow >= 1, JSON.stringify(metricas.socialByKind));
+  check('a economia aparece com conversão e ARPPU',
+    typeof metricas.economy?.buyerConversion === 'number' && typeof metricas.economy?.arppuCents === 'number',
+    JSON.stringify(metricas.economy));
+  check('o mundo aparece com lives, PKs e gifts',
+    typeof metricas.world?.livesStarted === 'number' && typeof metricas.world?.pkMatches === 'number',
+    JSON.stringify(metricas.world));
+  // A metade que só o game server vê (§32): chat não existe em tabela nenhuma.
+  if (sala !== null || liveSala !== null) {
+    let salaChat = null;
+    try {
+      const cliente = new Client(WS);
+      salaChat = await cliente.joinOrCreate('city', { token: ana.token, sceneId: 'central_plaza' });
+      for (const t of ['chatMessage', 'notice', 'presence']) salaChat.onMessage(t, () => {});
+      await new Promise((r) => setTimeout(r, 500));
+      salaChat.send('chat', { text: 'admin-check: medindo a North Star' });
+    } catch { /* sem game server, a próxima checagem cobra */ }
+    if (salaChat) {
+      // O worker acumula e manda em lote (30 s por padrão): a espera é o preço
+      // de não pagar um INSERT por mensagem de chat.
+      const chegou = await esperar('o chat virar métrica', async () => {
+        const m = (await api('/admin/metrics?days=1', { headers: como(mod.token) })).body;
+        return (m.socialByKind ?? {}).chat >= 1;
+      }, 45_000);
+      check('conversa na praça vira interação social na métrica', chegou);
+      await salaChat.leave().catch(() => {});
+    }
+  }
+
+  const semPapel = await api('/admin/metrics', { headers: como(ana.token) });
+  check('jogador comum não vê o painel de produto (403)', semPapel.status === 403,
+    `status=${semPapel.status}`);
+
   console.log(`\n${falhas === 0 ? '✅' : '❌'} ${total - falhas}/${total} verificações passaram.`);
   process.exit(falhas === 0 ? 0 : 1);
 }

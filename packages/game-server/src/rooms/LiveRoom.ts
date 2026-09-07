@@ -16,6 +16,7 @@ import { defaultEconomyGateway, MAX_GIFT_QUANTITY, type EconomyGateway } from '.
 import { defaultApiGateway, type ApiGateway } from '../api/ApiGateway.js';
 import { LikeAggregator } from '../social/LikeAggregator.js';
 import { PKEngine, type PKEvent } from '../pk/PKEngine.js';
+import { socialSignals } from '../world/SocialSignals.js';
 import { BaseWorldRoom, type RoomCreateOptions } from './BaseWorldRoom.js';
 import { LiveState, type RoomRole } from './schema.js';
 
@@ -263,6 +264,8 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
         return;
       }
       const opponentName = this.nameOf(opponentId) || (typeof message?.opponentName === 'string' ? message.opponentName : 'Oponente');
+      socialSignals().mark(this.hostId, 'pk');
+      if (this.cohostId) socialSignals().mark(this.cohostId, 'pk');
       const events = this.pk.start(
         { id: this.hostId, name: this.state.hostName || this.nameOf(this.hostId) },
         { id: opponentId, name: opponentName },
@@ -390,6 +393,7 @@ export class LiveRoom extends BaseWorldRoom<LiveState> {
     }
 
     // A sessão precisa existir ANTES de a moeda sair da carteira.
+    socialSignals().mark(this.hostId, 'live');
     const liveId = await this.ensureSession();
     if (!liveId) {
       // Zera para que o próximo envio tente registrar de novo em vez de ficar

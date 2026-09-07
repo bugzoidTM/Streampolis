@@ -8,6 +8,7 @@ import { defaultApiGateway, type ApiGateway, type HomeSnapshot } from '../api/Ap
 import { config } from '../config.js';
 import { BaseWorldRoom, type RoomCreateOptions } from './BaseWorldRoom.js';
 import { ApartmentState, PlacedItem, type RoomRole } from './schema.js';
+import { socialSignals } from '../world/SocialSignals.js';
 
 /**
  * What the browser may say to enter a home: WHICH home.
@@ -123,6 +124,10 @@ export class ApartmentRoom extends BaseWorldRoom<ApartmentState> {
     if (!(await this.api.canEnterHome(home.apartmentId, identity.userId))) {
       throw new ServerError(403, 'apartment_private');
     }
+    // §32: visitar a casa de alguém é interação social — e é a única das oito
+    // que acontece inteira aqui dentro, sem passar por tabela nenhuma. Entrar
+    // na PRÓPRIA casa não conta: o §32 fala de interação com OUTRO jogador.
+    socialSignals().mark(identity.userId, 'visit');
     return identity;
   }
 

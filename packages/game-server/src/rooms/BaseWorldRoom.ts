@@ -18,6 +18,7 @@ import { AuthError, defaultAuthProvider, type AuthIdentity, type AuthProvider } 
 import { ChatGuard } from '../social/ChatGuard.js';
 import { MovementController } from '../sim/Movement.js';
 import { presence } from '../world/Presence.js';
+import { socialSignals } from '../world/SocialSignals.js';
 import { spawnFor } from '../world/Spawns.js';
 import { PlayerState, WorldState, type RoomRole } from './schema.js';
 
@@ -335,6 +336,9 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
         this.notify(client, `chat_${verdict.reason}`, verdict.message);
         return;
       }
+      // §32: falar com gente é a interação social mais comum do jogo, e a
+      // única que não deixa rastro nenhum no banco.
+      socialSignals().mark(session.identity.userId, 'chat');
       this.publishChat({
         id: `${this.roomId}:${Date.now()}:${client.sessionId}`,
         senderId: session.identity.userId,

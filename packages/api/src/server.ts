@@ -29,6 +29,9 @@ import {
   ModerationError, blockUser, listBlocked, reportUser, unblockUser,
 } from './social/Moderation.ts';
 import { getOnboarding, markStep, observePresence } from './social/Onboarding.ts';
+import {
+  isSocialKind, markSocial, markSocialBatch, productMetrics, type SocialKind,
+} from './social/SocialActivity.ts';
 import { RegisterError, registerAccount } from './auth/register.ts';
 import { listInventory, purchaseItem } from './shop/Purchases.ts';
 import {
@@ -589,6 +592,7 @@ app.get('/users/:userId', optionalUser, async (req: AuthedRequest, res, next) =>
 
 const followSchema = z.object({ following: z.boolean() });
 
+/** §32: seguir alguém é interação social — conta para a North Star. */
 app.put('/users/:userId/follow', requireUser, async (req: AuthedRequest, res, next) => {
   try {
     const body = followSchema.parse(req.body);
@@ -597,7 +601,10 @@ app.put('/users/:userId/follow', requireUser, async (req: AuthedRequest, res, ne
       res.status(404).json({ error: 'not_found' });
       return;
     }
-    res.json(await setFollow(req.userId as string, target, body.following));
+    const seguir = await setFollow(req.userId as string, target, body.following);
+    // §32: seguir alguém é interação social; deixar de seguir não é.
+    if (body.following) void markSocial(req.userId as string, 'follow');
+    res.json(seguir);
   } catch (err) {
     next(err);
   }
@@ -624,7 +631,9 @@ app.get('/me/friends', requireUser, async (req: AuthedRequest, res, next) => {
 
 app.post('/friends/:userId', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
   try {
-    res.json(await requestFriendship(req.userId as string, param(req.params.userId)));
+    const resultado = await requestFriendship(req.userId as string, param(req.params.userId));
+    void markSocial(req.userId as string, 'friendship');
+    res.json(resultado);
   } catch (err) {
     next(err);
   }
@@ -632,7 +641,12 @@ app.post('/friends/:userId', rateLimit('social'), requireUser, async (req: Authe
 
 app.post('/friends/:userId/accept', rateLimit('social'), requireUser, async (req: AuthedRequest, res, next) => {
   try {
-    res.json(await acceptFriendship(req.userId as string, param(req.params.userId)));
+    const resultado = await acceptFriendship(req.userId as string, param(req.params.userId));
+    // Os DOIS lados: amizade é aresta, e quem aceitou interagiu tanto quanto
+    // quem convidou.
+    void markSocial(req.userId as string, 'friendship');
+    void markSocial(param(req.params.userId), 'friendship');
+    res.json(resultado);
   } catch (err) {
     next(err);
   }
@@ -922,6 +936,20 @@ app.post('/admin/lives/:roomId/close', ...staff, async (req: AuthedRequest, res,
   } catch (err) { next(err); }
 });
 
+/**
+ * O painel de produto (PRD §31, §32).
+ *
+ * De propósito atrás de `moderate` e não de `admin`: métrica de produto é para
+ * ser olhada, e trancar o número que diz se o jogo está funcionando atrás do
+ * papel mais raro é a melhor forma de ninguém olhar.
+ */
+app.get('/admin/metrics', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const dias = Number(req.query.days ?? 7);
+    res.json(await productMetrics(Number.isFinite(dias) ? dias : 7));
+  } catch (err) { next(err); }
+});
+
 app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
   try {
     res.json({
@@ -1002,6 +1030,10 @@ app.post('/internal/economy/gift', rateLimit('service'), requireService, async (
       quantity: body.quantity,
       liveId: body.liveId ?? null,
     });
+    // Presentear é das duas pontas: quem manda e quem recebe tiveram a mesma
+    // interação (§32), e contar só o remetente esconderia metade do mundo.
+    void markSocial(body.senderId, 'gift');
+    void markSocial(body.receiverId, 'gift');
     const identity = await loadIdentity(body.senderId);
     res.json({
       ok: true,
@@ -1146,6 +1178,31 @@ app.post('/internal/presence', rateLimit('service'), requireService, async (req,
   } catch (err) {
     next(err);
   }
+});
+
+/**
+ * Interações sociais vistas pelo game server (§32).
+ *
+ * Chat, transmissão, PK e visita não deixam rastro em tabela nenhuma — chat não
+ * é persistido de propósito, visita é um join de WebSocket. O worker junta o
+ * que viu e manda de tempos em tempos: uma linha por pessoa/dia/tipo, então o
+ * lote é minúsculo mesmo numa praça cheia.
+ */
+const socialSchema = z.object({
+  entries: z.array(z.object({
+    userId: z.string().min(1).max(64),
+    kind: z.string().min(1).max(24),
+  })).max(500),
+});
+
+app.post('/internal/social', rateLimit('service'), requireService, async (req, res, next) => {
+  try {
+    const body = socialSchema.parse(req.body);
+    const validas = body.entries
+      .filter((e) => isSocialKind(e.kind))
+      .map((e) => ({ userId: e.userId, kind: e.kind as SocialKind }));
+    res.json({ ok: true, marked: await markSocialBatch(validas) });
+  } catch (err) { next(err); }
 });
 
 /** O worker confirmando o que fez com a ordem que levou. */

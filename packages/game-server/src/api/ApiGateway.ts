@@ -82,6 +82,8 @@ export interface ApiGateway {
   publishPresence(snapshot: PresenceSnapshot): Promise<ModerationCommand[]>;
   /** Confirma o que aconteceu com uma ordem. */
   ackModeration(commandId: string, result: string): Promise<void>;
+  /** Interações sociais que só este processo vê (§32): chat, live, PK, visita. */
+  reportSocial(entries: Array<{ userId: string; kind: string }>): Promise<void>;
 }
 
 export class HttpApiGateway implements ApiGateway {
@@ -147,6 +149,15 @@ export class HttpApiGateway implements ApiGateway {
     await this.call('/internal/moderation/ack', {
       method: 'POST', body: JSON.stringify({ commandId, result }),
     });
+  }
+
+  async reportSocial(entries: Array<{ userId: string; kind: string }>): Promise<void> {
+    const resposta = await this.call('/internal/social', {
+      method: 'POST', body: JSON.stringify({ entries }),
+    });
+    // `call` devolve null em qualquer não-2xx; sem isto, um lote recusado seria
+    // dado como entregue e sumiria da métrica.
+    if (resposta === null) throw new Error('relato social recusado pela API');
   }
 
   async recordPKResult(input: PKResultInput): Promise<void> {
@@ -216,6 +227,8 @@ export class InMemoryApiGateway implements ApiGateway {
   }
 
   async ackModeration(): Promise<void> { /* sem API, sem painel */ }
+
+  async reportSocial(): Promise<void> { /* sem API, sem métrica */ }
 }
 
 export function defaultApiGateway(): ApiGateway {
