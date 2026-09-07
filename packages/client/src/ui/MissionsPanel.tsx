@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, type Mission, type MissionsView } from '../network/api.js';
+import {
+  ApiError, type DailyTask, type DailyTasksView, type Mission, type MissionsView,
+} from '../network/api.js';
 import { useAccountStore } from '../state/useAccountStore.js';
 import { Button, Money, Notice } from './primitives/Controls.js';
 import { IconCheck, IconCredits, IconSparkle } from './Icons.js';
@@ -22,7 +24,25 @@ import { IconCheck, IconCredits, IconSparkle } from './Icons.js';
  *   outro;
  * - **o painel recarrega depois de resgatar**, porque o saldo e o estado vêm do
  *   servidor. Somar 50 Credits na tela seria o cliente calculando dinheiro.
+ *
+ * ## Hoje vem antes
+ *
+ * As tarefas diárias (§26) moram no MESMO painel, e em cima: elas são o que a
+ * pessoa pode fazer AGORA e o que ela vai reabrir amanhã. As missões são de uma
+ * vez na vida e vão ficando cinzas. Duas telas separadas dariam dois botões no
+ * perfil para a mesma pergunta — "o que eu faço?".
  */
+
+/**
+ * "vira às 00h" em vez de um carimbo ISO. A hora é a do FUSO DO JOGADOR porque
+ * é assim que a API corta o dia — a tela só formata o que veio pronto.
+ */
+function viraEm(iso: string): string {
+  const quando = new Date(iso);
+  const horas = Math.max(0, Math.round((quando.getTime() - Date.now()) / 3_600_000));
+  if (horas <= 1) return 'em menos de 1h';
+  return `em ${horas}h`;
+}
 
 export interface MissionsPanelProps {
   onClose: () => void;
@@ -34,13 +54,16 @@ export function MissionsPanel({ onClose }: MissionsPanelProps) {
   const wallet = useAccountStore((s) => s.wallet);
 
   const [dados, setDados] = useState<MissionsView | null>(null);
+  const [hoje, setHoje] = useState<DailyTasksView | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [recado, setRecado] = useState<{ ok: boolean; texto: string } | null>(null);
 
   const recarregar = useCallback(async () => {
     if (!api?.authenticated) return;
     try {
-      setDados(await api.missions());
+      const [m, d] = await Promise.all([api.missions(), api.dailyTasks()]);
+      setDados(m);
+      setHoje(d);
     } catch {
       setRecado({ ok: false, texto: 'Não foi possível carregar as missões agora.' });
     }
@@ -65,6 +88,23 @@ export function MissionsPanel({ onClose }: MissionsPanelProps) {
     }
   };
 
+  const resgatarDiaria = async (t: DailyTask) => {
+    setOcupado(`d:${t.id}`);
+    try {
+      const r = await api!.claimDailyTask(t.id);
+      await Promise.all([recarregar(), refresh()]);
+      setRecado({
+        ok: true,
+        texto: r.replayed ? 'Esta já tinha sido resgatada hoje.' : `+${r.credits} Credits.`,
+      });
+    } catch (err) {
+      setRecado({ ok: false, texto: err instanceof ApiError ? err.message : 'Não deu certo agora.' });
+    } finally {
+      setOcupado(null);
+      window.setTimeout(() => setRecado(null), 3000);
+    }
+  };
+
   return (
     <div className="store__confirm" role="dialog" aria-label="Missões">
       <div className="store__confirmBox agency">
@@ -75,8 +115,41 @@ export function MissionsPanel({ onClose }: MissionsPanelProps) {
 
         {!dados && <p className="coinshop__hint">Carregando…</p>}
 
+        {hoje && (
+          <section className="agency__section">
+            <h3 className="agency__title">Hoje · vira {viraEm(hoje.resetsAt)}</h3>
+            <ul className="coinshop__list">
+              {hoje.tasks.map((t) => (
+                <li key={t.id} className={`coinshop__pack mission${t.done ? ' is-done' : ''}`}>
+                  <div className="coinshop__packInfo">
+                    <span className="coinshop__packName">
+                      {t.claimed && <span className="mission__check" aria-hidden><IconCheck size={12} /></span>}
+                      {t.title}
+                    </span>
+                    <span className="coinshop__packCoins">
+                      {t.claimed ? 'feita hoje' : t.done ? 'pronta para resgatar' : t.hint}
+                    </span>
+                  </div>
+                  <div className="mission__reward">
+                    <span className="sp-num mission__value">+{t.credits}</span>
+                    {t.done && !t.claimed && (
+                      <Button
+                        size="sm" variant="primary" disabled={ocupado !== null}
+                        onClick={() => void resgatarDiaria(t)}
+                      >
+                        {ocupado === `d:${t.id}` ? '…' : 'Resgatar'}
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {dados && (
-          <>
+          <section className="agency__section">
+            <h3 className="agency__title">Uma vez na vida</h3>
             <p className="coinshop__hint">
               {dados.completed} de {dados.total} cumpridas
               {dados.claimable > 0 && ` · ${dados.claimable} para resgatar`}
@@ -112,7 +185,7 @@ export function MissionsPanel({ onClose }: MissionsPanelProps) {
                 </li>
               ))}
             </ul>
-          </>
+          </section>
         )}
 
         <div className="store__confirmActions">

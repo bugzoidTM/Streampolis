@@ -172,6 +172,32 @@ export interface MissionClaim {
   replayed: boolean;
 }
 
+export interface DailyTask {
+  id: string;
+  title: string;
+  hint: string;
+  credits: number;
+  done: boolean;
+  claimed: boolean;
+}
+
+export interface DailyTasksView {
+  day: string;
+  tasks: DailyTask[];
+  claimable: number;
+  creditsAvailable: number;
+  /** Quando a lista vira. Vem pronto da API — a tela não calcula fuso. */
+  resetsAt: string;
+}
+
+export interface DailyClaim {
+  taskId: string;
+  day: string;
+  credits: number;
+  balances: Wallet;
+  replayed: boolean;
+}
+
 export type AgencyRole = 'owner' | 'manager' | 'member';
 
 export interface AgencyMember {
@@ -405,6 +431,15 @@ export class ApiClient {
 
   claimMission(missionId: string): Promise<MissionClaim> {
     return this.call(`/me/missions/${encodeURIComponent(missionId)}/claim`, { method: 'POST' });
+  }
+
+  /** Tarefas do dia (PRD §26). Viram à meia-noite do fuso do jogador. */
+  dailyTasks(): Promise<DailyTasksView> {
+    return this.call('/me/daily');
+  }
+
+  claimDailyTask(taskId: string): Promise<DailyClaim> {
+    return this.call(`/me/daily/${encodeURIComponent(taskId)}/claim`, { method: 'POST' });
   }
 
   // -------------------------------------------------------------- agências ---

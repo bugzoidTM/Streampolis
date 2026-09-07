@@ -72,8 +72,11 @@ export function ProfileView({
 
   useEffect(() => {
     let vivo = true;
-    void api?.missions()
-      .then((m) => { if (vivo) setResgataveis(m.claimable); })
+    // O selo soma missões e tarefas do dia: são a mesma pergunta para quem
+    // olha o botão ("tem algo me esperando?"), e dois números separados no
+    // mesmo lugar não ajudariam ninguém a decidir clicar.
+    void Promise.all([api?.missions(), api?.dailyTasks()])
+      .then(([m, d]) => { if (vivo) setResgataveis((m?.claimable ?? 0) + (d?.claimable ?? 0)); })
       .catch(() => { /* sem sessão: o selo simplesmente não aparece */ });
     void api?.myAgency()
       .then((r) => { if (vivo && r.agency) setMinhaAgencia({ id: r.agency.agencyId, role: r.role ?? 'member' }); })
@@ -343,7 +346,9 @@ export function ProfileView({
             // Fechar o painel é o momento certo de reler o selo: quem resgatou
             // tudo não pode voltar para um botão dizendo que ainda há o que
             // resgatar.
-            void api?.missions().then((m) => setResgataveis(m.claimable)).catch(() => {});
+            void Promise.all([api?.missions(), api?.dailyTasks()])
+              .then(([m, d]) => setResgataveis((m?.claimable ?? 0) + (d?.claimable ?? 0)))
+              .catch(() => {});
           }}
         />
       )}
