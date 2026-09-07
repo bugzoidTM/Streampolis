@@ -44,6 +44,16 @@ import type { QualityTier } from '../QualityManager.js';
  * geometria emissiva não custa luz nenhuma, e para um letreiro no fundo da rua
  * é a diferença que ninguém vê.
  */
+
+/**
+ * Quantos postes acendem de VERDADE, no bairro inteiro.
+ *
+ * Não é "um a cada dois": é um teto. O bairro cresceu de dez postes para vinte
+ * e sete e a regra proporcional teria triplicado a conta de luzes junto — ver
+ * `buildStreetFurniture`.
+ */
+const LUZES_DE_POSTE = 6;
+
 export class NoirDistrictScene extends SceneBase {
   readonly id: SceneId = 'noir_district';
   readonly look: GradeLook = LOOK_NOIR;
@@ -124,26 +134,44 @@ export class NoirDistrictScene extends SceneBase {
     road.receiveShadow = true;
     this.add(road);
 
-    // Calçadas: duas faixas elevadas encostadas nas fachadas. São DESENHO —
-    // o meio-fio não entra na colisão, porque um degrau de 15 cm que barra o
-    // passo numa rua plana é uma parede invisível.
+    /**
+     * Calçadas e faixa central, uma rua de cada vez.
+     *
+     * Isto era um bloco só, com os números da avenida escritos no meio do
+     * código. Com a segunda rua ele viraria o mesmo bloco copiado — e a cópia é
+     * onde o eixo fica torto sem ninguém notar. Agora a rua é uma linha de
+     * `NOIR.streets` e a cena percorre a lista.
+     *
+     * O meio-fio não entra na colisão: um degrau de 15 cm que barra o passo
+     * numa rua plana é uma parede invisível.
+     */
     const kerb = this.mats.concrete('#4a4d55');
-    for (const side of [-1, 1] as const) {
-      const walk = box(b.hw * 2, 0.15, 3.2);
-      boxUV(walk, 1.4);
-      const mesh = new THREE.Mesh(walk, kerb);
-      mesh.position.set(b.x, 0.075, side * (NOIR.streetHalf - 1.6));
-      mesh.receiveShadow = true;
-      this.add(mesh);
-    }
-
-    // Faixa central desbotada: o eixo é o que diz ao olho que isto é uma rua.
     const paint = new THREE.MeshStandardMaterial({
       color: 0x8d8672, roughness: 0.7, metalness: 0.0,
     });
     this.own(paint);
+
+    const calcadas: THREE.BufferGeometry[] = [];
     const dashes: THREE.BufferGeometry[] = [];
-    for (let x = -32; x <= 32; x += 5.4) dashes.push(place(box(2.6, 0.01, 0.16), x, 0.012, 0));
+    for (const rua of NOIR.streets) {
+      const comprimento = rua.x1 - rua.x0;
+      const meio = (rua.x0 + rua.x1) / 2;
+      for (const side of [-1, 1] as const) {
+        const walk = box(comprimento, 0.15, 3.2);
+        boxUV(walk, 1.4);
+        walk.translate(meio, 0.075, rua.z + side * (rua.half - 1.6));
+        calcadas.push(walk);
+      }
+      // Rua de serviço não é pintada, e a ausência da faixa é metade do que
+      // faz a travessa parecer os fundos da avenida.
+      if (!rua.dashes) continue;
+      for (let x = rua.x0 + 4; x <= rua.x1 - 4; x += 5.4) {
+        dashes.push(place(box(2.6, 0.01, 0.16), x, 0.012, rua.z));
+      }
+    }
+    const passeio = new THREE.Mesh(merge(calcadas), kerb);
+    passeio.receiveShadow = true;
+    this.add(passeio);
     this.add(new THREE.Mesh(merge(dashes), paint));
 
     // Poças. Água parada é o segundo espelho da cena, e o mais convincente:
@@ -187,7 +215,7 @@ export class NoirDistrictScene extends SceneBase {
     const items: Array<{ prop: Prop; matrix: THREE.Matrix4 }> = [];
     const stamps: Prop[] = [];
 
-    for (const [i, b] of [...NOIR.facades, NOIR.alleyEnd].entries()) {
+    for (const [i, b] of NOIR.facades.entries()) {
       const prop = facadeBuilding(this.mats, {
         width: b.width,
         depth: b.depth,
@@ -263,8 +291,22 @@ export class NoirDistrictScene extends SceneBase {
      * néon e atravessaria a janela de cor do `LOOK_NOIR` — e aí o vermelho
      * deixaria de ser o acento da cena para virar a cor da rua.
      */
+    /**
+     * O orçamento, e por que ele é um NÚMERO FIXO e não "um a cada dois".
+     *
+     * Com uma rua de dez postes, "um sim, um não" davam cinco luzes. O bairro
+     * passou a ter duas ruas e vinte e sete postes, e a mesma regra daria
+     * treze — somadas aos letreiros, isso estoura o laço de luzes de TODO
+     * material da cena (SPECs §8) e o custo aparece em cada pixel, não só perto
+     * dos postes. O que sustenta a leitura da rua de longe é o disco aditivo
+     * acima, que é de graça; a luz de verdade é o tempero.
+     *
+     * O passo é calculado a partir do total, então acrescentar poste nunca
+     * acrescenta luz — só espalha as mesmas.
+     */
+    const passo = Math.max(2, Math.ceil(NOIR.lamps.length / LUZES_DE_POSTE));
     for (const [i, l] of NOIR.lamps.entries()) {
-      if (i % 2 !== 0) continue;
+      if (i % passo !== 0) continue;
       const light = new THREE.PointLight(0xbcd0ff, 26, 18, 2);
       light.position.set(l.x, 4.9, l.z);
       this.add(light);

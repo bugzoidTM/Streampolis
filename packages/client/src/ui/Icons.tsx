@@ -232,6 +232,23 @@ export const IconFrameRoom = svg(
  * A leitura vem da POSE, não do detalhe, porque a 20 px não há detalhe.
  */
 export const IconStop = svg(<rect x="7" y="7" width="10" height="10" rx="2.2" />);
+
+/**
+ * Corrida: uma figura inclinada, com o tronco à frente dos pés.
+ *
+ * O ângulo é o glifo inteiro. Uma silhueta em pé com as pernas afastadas lê
+ * como "andar" no mesmo tamanho, e o botão precisa dizer qual dos dois está
+ * ligado sem depender do rótulo — que some nas telas estreitas.
+ */
+export const IconRun = svg(
+  <>
+    <circle cx="14.6" cy="4.6" r="1.9" />
+    <path d="M15.4 9.1l-3.6 1.7-1.4 3.6 2.9 2 1.2 5.1" />
+    <path d="M12.4 14.4l-3.4 2.4-2.6 3.7" />
+    <path d="M15.4 9.1l3.4 1.4 1.8 2.6" />
+    <path d="M11.8 10.8L7.4 9.4" />
+  </>,
+);
 export const IconWave = svg(
   <>
     <circle cx="10.5" cy="4.6" r="2.1" />

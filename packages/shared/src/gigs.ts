@@ -36,11 +36,11 @@
  *
  * ## Por que a recompensa é modesta
  *
- * A mediana da loja é 300 Credits. O bico mais curto paga 55 e leva menos de um
- * minuto; o mais longo paga 190. Um bico bom rende mais por minuto que uma
- * tarefa diária — é atividade, não presença —, e mesmo assim ninguém compra o
- * item mais caro numa tarde. O §26 fala em prosperar sem transmitir, não em
- * prosperar sem jogar.
+ * A mediana da loja é 300 Credits. O bico mais curto paga 70 e leva 45
+ * segundos; o mais longo paga 240 e atravessa as duas ruas. Um bico bom rende
+ * mais por minuto que uma tarefa diária — é atividade, não presença —, e mesmo
+ * assim ninguém compra o item mais caro numa tarde. O §26 fala em prosperar sem
+ * transmitir, não em prosperar sem jogar.
  */
 
 export interface GigStop {
@@ -116,6 +116,38 @@ export function heatSeconds(base: number, level: number): number {
   return Math.round(base * (1 - 0.06 * level));
 }
 
+/**
+ * As rotas.
+ *
+ * ## Os números mudaram quando o bairro dobrou
+ *
+ * As distâncias vinham de uma rua de 68 m; hoje são duas ruas e 116 m de
+ * avenida. Manter os prazos antigos teria deixado tudo folgado a ponto de a
+ * rota virar um passeio com espera no fim — que era, honestamente, o que
+ * acontecia: o bico mais curto dava 75 s para 32 m, ou seja 0,43 m/s.
+ *
+ * O prazo agora sai da MEDIDA da rota, a 1,9 m/s no nível de atenção zero.
+ * Isso é 79% da velocidade de caminhada, e é o número que decide o desenho
+ * inteiro do aperto:
+ *
+ *   * **no nível 0 dá para cumprir tudo andando**, com folga para errar o
+ *     caminho uma vez. Ninguém é obrigado a correr para entregar;
+ *   * **no nível 5 o relógio encolhe 30%** (`heatSeconds`) e a exigência sobe
+ *     para ~2,5 m/s — acima dos 2,4 m/s da caminhada. A partir dali as rotas
+ *     longas SÓ fecham correndo.
+ *
+ * É assim que correr virou parte do jogo em vez de uma tecla que existe: a
+ * atenção paga mais, aperta o relógio, e a resposta ao aperto é a velocidade.
+ *
+ * ## O pagamento por metro CAI nas rotas longas
+ *
+ * De 1,19 Credits/m na mais curta a 0,90 na mais longa, de propósito. Com
+ * pagamento linear a maratona seria sempre a escolha ótima e as outras seis
+ * viravam enfeite; com ele decrescente, a rota longa continua rendendo mais no
+ * total (é mais trabalho) sem ser a única que vale a pena. O teto de 240 fica
+ * abaixo da mediana da loja (300) — o §26 fala em prosperar sem transmitir,
+ * não em comprar o sofá caro numa corrida.
+ */
 export const GIGS: readonly GigDef[] = [
   {
     id: 'entrega_expressa',
@@ -126,8 +158,8 @@ export const GIGS: readonly GigDef[] = [
       { id: 'cafe', hint: 'Pegue o pacote no café da avenida.' },
       { id: 'hotel', hint: 'Deixe na portaria do hotel.' },
     ],
-    seconds: 75,
-    credits: 55,
+    seconds: 45,
+    credits: 70,
   },
   {
     id: 'ronda_dos_letreiros',
@@ -136,24 +168,24 @@ export const GIGS: readonly GigDef[] = [
     scene: 'noir_district',
     stops: [
       { id: 'bar', hint: 'Confira o letreiro do bar da esquina.' },
-      { id: 'club', hint: 'Agora o do clube, do outro lado da avenida.' },
-      { id: 'loja', hint: 'E o da loja de conveniência, no fim da rua.' },
+      { id: 'club', hint: 'Agora o do clube, no meio da avenida.' },
+      { id: 'loja', hint: 'E o da loja de conveniência, lá no leste.' },
     ],
-    seconds: 135,
-    credits: 105,
+    seconds: 62,
+    credits: 110,
   },
   {
-    id: 'carga_da_doca',
-    title: 'Carga da doca',
-    flavor: 'Descarregar na doca e levar o resto para a oficina antes que o turno vire.',
+    id: 'turno_da_travessa',
+    title: 'Turno da travessa',
+    flavor: 'Três portas de serviço na rua de trás. Ninguém entrega ali de dia.',
     scene: 'noir_district',
     stops: [
-      { id: 'doca', hint: 'Assuma a carga na doca.' },
-      { id: 'oficina', hint: 'Entregue na oficina.' },
-      { id: 'metro', hint: 'Devolva o carrinho na boca do metrô.' },
+      { id: 'deposito', hint: 'Comece no depósito, na travessa. Entre pela passagem oeste.' },
+      { id: 'garagem', hint: 'Siga pela travessa até a garagem.' },
+      { id: 'clinica', hint: 'Termine na clínica noturna, no fim da travessa.' },
     ],
-    seconds: 150,
-    credits: 120,
+    seconds: 70,
+    credits: 125,
   },
   {
     id: 'recado_do_beco',
@@ -165,8 +197,21 @@ export const GIGS: readonly GigDef[] = [
       { id: 'bar', hint: 'Leve a resposta ao bar da esquina.' },
       { id: 'portao', hint: 'Suma pelo portão do bairro.' },
     ],
-    seconds: 165,
-    credits: 145,
+    seconds: 74,
+    credits: 130,
+  },
+  {
+    id: 'carga_da_doca',
+    title: 'Carga da doca',
+    flavor: 'Descarregar na doca e levar o resto para a oficina antes que o turno vire.',
+    scene: 'noir_district',
+    stops: [
+      { id: 'doca', hint: 'Assuma a carga na doca.' },
+      { id: 'oficina', hint: 'Entregue na oficina.' },
+      { id: 'metro', hint: 'Devolva o carrinho na boca do metrô, no extremo oeste.' },
+    ],
+    seconds: 88,
+    credits: 155,
   },
   {
     id: 'volta_completa',
@@ -179,8 +224,37 @@ export const GIGS: readonly GigDef[] = [
       { id: 'fundos', hint: 'Corte pelo beco até o fundo.' },
       { id: 'bar', hint: 'Termine no bar da esquina.' },
     ],
-    seconds: 235,
+    seconds: 110,
     credits: 190,
+  },
+  {
+    id: 'ponta_a_ponta',
+    title: 'Ponta a ponta',
+    flavor: 'Do portão à lavanderia do fim da avenida, e ainda por cima da travessa. É a rota que ninguém aceita duas vezes seguidas.',
+    scene: 'noir_district',
+    stops: [
+      { id: 'portao', hint: 'Assuma no portão do bairro.' },
+      { id: 'lavanderia', hint: 'Atravesse a avenida inteira até a lavanderia 24h.' },
+      { id: 'clinica', hint: 'Suba pela passagem leste e siga até a clínica.' },
+      { id: 'fundos', hint: 'Volte pela travessa e desça no fundo do beco.' },
+    ],
+    seconds: 130,
+    credits: 220,
+  },
+  {
+    id: 'atalho_das_passagens',
+    title: 'Atalho das passagens',
+    flavor: 'Quem conhece o bairro não vai pela avenida. Duas passagens, duas ruas, um envelope.',
+    scene: 'noir_district',
+    stops: [
+      { id: 'lavanderia', hint: 'Pegue o envelope na lavanderia 24h.' },
+      { id: 'passagem_l', hint: 'Suba pela passagem leste.' },
+      { id: 'garagem', hint: 'Deixe metade na garagem da travessa.' },
+      { id: 'passagem_o', hint: 'Desça de volta pela passagem oeste.' },
+      { id: 'bar', hint: 'O resto é do bar da esquina.' },
+    ],
+    seconds: 145,
+    credits: 240,
   },
 ];
 

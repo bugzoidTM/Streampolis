@@ -184,6 +184,7 @@ mesma coisa que portão que não existe:
 ```bash
 npm run gates                                  # tudo (contra o ambiente local)
 npm run gates -- --only=unit                   # só o que não precisa de servidor
+npm run gates -- --client=http://127.0.0.1:5273  # onde o Vite responde (padrão)
 
 # contra a produção, da máquina: o release-check fica de fora porque ele precisa
 # do banco da stack, que não é alcançável do host (ver a seção dele)
@@ -274,6 +275,26 @@ nos dois modos.
 ```bash
 npm run agency:check
 ```
+
+### run-check (correr)
+
+Correr atravessa quatro camadas antes de virar metro por segundo: botão da tela
+→ `InputManager.alwaysRun` → `MoveIntent.run` → servidor. O defeito que
+interessa é de costura — o botão acende e o corpo continua andando —, e nenhum
+teste de unidade o pega.
+
+O portão põe Ana num navegador de verdade e um OBSERVADOR na mesma sala, lendo a
+posição dela pelo servidor. Mede **metros por intenção**, não por segundo: o
+navegador headless roda a um ou dois quadros por segundo e por tempo o resultado
+mede a GPU que não existe. Por intenção dá 0,100 m andando e 0,217 correndo —
+`velocidade / 24` — a qualquer quadro por segundo.
+
+```bash
+npm run run:check
+```
+
+Único portão que precisa do **cliente** no ar além da API e do game server; sem
+ele é pulado com aviso.
 
 ### events-check (eventos da cidade)
 

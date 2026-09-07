@@ -115,7 +115,10 @@ export const PORTALS: Partial<Record<SceneId, Portal[]>> = {
    * 1,4 m numa avenida de 18 m é uma porta que só dispara se pisada em cheio.
    */
   noir_district: [
-    { id: 'noir_exit', to: 'central_plaza', label: 'Voltar à praça', x: -30.5, z: 0, ry: -Math.PI / 2, r: 2.4 },
+    // Na ponta oeste, com o bairro inteiro a leste de quem chega. Ele mudou de
+    // lugar quando a avenida dobrou de tamanho: no meio da rua, a porta de
+    // volta partia o bairro em dois pedaços curtos em vez de um longo.
+    { id: 'noir_exit', to: 'central_plaza', label: 'Voltar à praça', x: -54.5, z: 0, ry: -Math.PI / 2, r: 2.4 },
   ],
 };
 

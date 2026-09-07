@@ -16,6 +16,7 @@ import { PortalPrompt } from './PortalPrompt.js';
 import { GigPanel } from './GigPanel.js';
 import { GigTracker } from './GigTracker.js';
 import { GigDock } from './GigDock.js';
+import { RunToggle } from './RunToggle.js';
 import type { LoadReport } from '../game/assets/loading.js';
 import type { Portal } from '@streampolis/shared';
 
@@ -255,6 +256,16 @@ export function WorldView(props: WorldViewProps) {
           só se pode digitar não é um mundo social. Escondido enquanto uma tela
           cobre o mundo — os atalhos 1..6 pertencem ao jogo, não à loja. */}
       <EmoteBar world={ready} hidden={props.paused === true || status === 'loading'} />
+
+      {/* Correr (PRD §34). Fica FORA da regra "só no bairro" que vale para os
+          bicos: andar é do mundo inteiro, e a praça também ficou grande demais
+          para se atravessar a passo. Escondido numa live pelo mesmo motivo que
+          a barra de gestos — quem está transmitindo não muda o jeito de andar
+          sem querer, e o `R` pertence ao jogo, não à loja. */}
+      <RunToggle
+        world={ready}
+        hidden={inLive || props.paused === true || status === 'loading'}
+      />
 
       {/* "Acessar outros locais" é outra delas. Numa live não: quem está
           transmitindo não atravessa uma porta sem querer. */}

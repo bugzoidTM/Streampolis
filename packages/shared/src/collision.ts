@@ -162,16 +162,23 @@ function plazaColliders(): Collider[] {
 }
 
 /**
- * O corredor do Distrito Sombra.
+ * As duas ruas do Distrito Sombra.
  *
- * As duas fileiras de fachadas SÃO as paredes da rua: não há um casco como o
- * de um interior, e o retângulo andável é largo o bastante para caber o beco,
- * então sem estes colisores dava para atravessar um prédio a pé. O vão do beco
- * aparece sozinho — ele é a fatia que a fileira norte não cobre.
+ * As fileiras de fachadas SÃO as paredes: não há um casco como o de um
+ * interior, e o retângulo andável é largo o bastante para caber a avenida, a
+ * travessa e o que há entre elas — sem estes colisores dava para atravessar um
+ * prédio a pé.
+ *
+ * Nada aqui descreve rua, beco ou passagem: os vãos aparecem SOZINHOS, porque
+ * são as fatias que nenhuma fileira cobre. Um dia em que alguém mover uma
+ * fachada, o buraco anda junto — e essa é a única forma de a colisão não
+ * discordar do desenho. É também por isso que os dois quarteirões das pontas
+ * da travessa estão em `facades` e não numa lista à parte: eles são parede
+ * como qualquer outra.
  */
 function noirColliders(): Collider[] {
   const out: Collider[] = [];
-  for (const b of [...NOIR.facades, NOIR.alleyEnd]) {
+  for (const b of NOIR.facades) {
     // As fachadas da fileira sul levam meia-volta, e meia-volta troca largura
     // por profundidade se a conta for feita ingenuamente. Como `ry` aqui é
     // sempre 0 ou π, a caixa é a mesma nos dois casos — passar `ry` adiante é
@@ -374,8 +381,12 @@ function plazaSpawns(): SpawnPoint[] {
  * folga atrás de si.
  */
 function noirSpawns(): SpawnPoint[] {
+  // Junto ao portão, que agora fica na PONTA OESTE da avenida (`stops.portao`).
+  // Chegar pela ponta é o que mostra o tamanho do bairro: a rua se desenrola
+  // inteira à frente de quem entra, em vez de sair pelos dois lados de quem
+  // caiu no meio dela.
   return Array.from({ length: 8 }, (_, i) => ({
-    x: -18 + (i % 4) * 2.6,
+    x: -48 + (i % 4) * 2.6,
     z: (i < 4 ? -1 : 1) * 2.4,
     yaw: Math.PI / 2,
   }));

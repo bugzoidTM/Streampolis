@@ -30,6 +30,8 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 
 const API = (args.api ?? 'http://127.0.0.1:8787').replace(/\/$/, '');
 const WS = (args.ws ?? 'ws://127.0.0.1:2567').replace(/\/$/, '');
+/** O Vite (ou o site publicado): o único portão que precisa dele é o da corrida. */
+const CLIENT = (args.client ?? 'http://127.0.0.1:5273').replace(/\/$/, '');
 const HEALTH = args.health ?? (WS.startsWith('wss')
   ? WS.replace(/^wss/, 'https')
   : WS.replace(/^ws/, 'http'));
@@ -81,6 +83,13 @@ const PORTOES = [
     cmd: 'node', argv: ['tools/gigs-check.mjs', `--api=${API}`, `--server=${WS}`],
   },
   {
+    nome: 'run-check', grupo: 'e2e', needs: ['api', 'ws', 'client'],
+    // Correr (§34) atravessa tela → InputManager → MoveIntent → servidor, e o
+    // defeito que interessa é de costura: o botão acende e o corpo continua
+    // andando. Precisa dos três no ar, o navegador incluído.
+    cmd: 'node', argv: ['tools/run-check.mjs', `--api=${API}`, `--server=${WS}`, `--client=${CLIENT}`],
+  },
+  {
     nome: 'events-check', grupo: 'e2e', needs: ['api'],
     // Eventos da cidade (§22/§28). Não precisa do game server: o que ele prova
     // é a APURAÇÃO — a única rotina do jogo que emite Credits sem ninguém
@@ -130,10 +139,12 @@ function placar(saida) {
 async function main() {
   const apiNoAr = await noAr(`${API}/health`);
   const wsNoAr = await noAr(`${HEALTH}/health`);
+  const clienteNoAr = await noAr(CLIENT);
   console.log(`\nPortões — API ${API} ${apiNoAr ? cor('no ar', 32) : cor('fora', 33)}`
-    + ` · game server ${WS} ${wsNoAr ? cor('no ar', 32) : cor('fora', 33)}`);
+    + ` · game server ${WS} ${wsNoAr ? cor('no ar', 32) : cor('fora', 33)}`
+    + ` · cliente ${CLIENT} ${clienteNoAr ? cor('no ar', 32) : cor('fora', 33)}`);
 
-  const disponivel = { api: apiNoAr, ws: wsNoAr };
+  const disponivel = { api: apiNoAr, ws: wsNoAr, client: clienteNoAr };
   const resultados = [];
 
   for (const portao of PORTOES) {

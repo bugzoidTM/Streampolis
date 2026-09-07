@@ -105,6 +105,113 @@ describe('planta do mundo', () => {
  * não existe em `NOIR.stops`. A API responde a coordenada (0, 0) — o meio da
  * avenida — e a entrega parece funcionar no lugar errado.
  */
+/**
+ * O bairro é ANDÁVEL de ponta a ponta.
+ *
+ * O teste acima prova que uma parada não está DENTRO de um prédio. Não prova a
+ * outra metade, que é o defeito que uma planta escrita à mão realmente produz:
+ * o lugar existe, é livre, e não há caminho até ele. Uma fatia de fachada com
+ * o `x1` errado por meio metro fecha uma passagem inteira, e o sintoma é um
+ * jogador correndo cem metros para descobrir que a rua não passa.
+ *
+ * Isso apareceu na hora exata em que o Distrito Sombra deixou de ser um
+ * corredor: com duas ruas ligadas por duas passagens, existe pela primeira vez
+ * a possibilidade de uma METADE do bairro ficar ilhada — e nada no
+ * TypeScript, no desenho ou na colisão diria uma palavra.
+ *
+ * A prova é uma inundação em grade de meio metro a partir da chegada, com o
+ * mesmo `resolveCollision` que o servidor usa. Meio metro é mais grosso que o
+ * jogador (raio 0,28) de propósito: uma grade fina "passa" por frestas que o
+ * corpo não atravessa, e um teste que aprova o que o jogo recusa é pior que
+ * nenhum teste.
+ */
+describe('o Distrito Sombra é atravessável', () => {
+  const PASSO = 0.5;
+
+  /** Casas livres alcançáveis a pé desde o ponto de chegada. */
+  function alcancavel(): Set<string> {
+    const area = SCENE_AREA.noir_district;
+    assert.ok(area && area.kind === 'rect', 'o bairro precisa de um retângulo andável');
+    const colisores = SCENE_COLLIDERS.noir_district;
+    const minX = area.x - area.hw;
+    const minZ = area.z - area.hd;
+    const cols = Math.floor((area.hw * 2) / PASSO);
+    const linhas = Math.floor((area.hd * 2) / PASSO);
+
+    const chave = (i: number, j: number) => `${i},${j}`;
+    const livre = (i: number, j: number): boolean => {
+      if (i < 0 || j < 0 || i >= cols || j >= linhas) return false;
+      const p = { x: minX + (i + 0.5) * PASSO, z: minZ + (j + 0.5) * PASSO };
+      const r = resolveCollision(p, colisores, area, PLAYER_RADIUS);
+      return Math.hypot(r.x - p.x, r.z - p.z) < 1e-6;
+    };
+
+    const inicio = SCENE_SPAWNS.noir_district[0];
+    const i0 = Math.floor((inicio.x - minX) / PASSO);
+    const j0 = Math.floor((inicio.z - minZ) / PASSO);
+    assert.ok(livre(i0, j0), 'o ponto de chegada do bairro não está em chão livre');
+
+    const vistos = new Set<string>([chave(i0, j0)]);
+    const fila: Array<[number, number]> = [[i0, j0]];
+    while (fila.length) {
+      const [i, j] = fila.pop() as [number, number];
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const ni = i + di;
+        const nj = j + dj;
+        const k = chave(ni, nj);
+        if (vistos.has(k) || !livre(ni, nj)) continue;
+        vistos.add(k);
+        fila.push([ni, nj]);
+      }
+    }
+    return vistos;
+  }
+
+  const mapa = alcancavel();
+  const area = SCENE_AREA.noir_district as { x: number; z: number; hw: number; hd: number };
+  const daGrade = (x: number, z: number) => `${Math.floor((x - (area.x - area.hw)) / PASSO)},`
+    + `${Math.floor((z - (area.z - area.hd)) / PASSO)}`;
+
+  it('toda parada de bico é alcançável a pé desde a chegada', () => {
+    for (const [id, p] of Object.entries(NOIR.stops)) {
+      assert.ok(
+        mapa.has(daGrade(p.x, p.z)),
+        `a parada "${id}" (${p.x}, ${p.z}) existe e é livre, mas NÃO há caminho `
+        + 'até ela — provavelmente uma fatia de fachada fechou uma passagem',
+      );
+    }
+  });
+
+  it('as duas passagens ligam mesmo a avenida à travessa', () => {
+    // Sem isto, fechar as duas passagens ainda passaria no teste acima no dia
+    // em que as paradas da travessa saíssem da lista.
+    for (const p of NOIR.passages) {
+      const meio = (p.x0 + p.x1) / 2;
+      assert.ok(mapa.has(daGrade(meio, -15)), `a boca da passagem ${p.id} está fechada`);
+      assert.ok(mapa.has(daGrade(meio, -27)), `a passagem ${p.id} não chega à travessa`);
+    }
+    assert.ok(mapa.has(daGrade(0, NOIR.laneZ)), 'o meio da travessa não é alcançável');
+  });
+
+  it('as duas pontas da avenida são alcançáveis', () => {
+    const rua = NOIR.streets[0];
+    assert.ok(mapa.has(daGrade(rua.x0 + 2, 0)), 'a ponta oeste da avenida está fechada');
+    assert.ok(mapa.has(daGrade(rua.x1 - 2, 0)), 'a ponta leste da avenida está fechada');
+  });
+
+  it('o beco continua SEM SAÍDA — é o que faz dele um beco', () => {
+    // A regressão simétrica: alguém "abre" o beco por engano e o atalho que a
+    // planta recusou aparece de graça. O fundo é alcançável; o outro lado da
+    // parede, pela travessa, não pode ser alcançado ATRAVESSANDO o beco.
+    const meio = (NOIR.alley.x0 + NOIR.alley.x1) / 2;
+    assert.ok(mapa.has(daGrade(meio, NOIR.alley.end + 1.5)), 'o fundo do beco ficou inacessível');
+    assert.ok(
+      !mapa.has(daGrade(meio, NOIR.alley.end - 3)),
+      'o beco virou passagem: há chão livre logo depois do fundo dele',
+    );
+  });
+});
+
 describe('paradas dos bicos', () => {
   it('toda parada citada por um bico existe na planta', () => {
     for (const gig of GIGS) {

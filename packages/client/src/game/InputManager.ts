@@ -70,6 +70,23 @@ export class InputManager {
     lookYaw: 0, lookPitch: 0, zoom: 0, interact: false, pointerDown: false,
   };
 
+  /**
+   * Correr sem segurar nada (PRD §34: o bairro ficou grande).
+   *
+   * O Shift sempre correu, e por muito tempo foi a única forma — o que quer
+   * dizer que num aparelho de toque não havia forma nenhuma, e num teclado
+   * ninguém descobria. Com o Distrito Sombra em 116 m de avenida, atravessar o
+   * bairro andando passou de vinte e cinco para quase cinquenta segundos, e uma
+   * tecla escondida deixou de ser um detalhe.
+   *
+   * Este é o LATCH, ligado pela tela (`RunToggle`) ou pelo `R`. E o Shift passa
+   * a INVERTER em vez de somar: com a corrida travada, segurar Shift faz andar.
+   * É a convenção de qualquer jogo com "always run" e resolve o problema óbvio
+   * da alternativa — travar a corrida e não ter mais como caminhar, que numa
+   * cena em que se conversa parado é o contrário do que se quer.
+   */
+  alwaysRun = false;
+
   /** Set true while a text field has focus, so WASD types instead of walking. */
   /**
    * Teclado e ponteiro ignorados. Ligado enquanto alguém digita no chat: `w`,
@@ -222,10 +239,13 @@ export class InputManager {
         const action = KEY_MAP[code];
         if (action && action in a) (a as Record<string, number>)[action] = 1;
       }
-      s.run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
-    } else {
-      s.run = false;
     }
+    // Fora do `if` de propósito: o latch vale mesmo com o teclado suspenso
+    // (alguém digitando no chat continua correndo se já estava), enquanto o
+    // Shift, que é tecla, não vale — `shift` já nasce falso ali em cima.
+    const shift = !this.suspended
+      && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
+    s.run = this.alwaysRun ? !shift : shift;
 
     let mx = a.right - a.left;
     let mz = a.back - a.forward;
@@ -241,7 +261,10 @@ export class InputManager {
           const scale = Math.min(1, len / STICK_RADIUS) / len;
           mx = dx * scale;
           mz = dy * scale;
-          s.run = len > STICK_RADIUS * 0.85;
+          // `||` e não `=`: com a corrida travada pelo botão da tela, empurrar
+          // o direcional só até a metade não pode DESTRAVAR. O empurrão até o
+          // fim continua sendo o jeito de correr sem tocar em mais nada.
+          s.run = s.run || len > STICK_RADIUS * 0.85;
         } else {
           mx = 0; mz = 0;
         }

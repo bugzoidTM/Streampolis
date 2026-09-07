@@ -1,0 +1,72 @@
+/*
+ * Botão de correr.
+ *
+ * Mora acima da barra de gestos, no mesmo canto: as coisas que se fazem COM O
+ * CORPO no mundo — andar, gesticular, falar — ficam todas à esquerda, e o
+ * centro da tela continua sendo do personagem.
+ *
+ * Ele é um interruptor, não uma ação, e por isso é o único botão do HUD que
+ * muda de cor quando está ligado. O rótulo diz o ESTADO ("Andar" / "Correr"),
+ * não o que o clique faz: um botão que diz "Correr" quando você já está
+ * correndo é a ambiguidade clássica desse tipo de controle, e a cor sozinha não
+ * resolve para quem não distingue as duas.
+ */
+
+.runtoggle {
+  position: fixed;
+  left: max(env(safe-area-inset-left), 16px);
+  /* Logo acima da barra de gestos (que fica em 128px e tem 46px de altura). */
+  bottom: 182px;
+  z-index: 26;
+  pointer-events: none;
+}
+
+.runtoggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-pill);
+  background: var(--sp-glass);
+  backdrop-filter: blur(10px);
+  color: var(--sp-text-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color var(--sp-dur) var(--sp-ease),
+              border-color var(--sp-dur) var(--sp-ease),
+              background var(--sp-dur) var(--sp-ease);
+}
+.runtoggle__btn:hover { border-color: var(--sp-line-2); color: var(--sp-text); }
+
+/* Ligado: o mesmo ciano dos Credits não serve (é a cor do dinheiro) e o
+   vermelho é do "ao vivo". Sobra o violeta, que já é a cor de "acontecendo
+   agora" nos eventos — e correr é exatamente isso. */
+.runtoggle__btn.is-on {
+  border-color: rgba(124, 92, 255, 0.55);
+  background: linear-gradient(180deg, rgba(124, 92, 255, 0.24), var(--sp-glass));
+  color: var(--sp-text);
+}
+.runtoggle__btn.is-on svg { color: var(--sp-violet); }
+
+.runtoggle__tecla {
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: var(--sp-r-xs);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--sp-text-3);
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+
+/* Numa tela estreita o rótulo sai e sobra a silhueta, que é o que o glifo foi
+   desenhado para conseguir dizer sozinho. */
+@media (max-width: 520px) {
+  .runtoggle__label { display: none; }
+  .runtoggle__btn { padding: 0 10px; }
+}

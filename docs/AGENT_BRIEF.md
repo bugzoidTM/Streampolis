@@ -536,11 +536,62 @@ preto e branco com o vermelho preservado. O contraste entre os dois é o que faz
 cada um parecer um LUGAR — uma cidade inteira com a mesma luz é um cenário com
 salas diferentes.
 
-A planta em três peças: duas fileiras de fachadas fechando uma avenida de 18 m,
-e um BECO que sai da fileira norte para os fundos. A área andável é UM retângulo
-(`Area` só sabe ser disco ou retângulo), centrado em `z = -6` para caber o beco
-inteiro; o que impede alguém de andar dentro de um prédio são os colisores das
-fachadas (`noirColliders`), não a borda.
+### O bairro cresceu, e virou DUAS ruas
+
+A primeira versão era um corredor de 68 m com um beco: dava para atravessá-lo
+em vinte e cinco segundos, e o defeito não era o tamanho em metros — era não
+haver **para onde virar**.
+
+```
+ z = -46  ══════════════════════════════════════  fachadas norte  ┐
+                  T   R   A   V   E   S   S   A                   │ rua 2
+ z = -33  ═══╤════════════════╤═════════════╤════  fachadas sul   ┘
+             │                │             │
+        passagem O      BECO (sem saída)   passagem L
+             │                │             │
+ z =  -9  ═══╧════════════════╧═════════════╧════  fachadas norte ┐
+                  A   V   E   N   I   D   A                       │ rua 1
+ z =  +9  ══════════════════════════════════════  fachadas sul    ┘
+      x = -58                                             x = +58
+```
+
+Avenida de 68 m → 116 m, 1.330 m² → 3.112 m² de rua. Três decisões, e nenhuma é
+decoração:
+
+- **duas passagens que atravessam e um beco que NÃO atravessa.** O beco continua
+  sem saída de propósito — é o lugar onde alguém está, não um atalho —, e a
+  parede cega dele passou a ser o FUNDO dos prédios da travessa. O prédio
+  inventado só para tapar (`NOIR.alleyEnd`) deixou de existir;
+- **a travessa é o oposto da avenida**: mais estreita (13 m), mais baixa, sem
+  faixa central pintada e com três néons contra dez. Ela existe para a avenida
+  ter um "atrás";
+- **os dois quarteirões das pontas** (`x` além de ±40, entre as duas ruas) estão
+  em `NOIR.facades` como qualquer fachada. Sem eles sobrava chão andável sem
+  parede nem prédio — que é como um mundo revela que a planta acabou antes do
+  chão.
+
+A área andável continua sendo UM retângulo (`Area` só sabe ser disco ou
+retângulo), agora centrado em `z = -18,5` para caber a travessa; o que impede
+alguém de andar dentro de um prédio são os colisores das fachadas
+(`noirColliders`), não a borda. **Nada em `noirColliders` descreve rua, beco ou
+passagem** — os vãos são as fatias que nenhuma fileira cobre, e é só por isso
+que o buraco na colisão anda junto com o buraco no desenho.
+
+As ruas viraram DADO (`NOIR.streets`): a cena percorre a lista para o asfalto,
+as calçadas e a faixa central. Antes os números da avenida estavam soltos no
+meio do código da cena, e a segunda rua teria sido esse bloco copiado — que é
+onde o eixo fica torto sem ninguém notar.
+
+`node tools/district-plan.mjs` desenha a planta em ASCII a partir da MESMA
+colisão que o servidor usa. Conferir um bairro abrindo o jogo custa um navegador
+headless e uma volta a pé; isto custa duzentos milissegundos e cabe numa
+mensagem de commit.
+
+O orçamento de luz não cresceu com o bairro: `LUZES_DE_POSTE = 6` é um TETO, não
+"um poste sim, um não". Com vinte e sete postes a regra proporcional daria treze
+luzes pontuais, e cada uma entra no laço do shader de todo material da cena. O
+que sustenta a leitura da rua de longe é o disco aditivo no chão, que é de
+graça.
 
 Quatro coisas sustentam a leitura noir, e tirar qualquer uma derruba a imagem:
 preenchimento baixo, os letreiros como luzes pontuais coloridas, o chão quase
@@ -569,6 +620,48 @@ Três armadilhas já pagas aqui, nesta ordem:
 `npm run gate:walls` inclui o distrito, e é ali que se prova a metade que o
 navegador vê: a cena desenhada é a cena em que se colide, e andar em toda
 direção não põe ninguém fora da planta.
+
+E `test:game-server` ganhou a prova que só passou a fazer sentido com duas ruas:
+uma **inundação em grade** a partir da chegada, que exige que toda parada de
+bico seja ALCANÇÁVEL, que as duas passagens liguem mesmo as ruas, que as duas
+pontas da avenida existam — e que o beco continue sem saída. Uma fatia de
+fachada com o `x1` errado por meio metro fecha uma passagem inteira sem que
+TypeScript, desenho ou colisão digam uma palavra; o sintoma seria um jogador
+correndo cem metros para descobrir que a rua não passa. A grade é de meio metro,
+mais grossa que o corpo (raio 0,28) de propósito: grade fina "passa" por frestas
+que o jogador não atravessa, e um teste que aprova o que o jogo recusa é pior
+que nenhum teste.
+
+## Correr
+
+`MoveIntent.run` existe desde o primeiro dia e o servidor sempre validou 5,2 m/s
+contra 2,4 m/s. O que faltava era **como pedir**: só o Shift, que ninguém
+descobre, e em aparelho de toque nem isso — o único meio era empurrar o
+direcional virtual até os últimos 15% do curso.
+
+O caminho é `RunToggle` → `InputManager.alwaysRun` → `MoveIntent.run` →
+servidor. O botão TRAVA e o **Shift passa a INVERTER**: com a corrida ligada,
+segurá-lo faz andar. É o "always run" de sempre, e é o que evita o defeito
+óbvio da alternativa — travar a corrida e perder a caminhada, que numa cena onde
+se conversa parado é o contrário do que se quer. O `R` faz o mesmo que o botão,
+e a preferência mora no `localStorage`: é conforto de CONTROLE, e guardá-la no
+perfil faria trocar de aparelho carregar junto o jeito de andar de outro.
+
+Duas coisas para não desfazer:
+
+- no `poll()`, o latch é lido FORA do `if (!this.suspended)` e o Shift dentro:
+  quem está digitando no chat continua correndo se já estava, mas não muda de
+  marcha por causa de uma tecla que pertence ao texto;
+- o direcional virtual usa `s.run = s.run || …`, nunca `=`. Com `=`, empurrar o
+  direcional até a metade DESTRAVARIA a corrida ligada no botão.
+
+`npm run run:check` prova a costura inteira, e a forma de medir é a parte que
+interessa: ele conta **metros por INTENÇÃO**, não por segundo. O navegador
+headless rasteriza por software a um ou dois quadros por segundo, o `FixedStep`
+descarta a recuperação que não cabe, e medir por tempo empatava andar e correr
+em um metro e pouco ao sabor de uma pausa do coletor de lixo. Por intenção o
+quadro sai da conta: 0,100 m andando e 0,217 correndo, que é exatamente
+`velocidade / 24` nos dois casos, a qualquer quadro por segundo.
 
 ## Bicos de rua: as três autoridades numa feature só
 

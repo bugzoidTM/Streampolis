@@ -141,9 +141,11 @@ export const PLAY_AREA: Record<SceneId, Bounds> = {
   agency_tower:      { minX: -16, maxX: 16, minZ: -16, maxZ: 16 },
   pk_arena:          { minX: -18, maxX: 18, minZ: -18, maxZ: 18 },
   live_room:         { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
-  // O envelope do bairro é assimétrico em Z porque a rua é: o beco sai da
-  // avenida para o norte e o retângulo tem de contê-lo (ver `NOIR.bounds`).
-  noir_district:     { minX: -40, maxX: 40, minZ: -32, maxZ: 20 },
+  // O envelope do bairro é assimétrico em Z porque as ruas são: a avenida está
+  // em `z = 0` e a travessa em `z = -39,5`, com as passagens entre as duas.
+  // Folga de uns metros sobre `NOIR.bounds` de propósito — este é o teto do
+  // servidor, e quem confina de verdade são os colisores das fachadas.
+  noir_district:     { minX: -64, maxX: 64, minZ: -52, maxZ: 16 },
 };
 
 export interface Kinematic {
