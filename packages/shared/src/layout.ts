@@ -25,7 +25,11 @@ export interface Placement {
 /** Um figurante e o que ele faz. Ver `game/AmbientCrowd.ts`. */
 export interface CrowdWaypoint { x: number; z: number; wait?: number }
 export interface CrowdRoutine {
-  kind: 'walk' | 'sit' | 'watch' | 'talk';
+  /**
+   * `dance` entrou com o clube: os outros quatro são jeitos de estar PARADO, e
+   * um clube cheio de figurantes de pé é um saguão com música.
+   */
+  kind: 'walk' | 'sit' | 'watch' | 'talk' | 'dance';
   path: CrowdWaypoint[];
   facing?: number;
   /** Altura do quadril. Quem senta precisa da altura do assento, não do chão. */

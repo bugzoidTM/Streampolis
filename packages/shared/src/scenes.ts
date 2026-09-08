@@ -34,6 +34,11 @@ export const SCENES: Record<SceneId, SceneDef> = {
   // apesar de ser rua aberta: a chuva, os néons e as poças custam preenchimento
   // por quadro, e uma rua a 12 fps não é atmosfera, é uma cena quebrada.
   noir_district:     { id: 'noir_district',     name: 'Distrito Sombra',  liveCapable: false, capacity: 24,  budgetMB: 7, outdoor: true,  cityRoom: true  },
+  // O clube do bairro. Cabe MAIS gente que a rua que leva a ele, e não menos:
+  // é um interior fechado (sem chuva, sem céu, sem skyline) e o ponto dele é
+  // justamente ter gente dentro. `cityRoom` porque é lugar público de encontro,
+  // como o saguão e a loja — qualquer um entra, ninguém é dono.
+  noir_club:         { id: 'noir_club',         name: 'Clube Sombra',     liveCapable: false, capacity: 32,  budgetMB: 5, outdoor: false, cityRoom: true  },
 };
 
 export const SCENE_IDS = Object.keys(SCENES) as SceneId[];

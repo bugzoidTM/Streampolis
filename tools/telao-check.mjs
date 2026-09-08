@@ -38,6 +38,7 @@ const check = (label, ok, detail) => {
 const AMBIENTES = [
   { id: 'central_plaza', q: 'view=world&scene=central_plaza' },
   { id: 'noir_district', q: 'view=world&scene=noir_district' },
+  { id: 'noir_club', q: 'view=world&scene=noir_club' },
   { id: 'residential_lobby', q: 'view=world&scene=residential_lobby' },
   { id: 'stream_store', q: 'view=world&scene=stream_store' },
   { id: 'agency_tower', q: 'view=world&scene=agency_tower' },

@@ -272,6 +272,7 @@ export const SCENE_COLLIDERS: Record<SceneId, readonly Collider[]> = {
   pk_arena: interior('pk_arena'),
   live_room: interior('live_room'),
   noir_district: noirColliders(),
+  noir_club: interior('noir_club'),
 };
 
 /**
@@ -298,6 +299,7 @@ export const SCENE_AREA: Partial<Record<SceneId, Area>> = {
   pk_arena: interiorArea('pk_arena'),
   residential_lobby: interiorArea('residential_lobby'),
   stream_store: interiorArea('stream_store'),
+  noir_club: interiorArea('noir_club'),
   agency_tower: interiorArea('agency_tower'),
   // Retângulo, e centrado em z = -6 e não em zero: ele precisa cobrir o beco,
   // que sai da avenida para o norte. O que impede alguém de andar dentro de um
@@ -413,4 +415,5 @@ export const SCENE_SPAWNS: Record<SceneId, readonly SpawnPoint[]> = {
   pk_arena: interiorSpawns('pk_arena'),
   live_room: interiorSpawns('live_room'),
   noir_district: noirSpawns(),
+  noir_club: interiorSpawns('noir_club'),
 };

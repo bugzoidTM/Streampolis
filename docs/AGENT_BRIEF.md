@@ -712,6 +712,49 @@ pendura. O sinal certo sempre foi `window.__ready`, que o laço do World levanta
 no 12º quadro — `networkidle` era só um substituto. Foi o que quebrou o
 `prod-check` no dia em que o vídeo entrou.
 
+## O Clube Sombra: o avesso da rua que leva a ele
+
+`NOIR_CLUB` (`shared/interiors.ts`) + `NoirClubScene`. Entra-se pela porta em
+`x = 16` da fachada norte do Distrito Sombra — e o lugar não foi escolhido, ele
+já existia: aquele trecho tem o néon `club` desde que o bairro nasceu, e os
+bicos já mandavam gente para a "Fila do clube" (`NOIR.stops.club`). Faltava a
+porta abrir.
+
+A rua é preto e branco, chuva e um vermelho só; o clube é claro, saturado e
+quente. O contraste é o ponto — um interior com a luz da rua seria a mesma cena
+com teto.
+
+**"Bem iluminado" contraria o clichê da discoteca, e é requisito.** A primeira
+versão partiu de `ROOM_NIGHT`, com chave fraca e paredes quase pretas, e saiu
+uma sala escura. A lição, que já estava escrita na arena e eu tive de reaprender
+aqui: somar holofote colorido num quarto preto não ilumina nada — os feixes
+acendem só o que tocam e o resto continua buraco. Quem levanta o piso da imagem
+é o **ambiente** e as **superfícies**: base `ROOM_DAY`, `ambientIntensity` 1.05,
+sete lustres de teto, e chão/paredes claros o bastante para devolver luz.
+
+**A pista é vazia de propósito.** "Amplo para dançar" não se resolve com metros
+quadrados: resolve-se não pondo mobília dentro deles. Tudo o que tem colisor —
+bar, sofás, mesas, caixas — está encostado nas bordas; o que ocupa o centro é só
+desenho de chão e luz, que não colide com ninguém. Os figurantes dançam nas
+BORDAS pelo mesmo motivo: o meio é do jogador.
+
+**Não há som.** O jogo não tem sistema de áudio nenhum — não existe
+`AudioListener` em lugar algum do cliente, e as SPECs §48 seguem por fazer. O
+que existe é a leitura VISUAL de uma pista tocando: as luzes coloridas pulsam a
+124 BPM (`NoirClubScene.update`), os corpos dançam, e o LED atrás do DJ é o
+telão do clube. Só os feixes saturados pulsam — a lavagem branca fica firme, ou
+os rostos apagariam no contratempo e o salão viraria o estroboscópio que "bem
+iluminado" recusa.
+
+`CrowdRoutine` ganhou o quinto tipo, `dance`: os outros quatro são jeitos de
+estar parado, e um clube cheio de gente em pé é um saguão com música.
+
+Cena nova é dado em oito lugares (`SceneId`, `SCENES`, `INTERIORS`, `PORTALS`,
+`PLAY_AREA`, `SCENE_COLLIDERS`, `SCENE_AREA`, `SCENE_SPAWNS`) mais o registro do
+cliente — e o registro do cliente é EXAUSTIVO por tipo, então esquecer dele
+quebra o build em vez de largar o jogador na praça. O game server não precisa de
+nada: ele roteia por `cityRoom` do catálogo compartilhado.
+
 ## Correr
 
 `MoveIntent.run` existe desde o primeiro dia e o servidor sempre validou 5,2 m/s

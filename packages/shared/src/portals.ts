@@ -119,6 +119,24 @@ export const PORTALS: Partial<Record<SceneId, Portal[]>> = {
     // lugar quando a avenida dobrou de tamanho: no meio da rua, a porta de
     // volta partia o bairro em dois pedaços curtos em vez de um longo.
     { id: 'noir_exit', to: 'central_plaza', label: 'Voltar à praça', x: -54.5, z: 0, ry: -Math.PI / 2, r: 2.4 },
+    /**
+     * A porta do clube, embaixo do letreiro que já dizia "club".
+     *
+     * O lugar não foi escolhido: ele já existia. A fachada norte em x = 16 tem
+     * o néon `club` desde que o bairro nasceu, e os bicos já mandavam gente
+     * para a "Fila do clube" ali (`NOIR.stops.club`). Faltava a porta abrir.
+     *
+     * Encostada na fachada (`z = -8.4`, com a fileira norte começando em -9) e
+     * virada para a rua. O raio é apertado para uma porta ao ar livre — 1,8 m
+     * numa avenida de 18 m — de propósito: quem passa correndo pela calçada
+     * norte não pode ser sugado para dentro do clube sem querer.
+     */
+    { id: 'noir_club_door', to: 'noir_club', label: 'Clube Sombra', x: 16, z: -8.4, ry: 0, r: 1.8 },
+  ],
+
+  // A volta cai na calçada, na frente da porta — não no meio da avenida.
+  noir_club: [
+    { id: 'club_exit', to: 'noir_district', label: 'Sair para a rua', x: 0, z: 12.4, ry: Math.PI, r: INDOOR_R },
   ],
 };
 

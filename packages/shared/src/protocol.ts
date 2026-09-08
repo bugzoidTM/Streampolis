@@ -146,6 +146,7 @@ export const PLAY_AREA: Record<SceneId, Bounds> = {
   // Folga de uns metros sobre `NOIR.bounds` de propósito — este é o teto do
   // servidor, e quem confina de verdade são os colisores das fachadas.
   noir_district:     { minX: -64, maxX: 64, minZ: -52, maxZ: 16 },
+  noir_club:         { minX: -16, maxX: 16, minZ: -14, maxZ: 14 },
 };
 
 export interface Kinematic {

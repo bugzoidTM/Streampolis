@@ -145,7 +145,9 @@ export class AmbientCrowd {
 
   /** Which clip a routine sits in while it is not walking. */
   private pose(m: Member, initial = false): void {
-    const idle = m.routine.kind === 'sit' ? 'sit' : 'idle';
+    const idle = m.routine.kind === 'sit' ? 'sit'
+      : m.routine.kind === 'dance' ? 'dance'
+        : 'idle';
     m.avatar.setAnim(m.routine.kind === 'walk' && !initial ? 'walk' : idle);
     // A pair standing face to face reads as a conversation; the same two side
     // by side read as a queue. The facing is the whole staging.

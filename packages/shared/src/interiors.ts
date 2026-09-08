@@ -527,6 +527,148 @@ export const HOME_BOUNDS: RoomBounds = {
   halfD: APARTMENT.shell.depth / 2,
 };
 
+// ---------------------------------------------------------------------------
+// Clube do Distrito Sombra — o avesso da rua que leva até ele (PRD §6, §34).
+// ---------------------------------------------------------------------------
+
+/**
+ * O clube.
+ *
+ * A rua lá fora é preto e branco, chuva e um vermelho só. Aqui dentro é o
+ * contrário em tudo: claro, saturado, quente e cheio de cor. Isso não é
+ * variedade por variedade — é o que faz atravessar a porta valer alguma coisa.
+ * Um interior com a mesma luz da rua seria a mesma cena com teto.
+ *
+ * ## "Bem iluminado" foi um pedido, e contraria o clichê de propósito
+ *
+ * Discoteca de referência é escura com feixes cortando a fumaça. Este é claro:
+ * a luz da casa lava o salão inteiro e os feixes coloridos vêm POR CIMA dela,
+ * como acento. O motivo é o mesmo que a arena já tinha aprendido e deixou
+ * escrito — sem uma lavagem própria, todo mundo que não está debaixo de um
+ * feixe vira silhueta. Num lugar cujo ponto é ver as pessoas dançando e
+ * conversando, isso seria o defeito central.
+ *
+ * ## A planta é três zonas, e o vão entre elas é a feature
+ *
+ * ```
+ *   z = -13  ┌──────── cabine do DJ ────────┐   palco + LED + caixas
+ *            │                              │
+ *   z =  -5  │   P I S T A   (14 × 12 m)    │   nada plantado no meio
+ *   z =  +5  │                              │
+ *            │  bar (oeste)   lounge (leste)│   conversar, sentado
+ *   z = +13  └────────── porta ─────────────┘
+ * ```
+ *
+ * O centro é deliberadamente VAZIO. "Amplo para dançar" não se resolve com
+ * metros quadrados: resolve-se não pondo mobília no meio deles. Tudo o que tem
+ * corpo — bar, sofás, mesas, caixas de som — está encostado nas bordas, e o que
+ * ocupa a pista é só desenho de chão e luz, que não colide com ninguém.
+ */
+export const NOIR_CLUB: SceneLayout = {
+  shell: {
+    width: 30, depth: 26, height: 7.5, wall: 0.35, ceiling: true,
+    openings: [
+      // A porta da rua, no eixo. Alta e larga: é por onde entra todo mundo, e
+      // uma porta estreita num lugar cheio vira fila.
+      { side: 'south', x: 0, y: 0, w: 3.6, h: 3.2 },
+    ],
+  },
+  fixtures: [
+    // ---- a cabine do DJ, no fundo ----
+    // O LED atrás dele é o telão do clube: mostra o mesmo que a praça, como
+    // todos os outros do jogo.
+    { kind: 'led_wall', x: 0, z: -12.6, ry: 0, w: 12, h: 5.0, y: 1.7, hw: 6.2, hd: 0.4, color: 0xff3d9a },
+    { kind: 'stage_mark', x: 0, z: -10.4, ry: 0, w: 8.0, d: 3.4, color: 0xb06bff },
+    { kind: 'counter', x: 0, z: -10.0, ry: 0, hw: 2.3, hd: 0.5, w: 4.6 },
+    { kind: 'speaker_stack', x: -5.6, z: -11.4, ry: 0.42, hw: 0.42, hd: 0.42 },
+    { kind: 'speaker_stack', x: 5.6, z: -11.4, ry: -0.42, hw: 0.42, hd: 0.42 },
+    { kind: 'neon_sign', x: -7.4, z: -12.4, ry: 0, y: 3.4, color: 0x2fd8ff },
+    { kind: 'neon_sign', x: 7.4, z: -12.4, ry: 0, y: 3.4, color: 0xffcc33 },
+
+    // ---- a pista ----
+    // Só chão e luz. Nada aqui tem colisor, e é essa a diferença entre um
+    // salão amplo e um salão grande cheio de coisa.
+    { kind: 'centre_ring', x: 0, z: -1.0, ry: 0, w: 11.0, color: 0x2fd8ff },
+    { kind: 'stage_mark', x: 0, z: -1.0, ry: 0, w: 14.0, d: 11.0, color: 0x7c5cff },
+
+    { kind: 'truss', x: 0, z: -7.0, y: 6.4, w: 24 },
+    { kind: 'truss', x: 0, z: -1.0, y: 6.8, w: 24 },
+    { kind: 'truss', x: 0, z: 5.0, y: 6.4, w: 24 },
+
+    // Os feixes de cor, sobre a pista.
+    { kind: 'spot', x: -5.4, z: -7.0, y: 6.2, color: 0xff3d9a, aim: [-3.0, 1.2, -3.0] },
+    { kind: 'spot', x: 5.4, z: -7.0, y: 6.2, color: 0x2fd8ff, aim: [3.0, 1.2, -3.0] },
+    { kind: 'spot', x: -5.4, z: 5.0, y: 6.2, color: 0xb06bff, aim: [-3.0, 1.2, 1.5] },
+    { kind: 'spot', x: 5.4, z: 5.0, y: 6.2, color: 0xffcc33, aim: [3.0, 1.2, 1.5] },
+    { kind: 'spot', x: 0, z: -9.0, y: 6.0, color: 0xff5aa8, aim: [0, 1.4, -10.4] },
+
+    // E a LAVAGEM DA CASA por cima de tudo, que é o que atende "bem iluminado"
+    // e o que faz um rosto ser um rosto fora do feixe.
+    { kind: 'spot', x: 0, z: -1.0, y: 6.9, color: 0xfff2e0, aim: [0, 1.2, -1.0] },
+    { kind: 'spot', x: -8.0, z: -1.0, y: 6.6, color: 0xffeede, aim: [-8.0, 1.2, -1.0] },
+    { kind: 'spot', x: 8.0, z: -1.0, y: 6.6, color: 0xffeede, aim: [8.0, 1.2, -1.0] },
+    { kind: 'spot', x: 0, z: 7.5, y: 6.4, color: 0xfff0dc, aim: [0, 1.2, 8.5] },
+
+    // ---- o bar, na parede oeste ----
+    { kind: 'counter', x: -13.0, z: -1.0, ry: PI / 2, hw: 4.2, hd: 0.5, w: 8.4 },
+    { kind: 'stool', x: -11.4, z: -4.2, r: 0.22 },
+    { kind: 'stool', x: -11.4, z: -2.6, r: 0.22 },
+    { kind: 'stool', x: -11.4, z: -1.0, r: 0.22 },
+    { kind: 'stool', x: -11.4, z: 0.6, r: 0.22 },
+    { kind: 'stool', x: -11.4, z: 2.2, r: 0.22 },
+    { kind: 'shelf', x: -14.5, z: -1.0, ry: PI / 2, hw: 2.6, hd: 0.16, w: 5.2, h: 2.4 },
+    { kind: 'wall_neon', x: -14.6, z: -6.4, ry: PI / 2, y: 2.6, color: 0xff3d9a },
+    { kind: 'wall_neon', x: -14.6, z: 4.4, ry: PI / 2, y: 2.6, color: 0x2fd8ff },
+
+    // ---- o lounge, na parede leste: é onde se CONVERSA ----
+    // Encostado e voltado para dentro, com mesa no meio de cada grupo: uma
+    // roda de sofás de frente uns para os outros é o que faz duas pessoas
+    // pararem para falar em vez de passarem.
+    { kind: 'rug', x: 10.6, z: -5.4, ry: 0, w: 6.4, d: 5.0, tint: '#3a2c4a' },
+    { kind: 'sofa', x: 12.6, z: -5.4, ry: -PI / 2, hw: 1.05, hd: 0.46, w: 2.1, tint: '#5a3f6e' },
+    { kind: 'sofa', x: 8.6, z: -5.4, ry: PI / 2, hw: 1.05, hd: 0.46, w: 2.1, tint: '#5a3f6e' },
+    { kind: 'coffee_table', x: 10.6, z: -5.4, ry: 0, hw: 0.62, hd: 0.36, w: 1.24, d: 0.72 },
+
+    { kind: 'rug', x: 10.6, z: 3.2, ry: 0, w: 6.4, d: 5.0, tint: '#2c3a4a' },
+    { kind: 'sofa', x: 12.6, z: 3.2, ry: -PI / 2, hw: 1.05, hd: 0.46, w: 2.1, tint: '#3f5c6e' },
+    { kind: 'armchair', x: 8.8, z: 2.2, ry: PI / 2, hw: 0.45, hd: 0.46, tint: '#6b4f7c' },
+    { kind: 'armchair', x: 8.8, z: 4.2, ry: PI / 2, hw: 0.45, hd: 0.46, tint: '#6b4f7c' },
+    { kind: 'coffee_table', x: 10.6, z: 3.2, ry: 0, hw: 0.62, hd: 0.36, w: 1.24, d: 0.72 },
+
+    { kind: 'wall_neon', x: 14.6, z: -1.0, ry: -PI / 2, y: 2.8, color: 0xffcc33 },
+    { kind: 'plant_tall', x: 13.6, z: -9.4, r: 0.34, s: 1.3 },
+    { kind: 'pot_plant', x: -13.4, z: 8.6, r: 0.3, s: 1.2 },
+    { kind: 'pot_plant', x: 13.4, z: 8.6, r: 0.3, s: 1.2 },
+
+    // A luz da casa, de verdade: lustres no teto sobre as bordas do salão.
+    // Os holofotes coloridos acendem só o que tocam; estes é que fazem o
+    // salão inteiro ter piso de luz — que é o que "bem iluminado" pede.
+    { kind: 'ceiling_lamp', x: -9.0, z: -7.0, y: 7.4 },
+    { kind: 'ceiling_lamp', x: 9.0, z: -7.0, y: 7.4 },
+    { kind: 'ceiling_lamp', x: -9.0, z: 1.0, y: 7.4 },
+    { kind: 'ceiling_lamp', x: 9.0, z: 1.0, y: 7.4 },
+    { kind: 'ceiling_lamp', x: -9.0, z: 8.6, y: 7.4 },
+    { kind: 'ceiling_lamp', x: 9.0, z: 8.6, y: 7.4 },
+    { kind: 'ceiling_lamp', x: 0, z: 8.6, y: 7.4 },
+
+    // Grades separando a pista da cabine: dá borda ao palco sem fechar nada.
+    { kind: 'barrier', x: -4.4, z: -8.4, ry: 0, hw: 1.6, hd: 0.16, w: 3.2 },
+    { kind: 'barrier', x: 4.4, z: -8.4, ry: 0, hw: 1.6, hd: 0.16, w: 3.2 },
+  ],
+  /**
+   * A chegada é logo dentro da porta, virada para a pista.
+   *
+   * Nunca EM CIMA da porta: o raio do portal reagiria à própria chegada e
+   * devolveria a pessoa para a rua no primeiro quadro — o defeito que o
+   * apartamento e o saguão já pagaram, cada um do seu jeito.
+   */
+  spawns: [
+    { x: -2.4, z: 10.4, yaw: 0 }, { x: 2.4, z: 10.4, yaw: 0 },
+    { x: 0, z: 9.0, yaw: 0 }, { x: -4.6, z: 9.2, yaw: 0.2 },
+    { x: 4.6, z: 9.2, yaw: -0.2 }, { x: 0, z: 6.4, yaw: 0 },
+  ],
+};
+
 export const INTERIORS: Partial<Record<SceneId, SceneLayout>> = {
   apartment: APARTMENT,
   live_room: LIVE_ROOM,
@@ -534,4 +676,5 @@ export const INTERIORS: Partial<Record<SceneId, SceneLayout>> = {
   residential_lobby: RESIDENTIAL_LOBBY,
   stream_store: STREAM_STORE,
   agency_tower: AGENCY_TOWER,
+  noir_club: NOIR_CLUB,
 };

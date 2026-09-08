@@ -8,7 +8,8 @@ export type SceneId =
   | 'agency_tower'
   | 'pk_arena'
   | 'live_room'
-  | 'noir_district';
+  | 'noir_district'
+  | 'noir_club';
 
 export type PresenceStatus =
   | 'offline' | 'online' | 'in_world'
