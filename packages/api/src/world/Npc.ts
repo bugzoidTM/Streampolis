@@ -16,9 +16,17 @@ import { DEFAULT_AVATAR_DTO, signSessionToken, type AvatarConfigDTO, type Sessio
  */
 
 export class NpcError extends Error {
-  constructor(public readonly code: string, message: string, public readonly status = 400) {
+  readonly code: string;
+  readonly status: number;
+
+  // Sem "parameter property" no construtor: a API roda TypeScript em modo
+  // strip-only no Node, e `constructor(public readonly x)` derruba o processo
+  // no boot — foi exatamente o que aconteceu no primeiro deploy deste arquivo.
+  constructor(code: string, message: string, status = 400) {
     super(message);
     this.name = 'NpcError';
+    this.code = code;
+    this.status = status;
   }
 }
 
