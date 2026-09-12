@@ -454,6 +454,7 @@ function toRenderPose(player: PlayerView, sessionId: string, isLocal: boolean): 
     gifterLevel: player.gifterLevel,
     avatar: player.avatar,
     isLocal,
+    npc: player.npc === true,
   };
 }
 

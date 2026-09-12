@@ -77,6 +77,9 @@ export function RosterPanel({ onOpenProfile, hidden }: RosterPanelProps) {
 }
 
 function legenda(p: RoomPerson): string {
+  // Antes de qualquer papel: um personagem da cidade nunca passa por jogador
+  // (PRD §25), nem quando é o dono de uma sala.
+  if (p.npc) return 'Personagem da cidade (NPC)';
   if (p.role === 'host') return 'Transmitindo';
   if (p.role === 'cohost') return 'No palco';
   if (p.role === 'owner') return 'Dono da casa';

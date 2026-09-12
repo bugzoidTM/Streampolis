@@ -568,7 +568,7 @@ export class World {
         // sendo transmitido.
         const tag = pose.isLocal
           ? null
-          : new NameTag(pose.name, pose.gifterLevel, avatar.stature);
+          : new NameTag(pose.name, pose.gifterLevel, avatar.stature, pose.npc === true);
         if (tag) avatar.root.add(tag.sprite);
         this.scene?.scene.add(avatar.root);
         actor = {

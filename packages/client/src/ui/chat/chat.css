@@ -50,6 +50,21 @@
 .wchat--open .wchat__line { text-shadow: none; }
 
 .wchat__name { font-weight: 700; flex: none; }
+/* A marca de personagem da cidade (PRD §25): sempre visível, nunca da cor do
+   tier — um NPC não gasta, e a cor de quem gasta não pode ser emprestada. */
+.wchat__npc {
+  flex: none;
+  font-size: 0.62em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(112, 214, 255, 0.18);
+  color: #9fe3ff;
+  border: 1px solid rgba(112, 214, 255, 0.45);
+  align-self: center;
+}
 .wchat__text { min-width: 0; overflow-wrap: anywhere; }
 
 .wchat__line--system .wchat__text,

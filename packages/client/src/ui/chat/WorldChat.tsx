@@ -108,6 +108,9 @@ export function WorldChat({ world, hidden }: WorldChatProps) {
                 >
                   {m.sender.name}
                 </span>
+                {m.sender.npc && (
+                  <span className="wchat__npc" title="Personagem da cidade, não um jogador">NPC</span>
+                )}
               </>
             )}
             <span className="wchat__text">{m.text}</span>

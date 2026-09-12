@@ -57,6 +57,13 @@ export interface ChatMessage {
   gifterLevel: number;
   timestamp: number;
   system?: boolean;
+  /**
+   * Quem falou é um personagem da cidade, não uma pessoa (PRD §25: "NPCs
+   * nunca deverão ser apresentados como jogadores humanos reais"). A marca
+   * viaja na mensagem porque o painel de chat guarda linhas de quem já saiu
+   * da sala — e a placa sobre a cabeça não está no painel.
+   */
+  npc?: boolean;
 }
 
 /** Transient — never the source of truth for money (SPECs §30). */

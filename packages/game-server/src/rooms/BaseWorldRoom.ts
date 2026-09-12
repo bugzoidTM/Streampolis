@@ -59,6 +59,15 @@ interface Session {
 }
 
 /**
+ * Personagem da cidade (PRD §25). A marca é uma PERMISSÃO no token, e só a
+ * API a emite — para um usuário de verdade ela nunca existe, então um jogador
+ * não tem como se fantasiar de NPC nem um NPC de jogador.
+ */
+export function isNpc(identity: AuthIdentity): boolean {
+  return identity.permissions.includes('npc');
+}
+
+/**
  * Everything a walkable room does: authenticate, spawn, move, chat, emote.
  *
  * The tick loop here is the only writer of position in the whole server. A
@@ -210,6 +219,7 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
     player.gifterLevel = identity.gifterLevel;
     player.agency = identity.agency;
     player.role = this.roleFor(identity);
+    player.npc = isNpc(identity);
     // Appearance comes from the token the API signed — NEVER from join
     // options. Trusting the browser here is how a free tee becomes a
     // 5.000-Coin item without anyone paying (SPECs §68 regra 6).
@@ -346,6 +356,7 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
         text: verdict.text,
         gifterLevel: session.identity.gifterLevel,
         timestamp: Date.now(),
+        ...(isNpc(session.identity) ? { npc: true } : {}),
       });
     });
 

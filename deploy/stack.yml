@@ -137,6 +137,54 @@ services:
         - traefik.http.routers.streampolis-ws.service=streampolis-ws
         - traefik.http.services.streampolis-ws.loadbalancer.server.port=2567
 
+  # O personagem da cidade (PRD §25; packages/npc). Um processo = um
+  # personagem: ele entra na praça pelo gateway como um navegador entraria,
+  # com token da API, e pensa com os dois proxies de LLM da casa (qwenproxy
+  # para conversa, chatgptproxy para diário/persona/auditoria). O freio de mão
+  # é a flag `npc_enabled` no banco — desligar não exige mexer aqui.
+  #
+  # O `urlBuilder` do worker troca `streampolis.nutef.com/ws/N` (o endereço
+  # público que a reserva de assento devolve no modo distribuído) pelo gateway
+  # interno, que já roteia `/N/` para o worker N. Sem isso o personagem sairia
+  # da VPS para voltar para ela.
+  sp-npc:
+    image: node:22-bookworm-slim
+    working_dir: /app/packages/npc
+    command: node dist/npc/src/index.js
+    volumes:
+      - /root/streampolis:/app:ro
+    environment:
+      NODE_ENV: production
+      NPC_SLUG: nilo
+      API_BASE_URL: http://sp-api:8787
+      API_SERVICE_TOKEN: ${SP_SERVICE_TOKEN}
+      GAME_SERVER_URL: ws://sp-game-gateway:8080
+      GAME_PUBLIC_PREFIX: streampolis.nutef.com/ws
+      GAME_INTERNAL_HOST: sp-game-gateway:8080
+      DATABASE_URL: postgres://streampolis:${SP_DB_PASSWORD}@sp-db:5432/streampolis
+      LLM_CHAT_URL: http://qwenproxy:3000/v1/chat/completions
+      LLM_CHAT_KEY: ${SP_LLM_CHAT_KEY}
+      LLM_CHAT_MODEL: qwen3-vl-plus-no-thinking
+      LLM_DEEP_URL: http://chatgptproxy:3000/v1/chat/completions
+      LLM_DEEP_KEY: ${SP_LLM_DEEP_KEY}
+      LLM_DEEP_MODEL: gpt-5
+      NPC_HEALTH_PORT: "8791"
+    networks: [Nutef]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8791/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 4s
+      start_period: 40s
+      retries: 3
+    stop_grace_period: 15s
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=false
+
   sp-db:
     image: postgres:16-alpine
     environment:

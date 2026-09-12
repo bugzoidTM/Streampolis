@@ -28,6 +28,8 @@ export interface PlayerView {
   agency: string;
   role: 'visitor' | 'owner' | 'host' | 'cohost' | 'spectator';
   avatar: AvatarConfig;
+  /** Personagem da cidade, marcado pelo servidor (PRD §25). */
+  npc?: boolean;
 }
 
 export interface ListLike<V> extends Iterable<V> {
@@ -40,7 +42,7 @@ export interface WorldStateView {
   tick: number;
   players: MapLike<PlayerView>;
   /** City roster stays room-wide while positional players are filtered by AOI. */
-  members?: MapLike<Pick<PlayerView, 'id' | 'name' | 'gifterLevel' | 'agency' | 'role' | 'avatar'>>;
+  members?: MapLike<Pick<PlayerView, 'id' | 'name' | 'gifterLevel' | 'agency' | 'role' | 'avatar' | 'npc'>>;
 }
 
 /** Um móvel colocado pelo dono, como a SALA o publica (schema `PlacedItem`). */
@@ -106,4 +108,5 @@ export interface RenderPose {
   gifterLevel: number;
   avatar: AvatarConfig;
   isLocal: boolean;
+  npc?: boolean;
 }

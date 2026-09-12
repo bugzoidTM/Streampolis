@@ -69,6 +69,13 @@ export class PlayerState extends Schema {
   @type('string') agency = '';
   @type('string') role: RoomRole = 'visitor';
   @type(AvatarState) avatar = new AvatarState();
+  /**
+   * Personagem da cidade (PRD §25). Vem da permissão `npc` do token que a API
+   * assinou — nunca de opção de entrada —, e o cliente desenha a placa com a
+   * marca. Um NPC é um cliente como outro qualquer para o resto da sala:
+   * anda, fala, colide e passa pelo mesmo filtro de chat.
+   */
+  @type('boolean') npc = false;
 }
 
 export class PKStateSchema extends Schema {
@@ -101,6 +108,7 @@ export class CityMemberState extends Schema {
   @type('string') agency = '';
   @type('string') role: RoomRole = 'visitor';
   @type(AvatarState) avatar = new AvatarState();
+  @type('boolean') npc = false;
 
   apply(player: PlayerState): this {
     this.id = player.id;
@@ -108,6 +116,7 @@ export class CityMemberState extends Schema {
     this.gifterLevel = player.gifterLevel;
     this.agency = player.agency;
     this.role = player.role;
+    this.npc = player.npc;
     this.avatar.apply(player.avatar.toConfig());
     return this;
   }

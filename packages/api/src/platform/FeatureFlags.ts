@@ -47,6 +47,8 @@ export const FLAGS_EM_USO: ReadonlySet<string> = new Set([
   'agencies_enabled',
   'pk_enabled',
   'events_enabled',
+  // Lida pelo worker do personagem (packages/npc), direto do banco.
+  'npc_enabled',
 ]);
 
 const CACHE_MS = 15_000;

@@ -58,6 +58,11 @@ import {
 } from './platform/FeatureFlags.ts';
 import { abandonGig, acceptGig, gigBoard, reachCheckpoint } from './work/Gigs.ts';
 import {
+  NpcError, activatePersona, calls as npcCalls, diary as npcDiary, issueNpcToken,
+  listAgents as listNpcs, listPersonaVersions, overview as npcOverview, people as npcPeople,
+  recentMemory as npcMemory, rejectPersona, setAgentEnabled,
+} from './world/Npc.ts';
+import {
   EVENT_METRICS, cancelEvent, createEvent, eventBySlug, eventsBoard, isEventMetric,
   listEventsForAdmin, settleEvent,
 } from './world/CityEvents.ts';
@@ -1246,6 +1251,101 @@ app.post('/admin/events/:id/settle', ...staff, async (req: AuthedRequest, res, n
   } catch (err) { next(err); }
 });
 
+/**
+ * Personagens da cidade (PRD §25), do lado de quem supervisiona.
+ *
+ * Tudo aqui é LEITURA do que o personagem pensa e escreveu — persona, memória,
+ * diário, custo — mais três alavancas: ativar uma versão de persona (aprovar
+ * uma pendente ou reverter para uma antiga são a mesma operação), recusar uma
+ * pendente e desligar o personagem. Ler é de moderador; mexer é de admin, e
+ * vai para o `audit_log` como toda alavanca de conteúdo.
+ */
+app.get('/admin/npc', ...staff, async (_req: AuthedRequest, res, next) => {
+  try { res.json({ npcs: await listNpcs() }); } catch (err) { next(err); }
+});
+
+app.get('/admin/npc/:id', ...staff, async (req: AuthedRequest, res, next) => {
+  try { res.json(await npcOverview(param(req.params.id))); } catch (err) { next(err); }
+});
+
+app.get('/admin/npc/:id/persona', ...staff, async (req: AuthedRequest, res, next) => {
+  try { res.json({ versions: await listPersonaVersions(param(req.params.id)) }); } catch (err) { next(err); }
+});
+
+const npcVersionSchema = z.object({ reason: z.string().min(3).max(1_000) });
+
+app.post('/admin/npc/:id/persona/:version/activate', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const actor = actorOf(req);
+    await assertAdmin(actor);
+    const body = npcVersionSchema.parse(req.body);
+    const version = Number(param(req.params.version));
+    if (!Number.isInteger(version) || version < 1) { res.status(400).json({ error: 'invalid_version' }); return; }
+    const id = param(req.params.id);
+    const activated = await activatePersona(id, version, actor.userId);
+    await audit({
+      actor, action: 'npc.persona.activate', targetType: 'npc', targetId: id,
+      reason: body.reason, metadata: { version },
+    });
+    res.json({ version: activated });
+  } catch (err) { next(err); }
+});
+
+app.post('/admin/npc/:id/persona/:version/reject', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const actor = actorOf(req);
+    await assertAdmin(actor);
+    const body = npcVersionSchema.parse(req.body);
+    const version = Number(param(req.params.version));
+    if (!Number.isInteger(version) || version < 1) { res.status(400).json({ error: 'invalid_version' }); return; }
+    const id = param(req.params.id);
+    await rejectPersona(id, version);
+    await audit({
+      actor, action: 'npc.persona.reject', targetType: 'npc', targetId: id,
+      reason: body.reason, metadata: { version },
+    });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+const npcEnabledSchema = z.object({ enabled: z.boolean(), reason: z.string().min(3).max(1_000) });
+
+app.put('/admin/npc/:id/enabled', ...staff, async (req: AuthedRequest, res, next) => {
+  try {
+    const actor = actorOf(req);
+    await assertAdmin(actor);
+    const body = npcEnabledSchema.parse(req.body);
+    const id = param(req.params.id);
+    const agent = await setAgentEnabled(id, body.enabled);
+    await audit({
+      actor, action: body.enabled ? 'npc.enable' : 'npc.disable', targetType: 'npc', targetId: id,
+      reason: body.reason,
+    });
+    res.json({ npc: agent });
+  } catch (err) { next(err); }
+});
+
+const npcLimit = (req: Request) => {
+  const n = Number(req.query.limit ?? 100);
+  return Number.isFinite(n) ? Math.floor(n) : 100;
+};
+
+app.get('/admin/npc/:id/memory', ...staff, async (req: AuthedRequest, res, next) => {
+  try { res.json({ memory: await npcMemory(param(req.params.id), npcLimit(req)) }); } catch (err) { next(err); }
+});
+
+app.get('/admin/npc/:id/diary', ...staff, async (req: AuthedRequest, res, next) => {
+  try { res.json({ diary: await npcDiary(param(req.params.id), npcLimit(req)) }); } catch (err) { next(err); }
+});
+
+app.get('/admin/npc/:id/people', ...staff, async (req: AuthedRequest, res, next) => {
+  try { res.json({ people: await npcPeople(param(req.params.id), npcLimit(req)) }); } catch (err) { next(err); }
+});
+
+app.get('/admin/npc/:id/calls', ...staff, async (req: AuthedRequest, res, next) => {
+  try { res.json({ calls: await npcCalls(param(req.params.id), npcLimit(req)) }); } catch (err) { next(err); }
+});
+
 app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {
   try {
     res.json({
@@ -1537,6 +1637,20 @@ app.get('/internal/homes/:apartmentId/can-enter/:userId', rateLimit('service'), 
   }
 });
 
+/**
+ * A identidade de um personagem da cidade (PRD §25), para o worker dele
+ * entrar na sala. É a ÚNICA fonte da permissão `npc`: o game server desenha a
+ * placa "NPC" a partir dela, e nenhum outro caminho a emite.
+ */
+app.post('/internal/npc/token', rateLimit('service'), requireService, async (req, res, next) => {
+  try {
+    const body = z.object({ npc: z.string().min(2).max(64) }).parse(req.body);
+    res.json(await issueNpcToken(body.npc));
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get('/internal/identity/:userId', rateLimit('service'), requireService, async (req, res, next) => {
   try {
     const identity = await loadIdentity(param(req.params.userId));
@@ -1729,6 +1843,10 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     || err instanceof ModerationError
     || err instanceof RegisterError) {
     res.status(err.httpStatus).json({ error: err.code, message: err.message });
+    return;
+  }
+  if (err instanceof NpcError) {
+    res.status(err.status).json({ error: err.code, message: err.message });
     return;
   }
   if (err instanceof z.ZodError) {

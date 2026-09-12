@@ -1,0 +1,25 @@
+{
+  "name": "@streampolis/npc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/npc/src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "npm run build && node dist/npc/src/index.js",
+    "start": "node dist/npc/src/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test \"dist/npc/test/*.test.js\"",
+    "e2e": "npm run build && node scripts/e2e-npc.mjs"
+  },
+  "dependencies": {
+    "colyseus.js": "^0.16.22",
+    "pg": "^8.23.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.23.1",
+    "typescript": "^5.6.0"
+  }
+}

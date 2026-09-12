@@ -44,9 +44,14 @@ Ficam FORA do repositório, em `/root/streampolis-deploy/.env` (modo 600):
 ```
 SP_DB_PASSWORD=…      senha do Postgres da stack
 SP_JWT_SECRET=…       assina o token de sessão; o game server verifica com ele
-SP_SERVICE_TOKEN=…    game server → /internal/* da API
+SP_SERVICE_TOKEN=…    game server e worker do NPC → /internal/* da API
 SP_WEBHOOK_SECRET=…   webhook de pagamento (ainda não usado)
+SP_LLM_CHAT_KEY=…     chave do qwenproxy (conversa do NPC)
+SP_LLM_DEEP_KEY=…     chave do chatgptproxy (diário, persona e auditoria do NPC)
 ```
+
+As duas chaves de LLM são as mesmas que a Radar de Licitações usa
+(`QWEN_PROXY_KEY` e `GPTPROXY_KEY` em `/root/radar-licita/deploy/.env`).
 
 ## Subir / atualizar
 
@@ -57,8 +62,9 @@ VITE_API_URL=https://streampolis.nutef.com/api \
 VITE_GAME_SERVER_URL=wss://streampolis.nutef.com/ws \
 npm run build --workspace @streampolis/client
 
-# 2. game server compilado (o serviço roda o dist/)
+# 2. game server e worker do NPC compilados (os serviços rodam o dist/)
 npm run build --workspace @streampolis/game-server
+npm run build --workspace @streampolis/npc
 
 # 3. stack — o TERCEIRO arquivo escolhe o modo de entrada
 cd /root/streampolis-deploy && set -a && . ./.env && set +a
@@ -356,3 +362,37 @@ só existe no worker que a criou.
 `CNAME streampolis.nutef.com → vps.nutef.com`, sem proxy da Cloudflare (cinza),
 igual aos outros subdomínios da casa. O certificado é do Let's Encrypt via
 desafio HTTP-01 do próprio Traefik.
+
+## O personagem da cidade (NPC)
+
+Desde 12/09/2026 a praça tem um morador: **Nilo**, o primeiro personagem da
+cidade (PRD §25). É o serviço `sp-npc` — um processo que entra na sala pelo
+gateway como um navegador entraria, com token da API (`POST /internal/npc/token`,
+que é a única fonte da permissão `npc`), conversa com quem fala com ele,
+lembra das pessoas e, de tempos em tempos, escreve um diário e propõe uma
+versão nova da própria persona, que um auditor (segundo chamado de LLM) aprova
+ou deixa pendente. Código em `packages/npc`; tabelas `npc_*` na migration 0021.
+
+O que se opera pelo painel (rotas `/admin/npc/*`, moderador lê, admin mexe):
+
+```
+GET  /admin/npc                                  quem existe, online?, última batida
+GET  /admin/npc/nilo                             persona ativa, contagens, custo do dia
+GET  /admin/npc/nilo/persona                     todas as versões, com o veredito do auditor
+POST /admin/npc/nilo/persona/:v/activate         aprovar uma pendente OU reverter para antiga
+POST /admin/npc/nilo/persona/:v/reject           recusar uma pendente
+PUT  /admin/npc/nilo/enabled                     {enabled:false} tira SÓ este personagem
+GET  /admin/npc/nilo/memory|diary|people|calls   o que ele viveu, escreveu, conhece e gastou
+PUT  /admin/flags/npc_enabled                    o freio de mão de TODOS os personagens
+```
+
+Desligar pela flag não exige redeploy: o worker lê o banco a cada 30 s, sai da
+sala e fica esperando. `docker service logs streampolis_sp-npc` mostra cada
+fala recusada, cada reflexão e cada reconexão; `/health` na porta 8791 (só na
+rede interna) diz se está conectado, em que sala, com que versão de persona e
+quanto do orçamento diário de chamadas já foi.
+
+O e2e do personagem (`npm run e2e --workspace @streampolis/npc`) sobe o game
+server, um banco de dev e um modelo de MENTIRA, e prova o contrato inteiro:
+entrada com a marca, resposta a quem fala, diário → proposta → auditoria →
+versão nova, reversão pelo banco e freio de mão.

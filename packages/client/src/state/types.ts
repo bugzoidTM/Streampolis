@@ -19,6 +19,8 @@ export interface PersonRef {
   gifterXp: number;
   agency?: string | null;
   verified?: boolean;
+  /** Personagem da cidade (PRD §25): a linha ganha a marca "NPC". */
+  npc?: boolean;
 }
 
 // ---------------------------------------------------------------- chat

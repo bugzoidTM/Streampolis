@@ -79,10 +79,11 @@ function toChat(state: WorldStateView | undefined, wire: WireChat): ChatMessage 
   if (wire.system) {
     return { id: wire.id, kind: 'system', text: wire.text, ts: wire.timestamp };
   }
+  const sender = personFrom(state, wire.senderId, wire.senderName, wire.gifterLevel);
   return {
     id: wire.id,
     kind: 'user',
-    sender: personFrom(state, wire.senderId, wire.senderName, wire.gifterLevel),
+    sender: wire.npc ? { ...sender, npc: true } : sender,
     text: wire.text,
     ts: wire.timestamp,
   };
@@ -141,6 +142,7 @@ function rosterOf(state: WorldStateView | undefined, meSessionId: string): RoomP
       role: player.role,
       isSelf: sessionId === meSessionId,
       avatar: player.avatar,
+      npc: player.npc === true,
     });
   });
   const peso = (p: RoomPerson) =>

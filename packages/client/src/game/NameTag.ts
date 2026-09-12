@@ -14,8 +14,16 @@ const PAD = 12;
 const FONT_PX = 34;
 const cache = new Map<string, THREE.SpriteMaterial>();
 
-function draw(name: string, gifterLevel: number): THREE.SpriteMaterial {
-  const key = `${name}|${gifterLevel}`;
+/**
+ * A marca de personagem da cidade (PRD §25: "NPCs nunca deverão ser
+ * apresentados como jogadores humanos reais"). Vai na PLACA, e não só no
+ * painel de chat, porque a placa é o que se vê de quem ainda não falou.
+ */
+const NPC_LABEL = 'NPC';
+const NPC_FONT_PX = 20;
+
+function draw(name: string, gifterLevel: number, npc = false): THREE.SpriteMaterial {
+  const key = `${name}|${gifterLevel}|${npc ? 'npc' : ''}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -25,8 +33,11 @@ function draw(name: string, gifterLevel: number): THREE.SpriteMaterial {
   ctx.font = `600 ${FONT_PX}px system-ui, sans-serif`;
   const textWidth = ctx.measureText(name).width;
   const badge = gifterLevel > 0 ? FONT_PX * 1.1 : 0;
+  ctx.font = `800 ${NPC_FONT_PX}px system-ui, sans-serif`;
+  const npcWidth = npc ? ctx.measureText(NPC_LABEL).width + NPC_FONT_PX * 0.9 : 0;
+  const npcGap = npc ? FONT_PX * 0.35 : 0;
 
-  canvas.width = Math.ceil(textWidth + badge + PAD * 2);
+  canvas.width = Math.ceil(textWidth + badge + npcGap + npcWidth + PAD * 2);
   canvas.height = Math.ceil(FONT_PX * 1.7);
 
   // Re-fetch: sizing the canvas resets the 2D context state.
@@ -50,6 +61,24 @@ function draw(name: string, gifterLevel: number): THREE.SpriteMaterial {
   c.fillStyle = '#f2f5fb';
   c.fillText(name, PAD + badge, canvas.height / 2 + 1);
 
+  if (npc) {
+    // Um selo azul-claro, nunca da cor de um tier: a cor de quem gasta não
+    // pode ser emprestada a quem não gasta.
+    const x = PAD + badge + textWidth + npcGap;
+    const h = NPC_FONT_PX * 1.35;
+    const y = (canvas.height - h) / 2;
+    c.fillStyle = 'rgba(112, 214, 255, 0.22)';
+    c.strokeStyle = 'rgba(112, 214, 255, 0.7)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.roundRect(x, y, npcWidth, h, 6);
+    c.fill();
+    c.stroke();
+    c.font = `800 ${NPC_FONT_PX}px system-ui, sans-serif`;
+    c.fillStyle = '#bfefff';
+    c.fillText(NPC_LABEL, x + NPC_FONT_PX * 0.45, canvas.height / 2 + 1);
+  }
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
@@ -68,9 +97,9 @@ function draw(name: string, gifterLevel: number): THREE.SpriteMaterial {
 export class NameTag {
   readonly sprite: THREE.Sprite;
 
-  constructor(name: string, gifterLevel: number, private height: number) {
+  constructor(name: string, gifterLevel: number, private height: number, private npc = false) {
     // `height` é a ESTATURA do avatar: do chão ao alto do crânio.
-    this.sprite = new THREE.Sprite(draw(name, gifterLevel));
+    this.sprite = new THREE.Sprite(draw(name, gifterLevel, npc));
     this.sprite.renderOrder = 10;
     this.applyScale();
   }
@@ -86,9 +115,10 @@ export class NameTag {
     this.sprite.position.y = this.height + 0.12;
   }
 
-  set(name: string, gifterLevel: number, height = this.height): void {
+  set(name: string, gifterLevel: number, height = this.height, npc = this.npc): void {
     this.height = height;
-    this.sprite.material = draw(name, gifterLevel);
+    this.npc = npc;
+    this.sprite.material = draw(name, gifterLevel, npc);
     this.applyScale();
   }
 

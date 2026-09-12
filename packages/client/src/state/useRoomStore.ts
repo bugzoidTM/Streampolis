@@ -27,6 +27,8 @@ export interface RoomPerson {
   role: 'visitor' | 'owner' | 'host' | 'cohost' | 'spectator';
   isSelf: boolean;
   avatar: AvatarConfig;
+  /** Personagem da cidade (PRD §25). */
+  npc?: boolean;
 }
 
 interface RoomState {
