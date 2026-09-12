@@ -187,3 +187,93 @@ describe('as pernas', () => {
     assert.equal(w.stuckCount, 1);
   });
 });
+
+// ---------------------------------------------------------------- lugares
+
+import { PLACES, bearing, findPlace, nearestBench, perceptionBlock } from '../src/places.js';
+import { Brain } from '../src/brain.js';
+import { Walker as W2 } from '../src/walker.js';
+
+describe('a percepção da praça', () => {
+  it('todo lugar tem onde ficar em pé fora dos colisores', () => {
+    assert.ok(PLACES.length >= 8);
+    for (const p of PLACES) assert.ok(!penetrates(p.standing, SCENE_COLLIDERS.central_plaza), p.name);
+    const bench = nearestBench({ x: 5, z: 5 });
+    assert.ok(bench && !penetrates(bench.standing, SCENE_COLLIDERS.central_plaza));
+  });
+
+  it('casa o que a pessoa escreve com um lugar', () => {
+    const me = { x: 0, z: 10 };
+    assert.equal(findPlace('me leva até o telão', me)?.name, 'o telão');
+    assert.equal(findPlace('quero ir no clube sombra', me)?.name, 'a porta: Distrito Sombra');
+    assert.equal(findPlace('vamos até o quarto', me)?.name, 'a porta: Torre Residencial');
+    assert.equal(findPlace('bora sentar', me)?.name, 'o banco mais perto');
+    assert.equal(findPlace('me leve para marte', me), null);
+  });
+
+  it('direções: o telão é ao norte', () => {
+    assert.match(bearing({ x: 0, z: 0 }, { x: 0, z: -34 }), /34 m ao norte/);
+    assert.equal(bearing({ x: 1, z: 1 }, { x: 1.5, z: 1 }), 'bem aqui');
+  });
+
+  it('o bloco de percepção diz o que não existe', () => {
+    const b = perceptionBlock({ x: 0, z: 9 });
+    assert.match(b, /NÃO EXISTE/);
+    assert.match(b, /o telão: a \d+ m ao norte/);
+  });
+});
+
+describe('ações do modelo', () => {
+  const fakeWorld = {
+    position: { x: 0, z: 10 },
+    walker: new W2('central_plaza'),
+    people: () => [],
+    roomId: 'r',
+    say: () => true,
+    faceTo: () => {},
+  } as unknown as ConstructorParameters<typeof Brain>[1];
+  const persona = { version: 1, source: 'seed', persona: base };
+  const brain = new Brain({ id: 'n', name: 'Nilo', sceneId: 'central_plaza' }, fakeWorld, persona);
+  const ana = { userId: 'a', name: 'Ana' };
+
+  it('go_to só para lugar que existe, e guia quem pediu', () => {
+    const a = brain.parseAction({ type: 'go_to', place: 'telão' }, ana);
+    assert.equal(a?.type, 'go_to');
+    assert.equal(a?.type === 'go_to' && a.guiding?.name, 'Ana');
+    assert.equal(brain.parseAction({ type: 'go_to', place: 'lua' }, ana), null);
+  });
+
+  it('follow precisa de alguém; verbo inventado é ignorado', () => {
+    assert.equal(brain.parseAction({ type: 'follow' }, null), null);
+    assert.equal(brain.parseAction({ type: 'follow' }, ana)?.type, 'follow');
+    assert.equal(brain.parseAction({ type: 'teleport' }, ana), null);
+    assert.equal(brain.parseAction('go_to', ana), null);
+  });
+
+  it('a ação em curso aparece no status e move as pernas', () => {
+    brain.setAction(brain.parseAction({ type: 'go_to', place: 'monumento' }, null)!);
+    assert.match(brain.status().action, /go_to o monumento/);
+    assert.ok(!fakeWorld.walker.idle);
+    brain.dispose();
+  });
+});
+
+describe('as pernas chegam a todo lugar da percepção', () => {
+  it('do pé do monumento a cada standing', () => {
+    for (const p of PLACES) {
+      const w = new Walker('central_plaza');
+      let pos = { x: 0, z: 9 };
+      w.setTarget(p.standing);
+      let steps = 0;
+      while (!w.idle && steps < 6_000) {
+        for (const i of w.intents(pos, 3)) {
+          const len = Math.hypot(i.dx, i.dz);
+          if (len < 1e-6) continue;
+          pos = { x: pos.x + (i.dx / len) * (2.4 / 24), z: pos.z + (i.dz / len) * (2.4 / 24) };
+        }
+        steps++;
+      }
+      assert.ok(Math.hypot(pos.x - p.standing.x, pos.z - p.standing.z) < 0.6, `${p.name}: parou a ${Math.hypot(pos.x - p.standing.x, pos.z - p.standing.z).toFixed(1)} m (stuck=${w.stuckCount})`);
+    }
+  });
+});

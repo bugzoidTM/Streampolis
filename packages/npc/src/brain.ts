@@ -5,6 +5,8 @@ import * as memory from './memory.js';
 import { CONDUCT, WORLD_FACTS, renderPersona, type PersonaVersion } from './persona.js';
 import type { ChatMessage } from './shared.js';
 import type { Nearby, World } from './world.js';
+import { findPlace, perceptionBlock, type Place } from './places.js';
+import { fold } from './text.js';
 
 /**
  * A cabeça do personagem: percebe, decide, age.
@@ -25,9 +27,17 @@ const NEAR_GREET_M = 6.5;
 const AMBIENT_RADIUS_M = 10;
 const CONVERSATION_TTL_MS = 90_000;
 const REPLY_DEBOUNCE_MS = 1_800;
-const MIN_GAP_PER_USER_MS = 4_000;
-const MAX_REPLIES_PER_USER_10MIN = 8;
-const MAX_CHAT_CALLS_PER_MIN = 8;
+const MIN_GAP_PER_USER_MS = 2_500;
+// Uma conversa fluente é uma fala a cada 20–30 s; oito em dez minutos calou o
+// personagem no meio do primeiro diálogo de verdade.
+const MAX_REPLIES_PER_USER_10MIN = 20;
+const MAX_CHAT_CALLS_PER_MIN = 12;
+/** Guiando alguém: quando a pessoa fica para trás, ele espera. */
+const GUIDE_WAIT_M = 9;
+const GUIDE_RESUME_M = 6;
+const GUIDE_TTL_MS = 4 * 60_000;
+const FOLLOW_STOP_M = 2.2;
+const FOLLOW_TTL_MS = 4 * 60_000;
 const GREET_COOLDOWN_MS = 30 * 60_000;
 const MEET_COOLDOWN_MS = 10 * 60_000;
 const AMBIENT_MIN_QUIET_MS = 4 * 60_000;
@@ -53,18 +63,23 @@ interface ChatLine {
   mine: boolean;
 }
 
+/** O que o modelo pode mandar o corpo fazer. Lista fechada, de propósito. */
+export type Action =
+  | { type: 'go_to'; place: Place; guiding: { userId: string; name: string } | null }
+  | { type: 'follow'; userId: string; name: string }
+  | { type: 'stay' }
+  | { type: 'wander' };
+
 export interface BrainStatus {
   conversations: number;
   recentLines: number;
   lastSpokeAt: number;
   lastReflectionAt: number;
   exchangesSinceReflection: number;
+  action: string;
 }
 
-/** Sem acento, minúsculo, para casar nome com o que se digita no chat. */
-export function fold(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
+export { fold };
 
 /** A pessoa falou com ELE? Pelo nome, por "@nome" ou chamando de npc. */
 export function isAddressed(text: string, name: string): boolean {
@@ -119,6 +134,10 @@ export class Brain {
   private lastAmbientAt = 0;
   private lingerUntil = 0;
   private stoppedForTalkUntil = 0;
+  /** A ação em curso, decidida pelo modelo; `wander` é o padrão. */
+  private action: Action = { type: 'wander' };
+  private actionUntil = 0;
+  private goToRetries = 0;
   lastReflectionAt = Date.now();
   exchangesSinceReflection = 0;
   /** Trocado por `reflect.ts` quando uma versão nova entra no ar. */
@@ -147,6 +166,8 @@ export class Brain {
       lastSpokeAt: this.lastSpokeAt,
       lastReflectionAt: this.lastReflectionAt,
       exchangesSinceReflection: this.exchangesSinceReflection,
+      action: this.action.type === 'go_to' ? `go_to ${this.action.place.name}${this.action.guiding ? ` guiando ${this.action.guiding.name}` : ''}`
+        : this.action.type === 'follow' ? `follow ${this.action.name}` : this.action.type,
     };
   }
 
@@ -226,15 +247,7 @@ export class Brain {
       void this.greet(p.userId, cand.name, p);
     }
 
-    // Caminhar: só quando não está no meio de uma conversa.
-    if (now > this.stoppedForTalkUntil && this.world.walker.idle && now > this.lingerUntil) {
-      const dest = this.world.walker.pickDestination(me);
-      if (dest) this.lingerUntil = now + LINGER_MIN_MS + Math.random() * (LINGER_MAX_MS - LINGER_MIN_MS);
-    }
-    if (this.world.walker.idle && this.lingerUntil < now) {
-      // Chegou (ou desistiu): fica um tempo antes do próximo destino.
-      this.lingerUntil = now + LINGER_MIN_MS + Math.random() * (LINGER_MAX_MS - LINGER_MIN_MS);
-    }
+    this.act(me, now);
 
     // Fala ambiente: gente por perto, praça quieta, e faz tempo que ele não fala.
     const near = this.world.people().filter((p) => !p.npc && p.distance <= AMBIENT_RADIUS_M);
@@ -244,6 +257,104 @@ export class Brain {
       && now - this.lastAmbientAt > AMBIENT_COOLDOWN_MS) {
       this.lastAmbientAt = now;
       void this.ambient(near.slice(0, 3));
+    }
+  }
+
+  // ---------------------------------------------------------------- corpo
+
+  /** Troca a ação em curso. Vem do modelo (via `parseAction`) ou do próprio tique. */
+  setAction(action: Action): void {
+    this.action = action;
+    const now = Date.now();
+    this.actionUntil = action.type === 'follow' ? now + FOLLOW_TTL_MS : action.type === 'go_to' ? now + GUIDE_TTL_MS : 0;
+    if (action.type === 'go_to') { this.goToRetries = 0; this.world.walker.setTarget(action.place.standing); }
+    if (action.type === 'stay') { this.world.walker.stop(); this.lingerUntil = now + 60_000; }
+    if (action.type === 'wander') this.lingerUntil = now + LINGER_MIN_MS;
+    log('brain', 'ação', { action: this.status().action });
+  }
+
+  /** As pernas, por ação. Roda a cada tique. */
+  private act(me: { x: number; z: number }, now: number): void {
+    const walker = this.world.walker;
+    const a = this.action;
+
+    if (a.type === 'go_to') {
+      if (a.guiding) {
+        const p = this.world.people().find((x) => x.userId === a.guiding!.userId);
+        if (!p || now > this.actionUntil) {
+          // Quem estava sendo guiado sumiu: chega sozinho e volta a passear.
+          a.guiding = null;
+        } else if (walker.destination && p.distance > GUIDE_WAIT_M) {
+          // A pessoa ficou para trás: espera olhando para ela.
+          this.world.faceTo({ x: p.x, z: p.z });
+        } else if (walker.idle && Math.hypot(a.place.standing.x - me.x, a.place.standing.z - me.z) > 1 && p.distance <= GUIDE_RESUME_M) {
+          walker.setTarget(a.place.standing);
+        }
+      }
+      if (walker.idle && Math.hypot(a.place.standing.x - me.x, a.place.standing.z - me.z) <= 1.2) {
+        // Chegou: fica um tempo ali antes de voltar a passear.
+        this.action = { type: 'stay' };
+        this.lingerUntil = now + 45_000;
+        log('brain', 'chegou', { place: a.place.name });
+      } else if (walker.idle && !a.guiding) {
+        // Desistiu no caminho (preso): tenta de novo poucas vezes e para.
+        if (this.goToRetries++ < 3) walker.setTarget(a.place.standing);
+        else { this.action = { type: 'stay' }; this.lingerUntil = now + 20_000; }
+      }
+      return;
+    }
+
+    if (a.type === 'follow') {
+      const p = this.world.people().find((x) => x.userId === a.userId);
+      if (!p || now > this.actionUntil) {
+        this.action = { type: 'wander' };
+        this.lingerUntil = now + LINGER_MIN_MS;
+        return;
+      }
+      if (p.distance > FOLLOW_STOP_M) walker.setTarget({ x: p.x, z: p.z });
+      else if (!walker.idle) { walker.stop(); this.world.faceTo({ x: p.x, z: p.z }); }
+      return;
+    }
+
+    if (a.type === 'stay') {
+      if (now > this.lingerUntil) this.action = { type: 'wander' };
+      return;
+    }
+
+    // wander: só quando não está no meio de uma conversa.
+    if (now > this.stoppedForTalkUntil && walker.idle && now > this.lingerUntil) {
+      const dest = walker.pickDestination(me);
+      if (dest) this.lingerUntil = now + LINGER_MIN_MS + Math.random() * (LINGER_MAX_MS - LINGER_MIN_MS);
+    }
+    if (walker.idle && this.lingerUntil < now) {
+      this.lingerUntil = now + LINGER_MIN_MS + Math.random() * (LINGER_MAX_MS - LINGER_MIN_MS);
+    }
+  }
+
+  /**
+   * O `action` que o modelo devolveu, conferido contra a lista fechada e
+   * contra os lugares que existem. Qualquer coisa fora disso é ignorada — o
+   * modelo não ganha um verbo novo por tê-lo escrito.
+   */
+  parseAction(raw: unknown, who: { userId: string; name: string } | null): Action | null {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const a = raw as Record<string, unknown>;
+    const me = this.world.position;
+    if (!me) return null;
+    switch (a.type) {
+      case 'go_to': {
+        const place = typeof a.place === 'string' ? findPlace(a.place, me) : null;
+        if (!place) return null;
+        return { type: 'go_to', place, guiding: who };
+      }
+      case 'follow':
+        return who ? { type: 'follow', userId: who.userId, name: who.name } : null;
+      case 'stay':
+        return { type: 'stay' };
+      case 'wander':
+        return { type: 'wander' };
+      default:
+        return null;
     }
   }
 
@@ -257,7 +368,7 @@ export class Brain {
     }
     c.name = name;
     c.lastAt = Date.now();
-    if (speaker) {
+    if (speaker && (this.action.type === 'wander' || this.action.type === 'stay')) {
       this.world.faceTo({ x: speaker.x, z: speaker.z });
       this.stoppedForTalkUntil = Date.now() + 25_000;
     }
@@ -290,7 +401,16 @@ export class Brain {
     return true;
   }
 
+  private doingNow(): string {
+    const a = this.action;
+    if (a.type === 'go_to') return `indo até ${a.place.name}${a.guiding ? `, guiando ${a.guiding.name}` : ''}`;
+    if (a.type === 'follow') return `seguindo ${a.name}`;
+    if (a.type === 'stay') return 'parado';
+    return this.world.walker.idle ? 'parado, olhando a praça' : 'passeando pela praça';
+  }
+
   private systemPrompt(): string {
+    const me = this.world.position;
     const people = this.world.people().filter((p) => p.distance <= 20).slice(0, 8)
       .map((p) => `${p.name}${p.npc ? ' (também personagem)' : ''} a ${p.distance.toFixed(0)} m`);
     return [
@@ -303,8 +423,19 @@ export class Brain {
       'O QUE VOCÊ SABE DA CIDADE:',
       ...WORLD_FACTS.map((f) => `- ${f}`),
       '',
-      `AGORA: ${horaBrasilia()} (horário de Brasília). Você está na Praça Central.`,
-      `PERTO DE VOCÊ: ${people.length ? people.join('; ') : 'ninguém'}.`,
+      `AGORA: ${horaBrasilia()} (horário de Brasília).`,
+      me ? perceptionBlock(me) : 'ONDE VOCÊ ESTÁ: na Praça Central.',
+      `PESSOAS PERTO DE VOCÊ: ${people.length ? people.join('; ') : 'ninguém'}.`,
+      `O QUE VOCÊ ESTÁ FAZENDO AGORA: ${this.doingNow()}.`,
+      '',
+      'O QUE O SEU CORPO SABE FAZER (e só isso):',
+      '- "go_to": andar até um lugar da lista acima; quem pediu vem junto e você espera se a pessoa ficar para trás. Use quando alguém pedir para ser levado ou quando você mesmo propuser ir a um lugar.',
+      '- "follow": ir atrás da pessoa que está falando com você, para onde ela for dentro da praça.',
+      '- "stay": ficar onde está.',
+      '- "wander": voltar a passear sozinho.',
+      'Você NÃO sai da praça, não entra em prédio, não senta, não compra, não dá nada. Para um lugar fora da praça (Distrito Sombra, Clube Sombra, loja, torres, apartamento), leve até a PORTA certa e diga que dali a pessoa segue sozinha. Nunca diga que vai fazer algo que não está nesta lista, e nunca diga que está indo a um lugar sem mandar a ação.',
+      '',
+      'Se a pessoa digitar errado ("sifo", "nIlo"), entenda pelo contexto e não repita o erro.',
     ].join('\n');
   }
 
@@ -326,17 +457,25 @@ export class Brain {
 
   private recentBlock(): string {
     const lines = this.lines.slice(-RECENT_CHAT_LINES);
-    if (!lines.length) return 'Conversa recente na praça: (silêncio)';
-    return ['Conversa recente na praça (mais antigo primeiro):', ...lines.map((l) => `  [${l.name}] ${l.text}`)].join('\n');
+    const mine = this.lines.filter((l) => l.mine).slice(-5);
+    const out: string[] = [];
+    if (!lines.length) out.push('Conversa recente na praça: (silêncio)');
+    else out.push('Conversa recente na praça (mais antigo primeiro):', ...lines.map((l) => `  [${l.name}] ${l.text}`));
+    if (mine.length) {
+      out.push('', 'SUAS ÚLTIMAS FALAS — não repita frases, imagens nem a mesma estrutura ("Vem, Ana. O telão…"):', ...mine.map((l) => `  - ${l.text}`));
+    }
+    return out.join('\n');
   }
 
   private outputSpec(withNote: string | null): string {
-    return withNote
-      ? `Devolva SOMENTE um JSON: {"say": "sua fala (máx. ${MAX_SAY_CHARS} caracteres)", "note": "uma observação curta e útil sobre ${withNote} para lembrar depois, ou null se não houver nada novo"}. Se for melhor ficar quieto, devolva {"say": null, "note": null}.`
-      : `Devolva SOMENTE um JSON: {"say": "sua fala (máx. ${MAX_SAY_CHARS} caracteres)"}. Se for melhor ficar quieto, devolva {"say": null}.`;
+    const action = '"action": null ou {"type": "go_to", "place": "nome do lugar da lista"} ou {"type": "follow"} ou {"type": "stay"} ou {"type": "wander"}';
+    const note = withNote
+      ? `, "note": um FATO que ${withNote} disse sobre si (de onde é, o que faz, do que gosta, o que veio fazer), em até 100 caracteres, sem interpretação psicológica — ou null se não houve fato novo`
+      : '';
+    return `Devolva SOMENTE um JSON: {"say": "sua fala (máx. ${MAX_SAY_CHARS} caracteres)", ${action}${note}}. Se for melhor ficar quieto, "say" é null.`;
   }
 
-  private async generate(purpose: string, user: string): Promise<{ say: string | null; note: string | null }> {
+  private async generate(purpose: string, user: string): Promise<{ say: string | null; note: string | null; action: unknown }> {
     const messages: ChatTurn[] = [
       { role: 'system', content: this.systemPrompt() },
       { role: 'user', content: user },
@@ -344,17 +483,17 @@ export class Brain {
     const r = await call({ npcId: this.npc.id, tier: 'chat', purpose, messages, maxTokens: 220 });
     if (!r.ok) {
       warn('brain', 'o modelo não respondeu', { purpose, error: r.error });
-      return { say: null, note: null };
+      return { say: null, note: null, action: null };
     }
     const json = parseJsonObject(r.text);
     if (json) {
       const say = sanitizeSay(json.say);
       const note = typeof json.note === 'string' && json.note.trim() && json.note.trim().toLowerCase() !== 'null' ? json.note.trim() : null;
-      return { say, note };
+      return { say, note, action: json.action ?? null };
     }
     // Sem JSON: se veio uma frase curta, é a fala; se veio um ensaio, silêncio.
     const say = r.text.length <= MAX_SAY_CHARS * 1.5 ? sanitizeSay(r.text) : null;
-    return { say, note: null };
+    return { say, note: null, action: null };
   }
 
   private async speak(text: string, about: { userId: string; name: string } | null): Promise<boolean> {
@@ -383,6 +522,8 @@ export class Brain {
         `Responda como ${this.npc.name}. ${this.outputSpec(c.name)}`,
       ].join('\n');
       const out = await this.generate('reply', user);
+      const action = this.parseAction(out.action, { userId: c.userId, name: c.name });
+      if (action) this.setAction(action);
       if (out.say) {
         const ok = await this.speak(out.say, { userId: c.userId, name: c.name });
         if (ok) {
@@ -423,7 +564,7 @@ export class Brain {
       const user = [
         this.recentBlock(),
         '',
-        `A praça está quieta há alguns minutos e há gente perto: ${near.map((p) => p.name).join(', ')}. Se tiver algo pequeno e verdadeiro a dizer — sobre a hora, o telão, o lugar, algo que viveu —, diga em uma frase. Se não tiver, fique quieto.`,
+        `A praça está quieta há alguns minutos e há gente perto: ${near.map((p) => p.name).join(', ')}. Se tiver algo pequeno e VERDADEIRO a dizer — sobre a hora, o lugar onde está, algo que viveu com alguém que está aqui —, diga em uma frase. Só chame alguém pelo nome se essa pessoa estiver na lista acima. Nada de inventar o que o telão mostra. Se não tiver nada, fique quieto.`,
         this.outputSpec(null),
       ].join('\n');
       const out = await this.generate('ambient', user);
