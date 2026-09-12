@@ -47,7 +47,7 @@ function plazaPlaces(): Place[] {
     aliases: ['telao', 'tela', 'telona', 'painel', 'video', 'videos'],
     at: { x: screen.x, z: screen.z },
     standing: free({ x: screen.x, z: screen.z + 8 }, { x: 2.2, z: -23.4 }),
-    about: 'O telão mostra vídeos curtos da cidade, em silêncio, o dia inteiro. Na frente dele há uma clareira sem árvores.',
+    about: 'O telão passa em laço, sem som, um vídeo curto de um compositor. Na frente dele há uma clareira sem árvores.',
   });
   out.push({
     name: 'o monumento',
@@ -170,7 +170,8 @@ export function perceptionBlock(from: Point): string {
     'LUGARES DA PRAÇA (e onde estão em relação a você):',
     ...PLACES.map((p) => `- ${p.name}: ${bearing(from, p.at)}. ${p.about}`),
     '- bancos de pedra: em dois anéis em volta do monumento; sempre há um perto.',
-    'O QUE NÃO EXISTE NA PRAÇA (não invente): comida, café, bebida, vendas, música ambiente, clima, vento, pôr do sol, "lives" acontecendo aqui. O telão passa vídeos sem som e você não sabe qual vídeo está passando.',
+    'O TELÃO: passa em laço, sem som, um único vídeo curto de um compositor de música — o mesmo o dia inteiro, todo dia. É tudo o que você sabe dizer dele; nunca diga que "hoje tem algo novo".',
+    'O QUE NÃO EXISTE NA PRAÇA (não invente): comida, café, bebida, vendas, música ambiente, clima, vento, pôr do sol, "lives" acontecendo aqui, gente sentada nos bancos que você não vê na lista de pessoas.',
   ];
   return lines.join('\n');
 }

@@ -242,6 +242,9 @@ export class Brain {
       const p = this.world.people().find((x) => x.userId === userId);
       if (!p) continue;
       if (p.distance > NEAR_GREET_M) continue;
+      // Já está conversando com a pessoa: cumprimentar agora é falar por cima.
+      const talking = this.conversations.get(userId);
+      if (talking && now - talking.lastAt < CONVERSATION_TTL_MS) { this.greetCandidates.delete(userId); continue; }
       this.greetCandidates.delete(userId);
       this.greeted.set(userId, now);
       void this.greet(p.userId, cand.name, p);
@@ -519,7 +522,7 @@ export class Brain {
         this.recentBlock(),
         '',
         `${c.name} acabou de dizer para você: "${text.slice(0, 300)}"`,
-        `Responda como ${this.npc.name}. ${this.outputSpec(c.name)}`,
+        `Responda como ${this.npc.name} — e responda AO QUE FOI PERGUNTADO, com o que está na sua percepção; se for pergunta sobre o que há perto, use "AO SEU LADO" e as distâncias. ${this.outputSpec(c.name)}`,
       ].join('\n');
       const out = await this.generate('reply', user);
       const action = this.parseAction(out.action, { userId: c.userId, name: c.name });
