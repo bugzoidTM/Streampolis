@@ -29,6 +29,8 @@ export interface Mind {
   onNotice(code: string, text: string): void;
   /** Corpo novo depois de uma reconexão; a cabeça continua a mesma. */
   rebind(world: World): void;
+  /** Grava o que ainda não foi ao banco (relações). Chamado ANTES de fechar o pool, na parada. */
+  flush?(): Promise<void>;
   dispose(): void;
   status(): Record<string, unknown>;
 }

@@ -723,6 +723,9 @@ export class SocialMind implements Mind {
     for (const c of this.conversations.values()) if (c.pending) clearTimeout(c.pending.timer);
     this.conversations.clear();
     SOCIAL_PEERS.delete(this.npc.id);
-    void this.relations.flush().catch(() => {});
+  }
+
+  async flush(): Promise<void> {
+    await this.relations.flush();
   }
 }

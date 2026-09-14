@@ -189,6 +189,7 @@ async function control(): Promise<void> {
   for (const [id, agent] of [...agents]) {
     if (seen.has(id)) continue;
     await stopAgent(agent, 'saiu do elenco');
+    await agent.mind?.flush?.().catch(() => {});
     agent.mind?.dispose();
     agents.delete(id);
   }
@@ -317,6 +318,9 @@ async function main(): Promise<void> {
       a.mind?.dispose();
       if (a.world) await a.world.leave();
     }
+    // As relações sujas vão ao banco antes de o pool fechar — um flush
+    // disparado e esquecido dentro do dispose perdia a corrida com o `end()`.
+    for (const a of agents.values()) await a.mind?.flush?.().catch(() => {});
     await closePool().catch(() => {});
     process.exit(0);
   };
