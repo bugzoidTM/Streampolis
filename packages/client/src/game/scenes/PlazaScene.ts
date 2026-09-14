@@ -534,7 +534,7 @@ export class PlazaScene extends SceneBase {
     }
     // Iluminação urbana: acende quando a luz do dia cai.
     if (this.lampGlass) this.lampGlass.emissiveIntensity = 0.15 + 4.5 * p.lamps;
-    for (const l of this.lampLights) l.intensity = 70 * p.lamps;
+    for (const l of this.lampLights) l.intensity = 90 * p.lamps;
   }
 
   /** As luzes pontuais mudam de poste para acompanhar a câmera, uma vez por segundo. */
@@ -580,15 +580,15 @@ interface TodParams {
  * uma lua a 35°, fria e fraca; o dia é a praça de sempre.
  */
 const TOD_KEYS: Array<[number, TodParams]> = [
-  [0, { elevation: -12, azimuth: 300, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
-  [4.8, { elevation: -12, azimuth: 80, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+  [0, { elevation: -12, azimuth: 300, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.7, sunColor: 0xa9bcff, skyColor: 0x2e3b68, groundColor: 0x1a1928, ambient: 0.62, fogColor: 0x171d34, fogNear: 34, fogFar: 180, env: 0.38, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+  [4.8, { elevation: -12, azimuth: 80, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.7, sunColor: 0xa9bcff, skyColor: 0x2e3b68, groundColor: 0x1a1928, ambient: 0.62, fogColor: 0x171d34, fogNear: 34, fogFar: 180, env: 0.38, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
   [6.2, { elevation: 2, azimuth: 100, lightElevation: 6, lightAzimuth: 100, sunIntensity: 1.3, sunColor: 0xffb070, skyColor: 0x6a6f9a, groundColor: 0x3a3040, ambient: 0.32, fogColor: 0x8a7f96, fogNear: 35, fogFar: 190, env: 0.45, turbidity: 6, rayleigh: 3, mie: 0.008, lamps: 0.6 }],
   [7.8, { elevation: 14, azimuth: 115, lightElevation: 14, lightAzimuth: 115, sunIntensity: 3.0, sunColor: 0xfff0dc, skyColor: 0xbcd8ff, groundColor: 0x6b5f52, ambient: 0.34, fogColor: 0xc9d8e8, fogNear: 55, fogFar: 240, env: 0.78, turbidity: 4.2, rayleigh: 2.1, mie: 0.0055, lamps: 0 }],
   [12, { elevation: 52, azimuth: 168, lightElevation: 52, lightAzimuth: 168, sunIntensity: 3.4, sunColor: 0xfff6e8, skyColor: 0xa8ccff, groundColor: 0x7a7062, ambient: 0.32, fogColor: 0xd6e4f2, fogNear: 60, fogFar: 280, env: 0.78, turbidity: 3, rayleigh: 1.4, mie: 0.004, lamps: 0 }],
   [16.5, { elevation: 27, azimuth: 138, lightElevation: 27, lightAzimuth: 138, sunIntensity: 3.2, sunColor: 0xfff0dc, skyColor: 0xbcd8ff, groundColor: 0x6b5f52, ambient: 0.34, fogColor: 0xc9d8e8, fogNear: 55, fogFar: 260, env: 0.78, turbidity: 4.2, rayleigh: 2.1, mie: 0.0055, lamps: 0 }],
   [18.3, { elevation: 3.5, azimuth: 235, lightElevation: 5, lightAzimuth: 235, sunIntensity: 2.0, sunColor: 0xffb26b, skyColor: 0x4a5f92, groundColor: 0x2b2540, ambient: 0.4, fogColor: 0x6d6a8c, fogNear: 30, fogFar: 180, env: 0.5, turbidity: 8, rayleigh: 3.4, mie: 0.008, lamps: 0.55 }],
-  [19.6, { elevation: -12, azimuth: 250, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
-  [24, { elevation: -12, azimuth: 300, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+  [19.6, { elevation: -12, azimuth: 250, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.7, sunColor: 0xa9bcff, skyColor: 0x2e3b68, groundColor: 0x1a1928, ambient: 0.62, fogColor: 0x171d34, fogNear: 34, fogFar: 180, env: 0.38, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+  [24, { elevation: -12, azimuth: 300, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.7, sunColor: 0xa9bcff, skyColor: 0x2e3b68, groundColor: 0x1a1928, ambient: 0.62, fogColor: 0x171d34, fogNear: 34, fogFar: 180, env: 0.38, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
 ];
 
 const cA = new THREE.Color();
