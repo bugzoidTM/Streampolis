@@ -943,6 +943,19 @@ O que tem de continuar verdade:
   `npc_agents.profile` (programa ou personalidade+cantos+frases).
 - Freios: `npc_enabled` (todos), `npc_ambient_enabled`, `npc_social_enabled`;
   `npc_agents.enabled` por personagem. Sem redeploy.
+- **Vida social entre eles, sem chat e sem modelo**: dois figurantes
+  compatíveis (partição fixa por id, `compatible()` em `ambient.ts`) que se
+  cruzam a <3,2 m param, viram-se e gesticulam ~10 s (par não repete em 10
+  min); **rodinhas** (`gatherings.ts`, registro do processo POR SALA): 2–3
+  personagens — ambientes que passeiam e sociais — num ponto social da cena,
+  virados para o centro, por 2–5 min, no máximo duas por sala, e dispersam.
+  Quem tem posto fixo não sai do posto.
+- **Separação local** (`SEPARATION` em `walker.ts`): o servidor não colide
+  corpo com corpo, então as pernas desviam de quem está a <1,1 m (com parcela
+  lateral — repulsão de frente não desvia), não sorteiam destino em cima de
+  alguém, deslocam um alvo ocupado em até 2,5 m, dão "chegou" ao lado de um
+  destino tomado e saem de cima de quem parou em cima (um passo, sem volta).
+  Tudo intenção; posição e colisão continuam do servidor.
 
 Provas: `npm test --workspace @streampolis/npc` (a caixa, sem servidor),
 `npm run e2e` (o Nilo, com modelo de mentira) e `npm run e2e:population`

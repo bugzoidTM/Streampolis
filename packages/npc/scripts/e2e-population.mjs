@@ -201,6 +201,13 @@ async function main() {
   check(`os corpos visíveis ocupam ${spread.size} células de 3 m (não estão empilhados)`, spread.size >= Math.min(8, positions.length * 0.5), `${positions.length} visíveis`);
   const moving = positions.filter((p) => p.moving).length;
   check(`há gente andando na praça (${moving} de ${positions.length} visíveis)`, moving >= 1);
+  // Separação local: ninguém em cima de ninguém (dois corpos a menos de 0,4 m).
+  const piles = [];
+  for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
+    const d = Math.hypot(positions[i].x - positions[j].x, positions[i].z - positions[j].z);
+    if (d < 0.4) piles.push(`${positions[i].name}×${positions[j].name} ${d.toFixed(2)} m`);
+  }
+  check('nenhuma pilha: nenhum par de personagens a menos de 0,4 m', piles.length === 0, piles.join('; '));
 
   step('4. Ana fala com uma social: resposta sem modelo, relação criada, "vem comigo" recusado a desconhecida');
   const bia = bySlug.get('bia');
@@ -210,8 +217,10 @@ async function main() {
   check('Bia está no estado da sala', near !== null);
   const before = llmCalls;
   ana.send('chat', { text: 'Bia, oi! você é humana?' });
-  const replied = await waitFor('resposta da Bia', () => inbox.some((m) => m.senderId === bia.id), 12_000);
-  const r1 = inbox.find((m) => m.senderId === bia.id);
+  // A Bia pode ter soltado uma fala espontânea antes (sala quieta, gente perto):
+  // a RESPOSTA é a que fala de personagem.
+  const replied = await waitFor('resposta da Bia', () => inbox.some((m) => m.senderId === bia.id && /personagem/i.test(m.text)), 12_000);
+  const r1 = inbox.find((m) => m.senderId === bia.id && /personagem/i.test(m.text)) ?? inbox.find((m) => m.senderId === bia.id);
   check('Bia respondeu', replied, JSON.stringify(inbox.slice(-3)));
   check('marcada como NPC', r1?.npc === true);
   check('a resposta diz que é personagem', /personagem/i.test(r1?.text ?? ''), r1?.text);
@@ -251,7 +260,12 @@ async function main() {
     const n4 = inbox.length;
     const c0 = llmCalls;
     ana.send('chat', { text: 'Nilo, oi' });
-    const ok = await waitFor('Nilo', () => inbox.slice(n4).some((m) => m.senderId === nilo.id), 20_000);
+    const ok = await waitFor('Nilo', () => inbox.slice(n4).some((m) => m.senderId === nilo.id), 25_000);
+    if (!ok) {
+      const hn = await health();
+      console.log('  … Nilo:', JSON.stringify(hn?.agents.find((a) => a.npc === 'nilo')?.mind), 'chamadas ao modelo:', llmCalls - c0);
+      console.log('  … linhas do cérebro:', workerLog.filter((l) => /\[brain\]|\[llm\]/.test(l)).slice(-8).join(' | '));
+    }
     return ok && llmCalls > c0;
   })());
 

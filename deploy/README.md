@@ -373,7 +373,7 @@ classe é a coluna `npc_agents.kind`, migration 0022):
 |---|---|---|---|
 | `cognitive` | guiado por LLM: persona versionada, memória, diário, reflexão com auditor | 2 (Nilo na praça, **Dalva** no Distrito Sombra) | chamadas ao qwenproxy/chatgptproxy (teto diário `NPC_DAILY_CALL_BUDGET`, 900) |
 | `social` | parece ter vontade — e tem, dentro de uma caixa: personalidade em cinco números, humor, necessidades e **relações** que crescem e esfriam (`npc_relations`); intenção por regra, resposta por banco de frases | 15 | zero LLM |
-| `ambient` | máquina de estados sobre um programa (ficar, andar, sentar, dançar); mudo, salvo uma fala de balcão para quem o chama pelo nome | 60 | zero LLM |
+| `ambient` | máquina de estados sobre um programa (ficar, andar, sentar, dançar); mudo, salvo uma fala de balcão para quem o chama pelo nome; encontros gestuais entre compatíveis e rodinhas de 2–3 em pontos sociais | 60 | zero LLM |
 
 Todos são o serviço `sp-npc` — UM processo que lê o elenco do banco a cada
 30 s e entra na sala com cada corpo pelo gateway, como um navegador entraria,

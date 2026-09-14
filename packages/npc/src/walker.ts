@@ -94,6 +94,25 @@ export const IDLE = {
   shiftThrottle: 0.5,
 } as const;
 
+/**
+ * Separação local entre corpos. O servidor não colide jogador com jogador —
+ * dois corpos podem ocupar o mesmo ponto — e dezenas de personagens
+ * escolhendo destinos de uma lista comum viram pilhas. Aqui as pernas
+ * desviam de quem está a menos de `radius` ao andar, não escolhem destino
+ * em cima de alguém, consideram "chegou" quando o destino já está ocupado, e
+ * quem está parado com alguém em cima dá um passo de lado. Tudo é INTENÇÃO:
+ * a colisão e a posição continuam sendo do servidor.
+ */
+export const SEPARATION = {
+  radius: 1.1,
+  weight: 1.4,
+  /** Destino com alguém a menos disto é "ocupado". */
+  occupiedM: 0.9,
+  /** Parado com alguém a menos disto é pilha: sai do lugar. */
+  pileM: 0.55,
+  stepM: 0.5,
+} as const;
+
 interface Attention { who: () => Someone | null; until: number }
 interface Escort { dest: Point; who: () => Someone | null; waiting: boolean }
 interface SeatSpot { at: Point; yaw: number }
@@ -101,7 +120,7 @@ interface SeatSpot { at: Point; yaw: number }
 type IdleGesture =
   | { kind: 'glance'; targetYaw: number }
   | { kind: 'watch'; who: Someone; until: number }
-  | { kind: 'shift'; dir: Point; ticks: number; back: boolean };
+  | { kind: 'shift'; dir: Point; ticks: number; back: boolean; once?: boolean };
 
 export function plazaDestinations(): Point[] {
   const out: Point[] = [];
@@ -219,14 +238,82 @@ export class Walker {
     return this.emoteQueue.shift() ?? null;
   }
 
+  /** Pede um gesto (acenar, bater palma). Sai quando o corpo estiver parado. */
+  emote(anim: AnimState): void {
+    if (this.emoteQueue[this.emoteQueue.length - 1] !== anim) this.emoteQueue.push(anim);
+  }
+
+  /** Há alguém (além de `exclude`) em cima deste ponto? */
+  occupied(p: Point, exclude: string | null = null): boolean {
+    return this.senses().some((o) => o.sessionId !== exclude && Math.hypot(o.x - p.x, o.z - p.z) < SEPARATION.occupiedM);
+  }
+
+  /**
+   * O ponto pedido ou, se estiver ocupado, o mais próximo livre (de corpo e
+   * de colisor) a até 2,5 m — o bastante para dois personagens que escolheram
+   * o mesmo banco ficarem lado a lado e não um dentro do outro.
+   */
+  private unoccupied(p: Point): Point {
+    if (!this.occupied(p)) return p;
+    for (let r = 0.7; r <= 2.5; r += 0.3) {
+      const n = 8;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + r;
+        const q = { x: p.x + Math.cos(a) * r, z: p.z + Math.sin(a) * r };
+        if (!this.occupied(q) && !penetrates(q, this.colliders) && this.insideArea(q)) return q;
+      }
+    }
+    return p;
+  }
+
+  /**
+   * Desvio de quem está perto, somado à direção pedida. `exclude` é quem se
+   * segue (a distância dele é regra própria). Nunca empurra para dentro de um
+   * colisor: nesse caso a direção original vale.
+   */
+  private separate(current: Point, dir: Point, exclude: string | null = null): Point {
+    let sx = 0;
+    let sz = 0;
+    for (const o of this.senses()) {
+      if (o.sessionId === exclude) continue;
+      const dx = current.x - o.x;
+      const dz = current.z - o.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1e-3 || d > SEPARATION.radius) continue;
+      const w = (SEPARATION.radius - d) / SEPARATION.radius;
+      sx += (dx / d) * w;
+      sz += (dz / d) * w;
+      // Quem está bem na frente empurra só para trás — e para trás não se
+      // desvia. Uma parcela LATERAL, para o lado em que o outro não está
+      // (ou para a direita, se ele está exatamente na linha), contorna.
+      if (dir.x || dir.z) {
+        const side = dir.x * (-dz) - dir.z * (-dx); // produto vetorial dir × (outro − eu)
+        const sgn = side > 1e-6 ? -1 : 1;
+        sx += dir.z * sgn * w * 0.8;
+        sz += -dir.x * sgn * w * 0.8;
+      }
+    }
+    if (sx === 0 && sz === 0) return dir;
+    const x = dir.x + sx * SEPARATION.weight;
+    const z = dir.z + sz * SEPARATION.weight;
+    const len = Math.hypot(x, z);
+    if (len < 1e-3) return dir;
+    const out = { x: x / len, z: z / len };
+    const probe = { x: current.x + out.x * 0.5, z: current.z + out.z * 0.5 };
+    return penetrates(probe, this.colliders) || !this.insideArea(probe) ? dir : out;
+  }
+
   /** Escolhe um destino novo, longe o bastante para valer a caminhada. */
   pickDestination(from: Point, rng: () => number = Math.random): Point | null {
     const far = this.destinations.filter((d) => Math.hypot(d.x - from.x, d.z - from.z) > 6);
-    const pool = far.length ? far : this.destinations;
+    // Destino onde já há alguém não entra no sorteio; se todos estiverem
+    // tomados, vale qualquer um e o desvio de chegada resolve.
+    const free = far.filter((d) => !this.occupied(d));
+    const pool = free.length ? free : far.length ? far : this.destinations;
     if (!pool.length) return null;
     const d = pool[Math.floor(rng() * pool.length)]!;
     this.setTarget(d);
-    return d;
+    return this.target;
   }
 
   /**
@@ -240,7 +327,7 @@ export class Walker {
     this.suspendedFollow = null;
     this.escort = null;
     this.standUp();
-    this.target = p;
+    this.target = p ? this.unoccupied(p) : null;
     this.facing = null;
     this.gesture = null;
     this.lastProgressAt = Date.now();
@@ -428,7 +515,9 @@ export class Walker {
     const out: MoveIntent[] = [];
     const target = this.target!;
     const dist = Math.hypot(target.x - current.x, target.z - current.z);
-    if (dist <= ARRIVE_M) {
+    // Chegou — ou chegou perto de um destino em que alguém já está: parar ao
+    // lado é chegar; insistir seria empurrar até o servidor dizer "preso".
+    if (dist <= ARRIVE_M || (dist <= 1.3 && this.occupied(target))) {
       this.target = null;
       this.escort = null;
       this.idleNextAt = Date.now() + IDLE.minGapMs;
@@ -446,13 +535,14 @@ export class Walker {
       return out;
     }
 
-    const dir = this.steer(current, target);
-    if (!dir) {
+    const steered = this.steer(current, target);
+    if (!steered) {
       this.target = null;
       this.escort = null;
       this.stuckCount++;
       return out;
     }
+    const dir = this.separate(current, steered);
     const yaw = Math.atan2(dir.x, dir.z);
     this.lastYaw = yaw;
     for (let i = 0; i < steps; i++) {
@@ -523,8 +613,9 @@ export class Walker {
       return this.pauseFollow(now, toward);
     }
 
-    const dir = this.steer(current, who);
-    if (!dir) return this.pauseFollow(now, toward);
+    const steered = this.steer(current, who);
+    if (!steered) return this.pauseFollow(now, toward);
+    const dir = this.separate(current, steered, who.sessionId);
 
     // Correr só atrás de quem se afasta (ou já ficou longe demais); voltar a andar bem antes de chegar.
     if (dist > FOLLOW.runFar || (dist > FOLLOW.runFrom && receding)) this.followRunning = true;
@@ -616,8 +707,24 @@ export class Walker {
       for (let i = 0; i < Math.min(steps, g.ticks); i++) {
         out.push({ dx: dir.x * IDLE.shiftThrottle, dz: dir.z * IDLE.shiftThrottle, yaw, run: false, seq: ++this.seq });
       }
-      this.gesture = g.back ? null : { ...g, back: true };
+      this.gesture = g.back || g.once ? null : { ...g, back: true };
       return out;
+    }
+
+    // Pilha: alguém parou em cima dele. Um passo para o lado livre, uma vez
+    // (sem a volta do microgesto), antes de qualquer outro gesto.
+    if (this.hold === 'free') {
+      const pile = this.senses().find((p) => Math.hypot(p.x - current.x, p.z - current.z) < SEPARATION.pileM);
+      if (pile) {
+        const away = this.separate(current, { x: 0, z: 0 });
+        const dir = (away.x || away.z) ? away : { x: Math.cos(this.lastYaw ?? 0), z: -Math.sin(this.lastYaw ?? 0) };
+        const probe = { x: current.x + dir.x * (SEPARATION.stepM + PLAYER_RADIUS), z: current.z + dir.z * (SEPARATION.stepM + PLAYER_RADIUS) };
+        if (!penetrates(probe, this.colliders) && this.insideArea(probe)) {
+          const ticks = Math.max(1, Math.round(SEPARATION.stepM / (MAX_SPEED.walk * IDLE.shiftThrottle * FIXED_DT)));
+          this.gesture = { kind: 'shift', dir, ticks, back: false, once: true };
+          return this.idleIntents(current, steps, now, rng);
+        }
+      }
     }
 
     if (now < this.idleNextAt) return [];

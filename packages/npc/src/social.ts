@@ -1,4 +1,5 @@
 import { isAddressed, sanitizeSay } from './brain.js';
+import { GATHER, GATHERINGS, type Gathering } from './gatherings.js';
 import { log, warn } from './log.js';
 import { mulberry32, seedOf, type Mind } from './mind.js';
 import { bearing, findPlace, placesOf } from './places.js';
@@ -71,6 +72,7 @@ type Activity =
   | { kind: 'watch'; at: Point; until: number; arrived: boolean }
   | { kind: 'approach'; userId: string; name: string; until: number; greeted: boolean }
   | { kind: 'meet'; peerId: string; name: string; until: number; arrived: boolean; spoke: boolean }
+  | { kind: 'gather'; g: Gathering; slot: Point; until: number; arrived: boolean; nextGestureAt: number }
   | { kind: 'follow'; userId: string; name: string; until: number }
   | { kind: 'guide'; userId: string; name: string; place: string; until: number }
   | { kind: 'leave'; until: number };
@@ -118,6 +120,8 @@ export class SocialMind implements Mind {
   private lastAnyChatAt = 0;
   private lastSpokeAt = 0;
   private lastSpontaneousAt = 0;
+  private gatherCooldownUntil = 0;
+  private gestureTimer: NodeJS.Timeout | null = null;
   private flushTimer: NodeJS.Timeout | null;
   private readonly p: Personality;
 
@@ -132,6 +136,7 @@ export class SocialMind implements Mind {
     this.talk = composer(profile.archetype, profile.intro, SCENE_LINE[npc.sceneId] ?? '', this.rng);
     this.mood.valence = this.baseValence;
     this.flushTimer = setInterval(() => void this.relations.flush().catch(() => {}), 30_000);
+    this.flushTimer.unref?.();
     SOCIAL_PEERS.set(npc.id, this);
   }
 
@@ -276,6 +281,10 @@ export class SocialMind implements Mind {
     const walker = this.world.walker;
     const prev = this.activity;
     if (prev.kind === 'sit' || prev.kind === 'dance') { walker.hold = 'free'; this.world.pose = null; }
+    if (prev.kind === 'gather' && a !== prev) {
+      GATHERINGS.leave(prev.g, this.npc.id);
+      this.gatherCooldownUntil = Date.now() + GATHER.cooldownMs;
+    }
     if (a.kind !== 'follow' && a.kind !== 'guide') walker.release();
     this.activity = a;
     // Só o que envolve alguém vai ao log: passear e sentar a cada minuto seriam ruído.
@@ -380,6 +389,31 @@ export class SocialMind implements Mind {
         if (now >= a.until) this.choose(me, now);
         return;
       }
+      case 'gather': {
+        if (now >= a.until || !GATHERINGS.alive(a.g, now)) { this.choose(me, now); return; }
+        const d = Math.hypot(a.slot.x - me.x, a.slot.z - me.z);
+        if (!a.arrived) {
+          if (d <= 0.9 || (walker.idle && d <= 2.0)) {
+            a.arrived = true;
+            walker.stayAt(d <= 2.0 ? a.slot : { x: me.x, z: me.z });
+            this.world.faceTo(a.g.center);
+            a.nextGestureAt = now + 8_000 + this.rng() * 20_000;
+            this.socialNeed = Math.max(0, this.socialNeed - 0.3);
+          } else if (walker.idle) {
+            this.choose(me, now);
+          }
+          return;
+        }
+        // Sozinho na rodinha por mais de meio minuto: vai embora.
+        if (a.g.members.size <= 1 && now - a.g.openedAt > 30_000 && this.rng() < 0.2) { this.choose(me, now); return; }
+        if (now >= a.nextGestureAt) {
+          a.nextGestureAt = now + 15_000 + this.rng() * 30_000;
+          walker.emote(this.rng() < 0.5 ? 'wave' : 'clap');
+          if (this.gestureTimer) clearTimeout(this.gestureTimer);
+          this.gestureTimer = setTimeout(() => { this.gestureTimer = null; walker.emote('idle'); }, 3_000);
+        }
+        return;
+      }
       case 'follow': {
         const who = this.world.personAt(a.userId);
         if (!who || now > a.until) { this.choose(me, now); return; }
@@ -453,6 +487,22 @@ export class SocialMind implements Mind {
           const at = nearestFree('central_plaza', { x: screen.standing.x + (this.rng() - 0.5) * 6, z: screen.standing.z + (this.rng() - 0.5) * 3 });
           this.setActivity({ kind: 'watch', at: screen.at, until: 0, arrived: false });
           this.world.walker.setTarget(at);
+        } });
+      }
+    }
+    // Uma rodinha (2–3 personagens num ponto social): entrar numa aberta, ou abrir uma.
+    const room = this.world.roomId;
+    if (room && now >= this.gatherCooldownUntil) {
+      const open = GATHERINGS.joinable(room, me, 25, now);
+      const canOpen = !open && GATHERINGS.inRoom(room).length < GATHER.maxPerRoom && this.rng() < 0.3;
+      if (open || canOpen) {
+        options.push({ score: 0.3 * (0.3 + this.p.sociable) * (0.5 + this.socialNeed) * (open ? 1.3 : 1) + jitter(), go: () => {
+          const g = open ?? GATHERINGS.open(this.npc.sceneId, room, me, 25, this.rng, now);
+          const slot = g ? GATHERINGS.join(g, this.npc.id) : null;
+          if (!g || !slot) { this.setActivity({ kind: 'idle', until: now + 5_000 }); return; }
+          const until = Math.min(g.until, now + 90_000 + this.rng() * 150_000);
+          this.setActivity({ kind: 'gather', g, slot, until, arrived: false, nextGestureAt: 0 });
+          this.world.walker.setTarget(slot);
         } });
       }
     }
@@ -720,6 +770,8 @@ export class SocialMind implements Mind {
   dispose(): void {
     if (this.flushTimer) clearInterval(this.flushTimer);
     this.flushTimer = null;
+    if (this.gestureTimer) clearTimeout(this.gestureTimer);
+    if (this.activity.kind === 'gather') GATHERINGS.leave(this.activity.g, this.npc.id);
     for (const c of this.conversations.values()) if (c.pending) clearTimeout(c.pending.timer);
     this.conversations.clear();
     SOCIAL_PEERS.delete(this.npc.id);

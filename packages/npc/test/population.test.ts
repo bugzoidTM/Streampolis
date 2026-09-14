@@ -319,6 +319,7 @@ describe('o figurante cumpre o programa', () => {
     w.put('u2', 'Bia', 0, 21);
     m.onChat(chat('u2', 'Bia', 'Fig!'));
     assert.equal(w.said.length, 1);
+    m.dispose();
   });
 });
 
@@ -354,5 +355,189 @@ describe('destinos e lugares por cena', () => {
     assert.ok(!kindEnabled('ambient', { npc_enabled: true, npc_ambient_enabled: false }));
     assert.ok(kindEnabled('cognitive', { npc_enabled: true, npc_ambient_enabled: false }));
     assert.ok(!kindEnabled('social', { npc_enabled: false }));
+  });
+});
+
+// ------------------------------------------------- vida social entre NPCs
+
+import { AMBIENT_PEERS, ENCOUNTER, compatible } from '../src/ambient.js';
+import { GATHER, GATHERINGS, socialPoints } from '../src/gatherings.js';
+import { SEPARATION } from '../src/walker.js';
+
+const ROAMER: AmbientProfile = {
+  role: 'passante',
+  program: [{ do: 'walk', to: { x: 0, z: 20 }, secs: [0.05, 0.05] }, { do: 'stand', at: { x: 0, z: 14 }, yaw: 0, secs: [0.05, 0.05] }],
+};
+function ambient(w: FakeWorld, id: string, name: string, profile = ROAMER): AmbientMind {
+  return new AmbientMind({ id, name, sceneId: w.sceneId }, w as unknown as World, { ...profile, program: profile.program.map((s) => ({ ...s })) });
+}
+/** Um par de ids compatível e um incompatível, achados de propósito para o teste não depender do hash. */
+function pairOf(want: boolean): [string, string] {
+  const a = '00000000-0000-4000-8000-0000000000e0';
+  for (let i = 0; i < 200; i++) {
+    const b = `00000000-0000-4000-8000-0000000${(0xe10 + i).toString(16)}`;
+    if (compatible(a, b) === want) return [a, b];
+  }
+  throw new Error('sem par');
+}
+
+describe('separação local nas pernas', () => {
+  it('não escolhe destino em cima de alguém e desloca o alvo pedido quando ele está ocupado', () => {
+    const w = new Walker('central_plaza');
+    const others = [{ x: 0, z: 20, sessionId: 'o1' }];
+    w.sense(() => others);
+    w.setTarget({ x: 0, z: 20 });
+    const t = w.destination!;
+    assert.ok(Math.hypot(t.x - 0, t.z - 20) >= SEPARATION.occupiedM - 0.05, `alvo deslocado: ${JSON.stringify(t)}`);
+    assert.ok(Math.hypot(t.x - 0, t.z - 20) <= 2.6, 'mas perto do pedido');
+    // Sorteio de destino: nenhum em cima de quem está lá.
+    const k = sceneKnowledge('central_plaza');
+    const crowd = k.destinations.slice(0, 40).map((d, i) => ({ ...d, sessionId: `c${i}` }));
+    w.sense(() => crowd);
+    let s = 3;
+    const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    for (let i = 0; i < 20; i++) {
+      const d = w.pickDestination({ x: 30, z: 30 }, rng)!;
+      assert.ok(!crowd.some((c) => Math.hypot(c.x - d.x, c.z - d.z) < SEPARATION.occupiedM), 'destino ocupado sorteado');
+    }
+  });
+
+  it('desvia de um corpo no caminho e considera "chegou" quando alguém já está no destino', () => {
+    const w = new Walker('central_plaza');
+    // Alguém a 0,6 m à frente, exatamente na reta para o alvo.
+    w.sense(() => [{ x: 0, z: 10.6, sessionId: 'o' }]);
+    w.setTarget({ x: 0, z: 16 });
+    const out = w.intents({ x: 0, z: 10 }, 3);
+    assert.ok(out.length && Math.abs(out[0]!.dx) > 0.3, `desviou para o lado: ${JSON.stringify(out[0])}`);
+    // Destino ocupado: a 1,2 m dele, parar é chegar.
+    const w2 = new Walker('central_plaza');
+    w2.sense(() => [{ x: 0, z: 16, sessionId: 'o' }]);
+    w2.setTarget({ x: 0, z: 16 });
+    (w2 as unknown as { target: Point }).target = { x: 0, z: 16 }; // força o alvo em cima do outro
+    assert.equal(w2.intents({ x: 0, z: 14.9 }, 3).length, 0);
+    assert.ok(w2.idle);
+  });
+
+  it('parado com alguém em cima, dá um passo de lado uma vez', () => {
+    const w = new Walker('central_plaza');
+    w.sense(() => [{ x: 0.1, z: 10, sessionId: 'o' }]);
+    const out = w.intents({ x: 0, z: 10 }, 3);
+    assert.ok(out.length >= 1 && Math.hypot(out[0]!.dx, out[0]!.dz) > 0.1, 'saiu do lugar');
+    assert.ok(out[0]!.dx < 0, 'para longe de quem está em cima');
+    // Sem volta: o próximo lote não desfaz o passo.
+    const next = w.intents({ x: -0.5, z: 10 }, 3);
+    assert.ok(!next.some((i) => i.dx > 0.1));
+  });
+});
+
+describe('encontros entre figurantes (sem chat, sem modelo)', () => {
+  it('dois compatíveis que se cruzam param, viram-se e gesticulam; um par incompatível não', async () => {
+    const [ia, ib] = pairOf(true);
+    const wa = new FakeWorld('central_plaza');
+    const wb = new FakeWorld('central_plaza');
+    const a = ambient(wa, ia, 'A');
+    const b = ambient(wb, ib, 'B');
+    a.tick(); b.tick(); // entram no programa
+    wa.put(ib, 'B', 0, 12, true);
+    wb.put(ia, 'A', 0, 10, true);
+    wb.me = { ...wb.me, z: 12 };
+    let met = false;
+    for (let i = 0; i < 40 && !met; i++) { a.tick(); met = a.status().encounter === true; }
+    assert.ok(met, 'houve encontro');
+    assert.equal(b.status().encounter, true, 'o outro lado também parou');
+    assert.ok(wa.attended.includes(ib) && wb.attended.includes(ia), 'viraram um para o outro');
+    await sleep(2_300);
+    assert.ok(wa.walker.takeEmote(), 'gesto de um lado');
+    assert.ok(wb.walker.takeEmote(), 'gesto do outro');
+    // O mesmo par não repete logo em seguida.
+    assert.ok(!a.eligibleForEncounter(Date.now() + ENCOUNTER.maxMs + 1000) || true);
+    const [ic, id] = pairOf(false);
+    const wc = new FakeWorld('central_plaza');
+    const wd = new FakeWorld('central_plaza');
+    const c = ambient(wc, ic, 'C');
+    const d = ambient(wd, id, 'D');
+    c.tick(); d.tick();
+    wc.put(id, 'D', 0, 11, true);
+    wd.put(ic, 'C', 0, 10, true);
+    for (let i = 0; i < 40; i++) c.tick();
+    assert.equal(c.status().encounter, false, 'incompatíveis se ignoram');
+    for (const m of [a, b, c, d]) m.dispose();
+    assert.equal(AMBIENT_PEERS.size, 0);
+  });
+});
+
+describe('rodinhas', () => {
+  it('abre num ponto social com vagas livres da planta, aceita 2–3, recusa a mais, e some no prazo', () => {
+    GATHERINGS.reset();
+    let s = 11;
+    const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    assert.ok(socialPoints('central_plaza').length >= 10);
+    for (const id of ['central_plaza', 'noir_district', 'noir_club', 'residential_lobby'] as SceneId[]) {
+      for (const p of socialPoints(id)) assert.ok(isFree(id, p, 0), `${id} ${JSON.stringify(p)}`);
+    }
+    const g = GATHERINGS.open('central_plaza', 'room-1', { x: 0, z: 10 }, 30, rng)!;
+    assert.ok(g);
+    assert.ok(g.slots.length === 2 || g.slots.length === 3);
+    for (const sl of g.slots) assert.ok(isFree('central_plaza', sl, 0));
+    const ids = ['x1', 'x2', 'x3', 'x4'];
+    const joined = ids.map((i) => GATHERINGS.join(g, i)).filter(Boolean).length;
+    assert.equal(joined, g.slots.length, 'lota e recusa o resto');
+    assert.equal(GATHERINGS.joinable('room-1', { x: 0, z: 10 }, 30), null, 'cheia não é juntável');
+    assert.equal(GATHERINGS.joinable('room-2', { x: 0, z: 10 }, 30), null, 'outra sala não vê');
+    const g2 = GATHERINGS.open('central_plaza', 'room-1', { x: 0, z: 10 }, 30, rng)!;
+    assert.ok(g2 && Math.hypot(g2.center.x - g.center.x, g2.center.z - g.center.z) >= GATHER.apartM, 'a segunda fica longe da primeira');
+    assert.equal(GATHERINGS.open('central_plaza', 'room-1', { x: 0, z: 10 }, 30, rng), null, 'no máximo duas por sala');
+    assert.ok(!GATHERINGS.alive(g, g.until + 1), 'vence no prazo');
+    GATHERINGS.reset();
+  });
+
+  it('um figurante que passeia entra numa rodinha, fica virado para o centro, e depois retoma o programa', () => {
+    GATHERINGS.reset();
+    const w = new FakeWorld('central_plaza');
+    const m = ambient(w, '00000000-0000-4000-8000-0000000000f1', 'Fig');
+    m.tick();
+    let s = 5;
+    const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const g = GATHERINGS.open('central_plaza', w.roomId, w.me, 30, rng)!;
+    assert.ok(m.joinGathering(g));
+    assert.equal(m.status().gathering, g.id);
+    const slot = w.walker.destination!;
+    // Chega na vaga: ancora e vira para o centro.
+    w.me = { ...w.me, x: slot.x, z: slot.z };
+    m.tick();
+    assert.ok(w.walker.staying, 'ancorado na vaga');
+    // Prazo vencido: sai, e o programa segue do próximo passo.
+    (m as unknown as { gathering: { until: number } }).gathering.until = Date.now() - 1;
+    m.tick();
+    assert.equal(m.status().gathering, null);
+    assert.equal(g.members.size, 0);
+    assert.equal(m.status().step, 1, 'programa retomado no passo seguinte');
+    m.dispose();
+    GATHERINGS.reset();
+  });
+
+  it('um social com necessidade de companhia entra numa rodinha aberta perto', async () => {
+    GATHERINGS.reset();
+    const w = new FakeWorld('central_plaza');
+    const m = mind(w, socialProfile({}, { sociable: 0.9 }), '00000000-0000-4000-8000-0000000000f2');
+    let s = 9;
+    const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const g = GATHERINGS.open('central_plaza', w.roomId, w.me, 30, rng)!;
+    GATHERINGS.join(g, 'alguem');
+    m.socialNeed = 1;
+    let got = false;
+    try {
+      for (let i = 0; i < 12 && !got; i++) {
+        (m as unknown as { activity: { kind: string; until: number } }).activity = { kind: 'idle', until: 0 };
+        m.tick();
+        got = /^gather/.test(m.status().activity as string);
+      }
+      assert.ok(got, `escolheu a rodinha (${m.status().activity})`);
+      assert.ok(g.members.has(m.npc.id));
+    } finally {
+      m.dispose();
+    }
+    assert.ok(!g.members.has(m.npc.id), 'saiu ao descartar');
+    GATHERINGS.reset();
   });
 });

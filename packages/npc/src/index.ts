@@ -3,6 +3,7 @@ import { AmbientMind } from './ambient.js';
 import { Brain } from './brain.js';
 import { assertProductionConfig, config } from './config.js';
 import { closePool, pool } from './db.js';
+import { GATHERINGS } from './gatherings.js';
 import { fetchIdentity, type NpcIdentity } from './identity.js';
 import { budgetLeft, budgetUsed } from './llm.js';
 import { log, warn } from './log.js';
@@ -286,6 +287,7 @@ function summary(): Record<string, unknown> {
     lastError: first?.lastError ?? null,
     flags,
     byKind,
+    gatherings: GATHERINGS.all().map((g) => ({ id: g.id, scene: g.sceneId, room: g.roomId, members: [...g.members.keys()].length, secondsLeft: Math.max(0, Math.round((g.until - Date.now()) / 1000)) })),
     agents: list,
     llm: { usedToday: budgetUsed(), leftToday: budgetLeft() },
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
