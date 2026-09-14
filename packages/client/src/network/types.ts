@@ -30,6 +30,8 @@ export interface PlayerView {
   avatar: AvatarConfig;
   /** Personagem da cidade, marcado pelo servidor (PRD §25). */
   npc?: boolean;
+  /** Para quem está olhando (sessionId), quando a sala sabe; '' = ninguém em especial. */
+  lookAt?: string;
 }
 
 export interface ListLike<V> extends Iterable<V> {
@@ -109,4 +111,6 @@ export interface RenderPose {
   avatar: AvatarConfig;
   isLocal: boolean;
   npc?: boolean;
+  /** Alvo do Head Look vindo da sala (sessionId); vazio = a escolha local de sempre. */
+  lookAt?: string;
 }

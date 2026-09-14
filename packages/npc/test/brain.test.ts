@@ -4,7 +4,7 @@ import { fold, isAddressed, sanitizeSay } from '../src/brain.js';
 import { parseJsonObject } from '../src/llm.js';
 import { checkInvariants, type Persona } from '../src/persona.js';
 import { internalUrlBuilder } from '../src/world.js';
-import { Walker, FOLLOW, plazaDestinations, type Point } from '../src/walker.js';
+import { Walker, FOLLOW, ESCORT, IDLE, STAY_DRIFT_M, plazaDestinations, type Point, type Someone } from '../src/walker.js';
 import { SCENE_COLLIDERS, penetrates, type MoveIntent } from '../src/shared.js';
 
 /**
@@ -215,7 +215,7 @@ describe('as pernas acompanhando alguém', () => {
   it('chega desacelerando e para na faixa de 2 a 3 m, sem grudar', () => {
     const w = new Walker('central_plaza');
     const me = { p: { x: -10, z: 12 } };
-    const ana = { x: 0, z: 12 };
+    const ana = { x: 0, z: 12, sessionId: 'ana' };
     w.follow(() => ana);
     const thrs: number[] = [];
     let minDist = Infinity;
@@ -239,7 +239,7 @@ describe('as pernas acompanhando alguém', () => {
   it('parado, fica parado enquanto a pessoa anda dentro da faixa; retoma quando ela se afasta', () => {
     const w = new Walker('central_plaza');
     const me = { p: { x: -10, z: 12 } };
-    const ana = { x: 0, z: 12 };
+    const ana = { x: 0, z: 12, sessionId: 'ana' };
     w.follow(() => ana);
     for (let b = 0; b < 8 * 15; b++) batch(w, me);
     assert.ok(w.idle);
@@ -257,7 +257,7 @@ describe('as pernas acompanhando alguém', () => {
   it('acompanha quem anda, corre atrás de quem corre, e para de correr antes de chegar', () => {
     const w = new Walker('central_plaza');
     const me = { p: { x: -8, z: 12 } };
-    const ana = { x: -5, z: 12 };
+    const ana = { x: -5, z: 12, sessionId: 'ana' };
     w.follow(() => ana);
     // Andando junto: a distância fica dentro da faixa + um passo de folga.
     for (let b = 0; b < 8 * 10; b++) {
@@ -285,7 +285,7 @@ describe('as pernas acompanhando alguém', () => {
   it('quem já ficou longe demais, ele alcança correndo mesmo que esteja parado', () => {
     const w = new Walker('central_plaza');
     const me = { p: { x: -18, z: 12 } };
-    w.follow(() => ({ x: 0, z: 12 }));
+    w.follow(() => ({ x: 0, z: 12, sessionId: 'ana' }));
     let ran = false;
     for (let b = 0; b < 8 * 2; b++) ran ||= batch(w, me).ran;
     assert.ok(ran);
@@ -294,11 +294,11 @@ describe('as pernas acompanhando alguém', () => {
   it('parado, vira-se quando a pessoa muda de lado; e desiste de acompanhar quem sumiu', () => {
     const w = new Walker('central_plaza');
     const me = { p: { x: 0, z: 12 } };
-    let ana: Point | null = { x: 2.5, z: 12 };
+    let ana: Someone | null = { x: 2.5, z: 12, sessionId: 'ana' };
     w.follow(() => ana);
     batch(w, me);
     const before = { ...me.p };
-    ana = { x: 0, z: 14.5 };
+    ana = { x: 0, z: 14.5, sessionId: 'ana' };
     const yawIntents = w.intents(me.p, 3);
     assert.equal(yawIntents.length, 1);
     assert.ok(Math.abs(yawIntents[0]!.yaw) < 0.05, 'não olhou para o norte');
@@ -313,7 +313,7 @@ describe('as pernas acompanhando alguém', () => {
   it('preso atrás de um banco, pausa e tenta de novo em vez de empurrar para sempre', () => {
     const w = new Walker('central_plaza');
     const stuck = { x: -10, z: -10 };
-    w.follow(() => ({ x: 10, z: 10 }));
+    w.follow(() => ({ x: 10, z: 10, sessionId: 'ana' }));
     w.intents(stuck, 3);
     (w as unknown as { lastProgressAt: number }).lastProgressAt = Date.now() - 3_000;
     const out = w.intents(stuck, 3);

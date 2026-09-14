@@ -19,6 +19,14 @@ export interface MoveIntent {
 
 export interface ChatIntent { text: string }
 export interface EmoteIntent { anim: AnimState }
+/**
+ * "Estou olhando para fulano": o alvo do Head Look de um avatar, para os
+ * OUTROS clientes desenharem a cabeça virada para a mesma pessoa. Cosmético e
+ * validado na sala (a pessoa precisa estar nela e perto); `''` limpa. Sem
+ * isto cada cliente escolhe o alvo sozinho — o jogador local — e um
+ * personagem conversando com alguém olharia para quem está assistindo.
+ */
+export interface LookIntent { sessionId: string }
 export interface GiftIntent {
   giftId: string;
   quantity: number;
@@ -238,6 +246,7 @@ export const MSG = {
   move: 'move',
   chat: 'chat',
   emote: 'emote',
+  look: 'look',
   gift: 'gift',
   like: 'like',
   goLive: 'goLive',

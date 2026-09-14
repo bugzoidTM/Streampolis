@@ -28,6 +28,9 @@ const EMOTABLE: ReadonlySet<AnimState> = new Set<AnimState>([
 ]);
 
 const EMOTE_COOLDOWN_MS = 900;
+/** Olhar para alguém a mais do que isto não é olhar para ela; a sala limpa. */
+const LOOK_MAX_M = 10;
+const LOOK_COOLDOWN_MS = 200;
 
 /**
  * Quanto tempo um corpo pode pedir para andar sem sair do lugar antes de a sala
@@ -56,6 +59,7 @@ interface Session {
   identity: AuthIdentity;
   movement: MovementController;
   lastEmoteAt: number;
+  lastLookAt: number;
 }
 
 /**
@@ -183,6 +187,7 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
         SCENE_AREA[this.sceneId] ?? null,
       ),
       lastEmoteAt: 0,
+      lastLookAt: 0,
     });
 
     // A partir daqui o jogador tem endereço: cena E shard. É o que permite a
@@ -232,6 +237,12 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
   /** Removes the body but keeps the session: the client is still connected. */
   protected despawnPlayer(client: Client): void {
     this.state.players.delete(client.sessionId);
+    this.forgetLookTarget(client.sessionId);
+  }
+
+  /** Quem olhava para quem saiu volta a olhar para frente. */
+  private forgetLookTarget(sessionId: string): void {
+    this.state.players.forEach((p) => { if (p.lookAt === sessionId) p.lookAt = ''; });
   }
 
   /** False for clients that watch instead of inhabiting the room. */
@@ -310,6 +321,7 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
     if (session) this.chat.forget(session.identity.userId);
     this.sessions.delete(sessionId);
     this.state.players.delete(sessionId);
+    this.forgetLookTarget(sessionId);
   }
 
   private registerWorldMessages(): void {
@@ -374,6 +386,20 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
       // moving avoids a frame of a dancing avatar sliding across the plaza.
       if (player.moving) return;
       player.anim = anim as AnimState;
+    });
+
+    this.onMessage(MSG.look, (client, message: { sessionId?: unknown }) => {
+      const session = this.sessions.get(client.sessionId);
+      const player = this.state.players.get(client.sessionId);
+      if (!session || !player) return;
+      const now = Date.now();
+      if (now - session.lastLookAt < LOOK_COOLDOWN_MS) return;
+      session.lastLookAt = now;
+      const target = typeof message?.sessionId === 'string' ? message.sessionId : '';
+      if (target === '' || target === client.sessionId) { player.lookAt = ''; return; }
+      const other = this.state.players.get(target);
+      if (!other || Math.hypot(other.x - player.x, other.z - player.z) > LOOK_MAX_M) { player.lookAt = ''; return; }
+      player.lookAt = target;
     });
 
     this.onMessage(MSG.mute, (client, message: { userId?: unknown; ms?: unknown }) => {

@@ -455,6 +455,7 @@ function toRenderPose(player: PlayerView, sessionId: string, isLocal: boolean): 
     avatar: player.avatar,
     isLocal,
     npc: player.npc === true,
+    lookAt: player.lookAt || '',
   };
 }
 

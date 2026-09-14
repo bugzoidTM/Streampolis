@@ -623,11 +623,19 @@ export class World {
       context.grounded = Math.abs(pose.y) < 0.045 && verticalSpeed < 0.35
         && travelled < Math.max(0.75, dt * 12);
       context.lookTarget = null;
+      // Para quem a SALA diz que este avatar olha (um personagem conversando
+      // com alguém, por exemplo) vale para todos os clientes; sem isso, cada
+      // cliente escolhe sozinho — e o avatar olha para quem está assistindo.
+      const lookAt = !pose.isLocal && pose.lookAt ? this.actors.get(pose.lookAt) : undefined;
       if (context.enabled) {
         if (pose.isLocal) {
           actor.gaze.set(-Math.sin(this.camera.yaw) * 4, -Math.sin(this.camera.pitch) * 2,
             -Math.cos(this.camera.yaw) * 4).add(actor.avatar.root.position);
           actor.gaze.y += actor.avatar.stature * 0.87;
+          context.lookTarget = actor.gaze;
+        } else if (lookAt) {
+          actor.gaze.copy(lookAt.avatar.root.position);
+          actor.gaze.y += lookAt.avatar.stature * 0.87;
           context.lookTarget = actor.gaze;
         } else if (local && Math.hypot(local.x - pose.x, local.z - pose.z) < 6) {
           actor.gaze.set(local.x, local.y + 1.5 * (local.avatar.height ?? 1), local.z);

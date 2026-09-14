@@ -2,7 +2,7 @@ import { Client, type Room } from 'colyseus.js';
 import { config } from './config.js';
 import { log, warn } from './log.js';
 import { MSG, TICK_MS, type ChatMessage, type MoveIntent, type SceneId } from './shared.js';
-import { Walker, type Point } from './walker.js';
+import { Walker, type Point, type Someone } from './walker.js';
 
 /**
  * O corpo do personagem na sala: um cliente Colyseus igual ao do navegador.
@@ -25,6 +25,8 @@ export interface Nearby {
   x: number;
   z: number;
   npc: boolean;
+  /** O gesto em curso na sala ('sit', 'idle', 'walk'…); o corpo lê para sentar junto. */
+  anim: string;
 }
 
 interface PlayerLike {
@@ -32,6 +34,9 @@ interface PlayerLike {
   name: string;
   x: number;
   z: number;
+  yaw?: number;
+  moving?: boolean;
+  anim?: string;
   npc?: boolean;
 }
 
@@ -107,20 +112,25 @@ export class World {
     return this.room?.sessionId ?? null;
   }
 
-  /** Onde a SALA diz que o corpo está. Nulo até o primeiro estado chegar. */
-  get position(): Point | null {
+  /** Onde a SALA diz que o corpo está (e para onde está virado). Nulo até o primeiro estado chegar. */
+  get position(): (Point & { yaw: number; moving: boolean }) | null {
     const me = this.room?.state?.players?.get(this.room.sessionId);
-    return me ? { x: me.x, z: me.z } : null;
+    return me ? { x: me.x, z: me.z, yaw: me.yaw ?? 0, moving: me.moving === true } : null;
   }
 
-  /** Onde uma pessoa está agora, ou nulo se saiu da sala. */
-  personAt(userId: string): Point | null {
-    let found: Point | null = null;
+  /** Onde uma pessoa está agora (e a sessão dela na sala), ou nulo se saiu. */
+  personAt(userId: string): Someone | null {
+    let found: Someone | null = null;
     this.room?.state?.players?.forEach((p, sessionId) => {
       if (found || sessionId === this.room?.sessionId || p.id !== userId) return;
-      found = { x: p.x, z: p.z };
+      found = { x: p.x, z: p.z, sessionId };
     });
     return found;
+  }
+
+  /** Um leitor da posição viva de alguém, para as pernas acompanharem sem passar pelo cérebro. */
+  tracker(userId: string): () => Someone | null {
+    return () => this.personAt(userId);
   }
 
   /** Quem está ao alcance da vista, com distância até o personagem. */
@@ -132,7 +142,7 @@ export class World {
     state?.players?.forEach((p, sessionId) => {
       if (sessionId === this.room?.sessionId) return;
       out.push({
-        sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true,
+        sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true, anim: p.anim ?? 'idle',
         distance: Math.hypot(p.x - me.x, p.z - me.z),
       });
     });
@@ -179,9 +189,10 @@ export class World {
           known.x = p.x;
           known.z = p.z;
           known.name = p.name;
+          known.anim = p.anim ?? 'idle';
           return;
         }
-        const entry: Nearby = { sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true };
+        const entry: Nearby = { sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true, anim: p.anim ?? 'idle' };
         this.nearby.set(sessionId, entry);
         this.events.appeared(entry);
       });
@@ -224,6 +235,14 @@ export class World {
     if (me) this.walker.face(target, me);
   }
 
+  /**
+   * Alguém fala com ele: parar, corpo e olhar na pessoa por `ms`. O que estava
+   * fazendo (seguir, guiar) fica suspenso nas pernas e volta sozinho depois.
+   */
+  attend(userId: string, ms: number): void {
+    this.walker.attend(this.tracker(userId), ms);
+  }
+
   private startLoop(): void {
     this.stopLoop();
     this.timer = setInterval(() => this.pump(), BATCH_MS);
@@ -234,12 +253,35 @@ export class World {
     this.timer = null;
   }
 
-  /** Um lote de intenções por tique de lote. Sem destino, nada é enviado. */
+  private lastLookSent: string | null = null;
+  private lastEmoteAt = 0;
+
+  /**
+   * Um lote por tique de lote: intenções de movimento (nada, se parado), o
+   * alvo do olhar quando muda, e um gesto pedido — este só quando a sala diz
+   * que o corpo está parado, porque ela recusa gesto de quem anda.
+   */
   private pump(): void {
     const room = this.room;
     const me = this.position;
     if (!room || !me) return;
     const intents: MoveIntent[] = this.walker.intents(me, BATCH_STEPS);
     for (const intent of intents) room.send(MSG.move, intent);
+
+    const look = this.walker.look;
+    if (look !== this.lastLookSent) {
+      room.send(MSG.look, { sessionId: look ?? '' });
+      this.lastLookSent = look;
+    }
+
+    const moved = intents.some((i) => Math.hypot(i.dx, i.dz) > 1e-4);
+    const now = Date.now();
+    if (!moved && !me.moving && now - this.lastEmoteAt >= 1_000) {
+      const emote = this.walker.takeEmote();
+      if (emote) {
+        room.send(MSG.emote, { anim: emote });
+        this.lastEmoteAt = now;
+      }
+    }
   }
 }

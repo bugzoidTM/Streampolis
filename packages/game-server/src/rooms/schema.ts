@@ -76,6 +76,12 @@ export class PlayerState extends Schema {
    * anda, fala, colide e passa pelo mesmo filtro de chat.
    */
   @type('boolean') npc = false;
+  /**
+   * Para quem este avatar está olhando (sessionId de alguém na sala), ou ''.
+   * Só a cabeça: o corpo continua com `yaw`. Definido por `MSG.look`, limpo
+   * quando o alvo sai da sala.
+   */
+  @type('string') lookAt = '';
 }
 
 export class PKStateSchema extends Schema {
