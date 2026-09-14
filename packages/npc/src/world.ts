@@ -113,6 +113,16 @@ export class World {
     return me ? { x: me.x, z: me.z } : null;
   }
 
+  /** Onde uma pessoa está agora, ou nulo se saiu da sala. */
+  personAt(userId: string): Point | null {
+    let found: Point | null = null;
+    this.room?.state?.players?.forEach((p, sessionId) => {
+      if (found || sessionId === this.room?.sessionId || p.id !== userId) return;
+      found = { x: p.x, z: p.z };
+    });
+    return found;
+  }
+
   /** Quem está ao alcance da vista, com distância até o personagem. */
   people(): Array<Nearby & { distance: number }> {
     const me = this.position;

@@ -36,7 +36,7 @@ const MAX_CHAT_CALLS_PER_MIN = 12;
 const GUIDE_WAIT_M = 9;
 const GUIDE_RESUME_M = 6;
 const GUIDE_TTL_MS = 4 * 60_000;
-const FOLLOW_STOP_M = 2.2;
+/** A distância de acompanhamento mora nas pernas (`FOLLOW` em walker.ts): faixa 2–3 m, com desaceleração. */
 const FOLLOW_TTL_MS = 4 * 60_000;
 const GREET_COOLDOWN_MS = 30 * 60_000;
 const MEET_COOLDOWN_MS = 10 * 60_000;
@@ -271,6 +271,11 @@ export class Brain {
     const now = Date.now();
     this.actionUntil = action.type === 'follow' ? now + FOLLOW_TTL_MS : action.type === 'go_to' ? now + GUIDE_TTL_MS : 0;
     if (action.type === 'go_to') { this.goToRetries = 0; this.world.walker.setTarget(action.place.standing); }
+    if (action.type === 'follow') {
+      // As pernas leem a posição viva da pessoa a cada lote; aqui só se decide quando parar de seguir.
+      const userId = action.userId;
+      this.world.walker.follow(() => this.world.personAt(userId));
+    }
     if (action.type === 'stay') { this.world.walker.stop(); this.lingerUntil = now + 60_000; }
     if (action.type === 'wander') this.lingerUntil = now + LINGER_MIN_MS;
     log('brain', 'ação', { action: this.status().action });
@@ -310,12 +315,13 @@ export class Brain {
     if (a.type === 'follow') {
       const p = this.world.people().find((x) => x.userId === a.userId);
       if (!p || now > this.actionUntil) {
+        walker.stop();
         this.action = { type: 'wander' };
         this.lingerUntil = now + LINGER_MIN_MS;
         return;
       }
-      if (p.distance > FOLLOW_STOP_M) walker.setTarget({ x: p.x, z: p.z });
-      else if (!walker.idle) { walker.stop(); this.world.faceTo({ x: p.x, z: p.z }); }
+      // Distância, velocidade e paradas são das pernas (`Walker.follow`).
+      if (!walker.following) walker.follow(() => this.world.personAt(a.userId));
       return;
     }
 

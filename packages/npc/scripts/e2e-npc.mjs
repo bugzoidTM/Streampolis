@@ -30,6 +30,9 @@ const LLM_PORT = Number(process.env.E2E_NPC_LLM_PORT ?? 18798);
 const HEALTH_PORT = Number(process.env.E2E_NPC_HEALTH_PORT ?? 18799);
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://streampolis:streampolis_dev_pw@127.0.0.1:55432/streampolis';
 const NPC_ID = '5e1f0000-0000-4000-8000-000000000001';
+/** Fixtures deste roteiro. O código do personagem não conhece nome nenhum: segue o `userId` de quem pediu. */
+const NPC_NAME = 'Nilo';
+const PLAYER_NAME = 'Ana';
 
 process.env.AUTH_JWT_SECRET = SECRET;
 delete process.env.API_BASE_URL;
@@ -110,8 +113,13 @@ const llm = createServer((req, res) => {
     } else {
       // Conversa: a fala carrega uma frase que só o modelo de mentira diria.
       const who = /^(.+?) acabou de dizer/m.exec(user)?.[1] ?? 'você';
-      content = JSON.stringify({ say: `Oi, ${who}! Eu sou o Nilo, personagem daqui da praça. E2E-OK`, note: 'veio testar a praça' });
-      llmCalls.push('chat');
+      if (/me segue/i.test(user)) {
+        content = JSON.stringify({ say: `Claro, ${who}, vou contigo. E2E-FOLLOW`, action: { type: 'follow' } });
+        llmCalls.push('follow');
+      } else {
+        content = JSON.stringify({ say: `Oi, ${who}! Eu sou o Nilo, personagem daqui da praça. E2E-OK`, note: 'veio testar a praça' });
+        llmCalls.push('chat');
+      }
     }
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
       choices: [{ message: { role: 'assistant', content } }],
@@ -212,19 +220,59 @@ async function main() {
   const person = await db.query(`SELECT user_name, exchanges, notes FROM npc_people WHERE npc_id = $1 AND user_id = $2`, [NPC_ID, ANA_ID]);
   check('Ana virou conhecida, com anotação', person.rows[0]?.exchanges === 1 && person.rows[0]?.notes?.length === 1, JSON.stringify(person.rows[0]));
 
+  step(`2b. "me segue": ${NPC_NAME} acompanha ${PLAYER_NAME} a 2–3 m, desacelera ao chegar e para sem grudar`);
+  const posOf = (id) => { let out = null; anaCity.state.players?.forEach((p) => { if (p.id === id) out = { x: p.x, z: p.z }; }); return out; };
+  const gap = () => { const a = posOf(ANA_ID); const n = posOf(NPC_ID); return a && n ? Math.hypot(a.x - n.x, a.z - n.z) : NaN; };
+  /** O jogador anda até um ponto (a 24 Hz, como o cliente), e devolve a menor distância do personagem vista no caminho. */
+  const anaWalksTo = async (to, run = false, maxMs = 12_000) => {
+    let seq = 1000; let minGap = Infinity; const t0 = Date.now();
+    while (Date.now() - t0 < maxMs) {
+      const a = posOf(ANA_ID); if (!a) break;
+      const dx = to.x - a.x, dz = to.z - a.z, len = Math.hypot(dx, dz);
+      if (len < 0.5) break;
+      anaCity.send('move', { dx: dx / len, dz: dz / len, yaw: Math.atan2(dx, dz), run, seq: seq++ });
+      minGap = Math.min(minGap, gap());
+      await sleep(42);
+    }
+    return minGap;
+  };
+  await sleep(2_600); // intervalo mínimo entre respostas ao mesmo usuário
+  anaCity.send('chat', { text: `${NPC_NAME}, me segue?` });
+  const agreed = await waitFor('personagem topa seguir', () => inbox.some((m) => m.senderId === NPC_ID && m.text?.includes('E2E-FOLLOW')), 15_000);
+  check('o modelo devolveu a ação follow e ele topou', agreed && llmCalls.includes('follow'));
+  await anaWalksTo({ x: 0, z: 9 });
+  let settled = await waitFor('personagem chega e para na faixa', () => gap() >= 1.85 && gap() <= 3.3, 15_000, 100);
+  check(`ele chegou à faixa de 2–3 m (${gap().toFixed(2)} m)`, settled);
+  // Assenta: um segundo sem a distância mudar (ele entra na faixa ainda freando).
+  let gPrev = gap();
+  await waitFor('personagem assenta', async () => { await sleep(1_000); const g = gap(); const same = Math.abs(g - gPrev) < 0.02; gPrev = g; return same; }, 10_000, 0);
+  // Fica parado ao menos 3 s com ela parada: a distância não muda e ele não gruda.
+  const g0 = gap(); let minStill = g0;
+  for (let i = 0; i < 30; i++) { await sleep(100); minStill = Math.min(minStill, gap()); }
+  check(`parado, ficou a ${gap().toFixed(2)} m (nunca abaixo de 1,85)`, Math.abs(gap() - g0) < 0.05 && minStill >= 1.85);
+  // Ela anda mais 8 m: ele retoma, não passa do ponto e para de novo na faixa.
+  const minWhileWalking = await anaWalksTo({ x: -8, z: 9 });
+  check(`retomou sem passar por cima dela (mínimo ${minWhileWalking.toFixed(2)} m)`, minWhileWalking >= 1.85);
+  settled = await waitFor('personagem para de novo na faixa', () => gap() >= 1.85 && gap() <= 3.3, 15_000, 100);
+  check(`parou de novo na faixa (${gap().toFixed(2)} m)`, settled);
+  const hf = await health();
+  check(`status diz que está seguindo ${PLAYER_NAME}`, hf?.brain?.action === `follow ${PLAYER_NAME}`, JSON.stringify(hf?.brain?.action ?? hf));
+
   step('3. Reflexão: diário → proposta → auditor → persona v2 no ar');
   const reflected = await waitFor('reflexão', async () => (await health())?.reflections >= 1, 20_000, 300);
   check('a reflexão rodou', reflected);
   check('na ordem diário, proposta, auditoria', ['diary', 'proposal', 'audit'].every((k) => llmCalls.includes(k)), llmCalls.join(','));
   const diary = await db.query(`SELECT entry, memories FROM npc_diary WHERE npc_id = $1`, [NPC_ID]);
-  check('o diário foi gravado', diary.rows.length === 1 && diary.rows[0].memories > 0);
+  // Duas conversas (o "oi" e o "me segue") podem render duas reflexões; o que se prova é o ciclo, não a contagem.
+  check('o diário foi gravado', diary.rows.length >= 1 && diary.rows.every((r) => r.memories > 0));
   const versions = await db.query(`SELECT version, status, source, persona FROM npc_persona_versions WHERE npc_id = $1 ORDER BY version`, [NPC_ID]);
-  check('há uma v2 ativa vinda da reflexão', versions.rows.some((v) => v.version === 2 && v.status === 'active' && v.source === 'reflection'), JSON.stringify(versions.rows.map((v) => [v.version, v.status])));
+  const active = versions.rows.find((v) => v.status === 'active');
+  check('há uma versão nova ativa vinda da reflexão', active && active.version >= 2 && active.source === 'reflection', JSON.stringify(versions.rows.map((v) => [v.version, v.status])));
   check('a v1 foi aposentada, não apagada', versions.rows.some((v) => v.version === 1 && v.status === 'retired'));
   check('o nome continua invariante', versions.rows.every((v) => v.persona.name === 'Nilo' && v.persona.kind === 'npc'));
-  check('a mudança está na história', versions.rows.find((v) => v.version === 2)?.persona.history.some((h) => h.includes('Ana')));
-  const h2 = await health();
-  check('o worker está usando a v2', h2?.personaVersion === 2, JSON.stringify(h2?.personaVersion));
+  check('a mudança está na história', active?.persona.history.some((h) => h.includes('Ana')));
+  const h2 = await waitFor('worker na versão ativa', async () => (await health())?.personaVersion === active?.version, 8_000, 200) ? await health() : await health();
+  check('o worker está usando a versão ativa', h2?.personaVersion === active?.version, JSON.stringify([h2?.personaVersion, active?.version]));
 
   step('4. Reverter pelo banco (o que o painel faz) recarrega no worker');
   await db.query(`UPDATE npc_persona_versions SET status = 'retired' WHERE npc_id = $1 AND status = 'active'`, [NPC_ID]);

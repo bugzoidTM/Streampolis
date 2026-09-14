@@ -4,8 +4,8 @@ import { fold, isAddressed, sanitizeSay } from '../src/brain.js';
 import { parseJsonObject } from '../src/llm.js';
 import { checkInvariants, type Persona } from '../src/persona.js';
 import { internalUrlBuilder } from '../src/world.js';
-import { Walker, plazaDestinations } from '../src/walker.js';
-import { SCENE_COLLIDERS, penetrates } from '../src/shared.js';
+import { Walker, FOLLOW, plazaDestinations, type Point } from '../src/walker.js';
+import { SCENE_COLLIDERS, penetrates, type MoveIntent } from '../src/shared.js';
 
 /**
  * As partes da cabeça que não precisam de sala nem de modelo: quando ele
@@ -185,6 +185,143 @@ describe('as pernas', () => {
     assert.equal(out.length, 0);
     assert.ok(w.idle);
     assert.equal(w.stuckCount, 1);
+  });
+});
+
+describe('as pernas acompanhando alguém', () => {
+  const dt = 1 / 24;
+  const walk = 2.4 * dt;
+  const run = 5.2 * dt;
+  /** A mesma integração da sala: magnitude é acelerador, `run` troca a velocidade. */
+  const apply = (pos: Point, i: MoveIntent): Point => {
+    const len = Math.hypot(i.dx, i.dz);
+    if (len < 1e-4) return pos;
+    const step = Math.min(1, len) * (i.run ? 5.2 : 2.4) * dt;
+    return { x: pos.x + (i.dx / len) * step, z: pos.z + (i.dz / len) * step };
+  };
+  /** Um lote de pernas (3 tiques a 24 Hz); devolve a velocidade média pedida (0..1) e se correu. */
+  const batch = (w: Walker, pos: { p: Point }) => {
+    const intents = w.intents(pos.p, 3);
+    let thr = 0; let ran = false; let n = 0;
+    for (const i of intents) {
+      pos.p = apply(pos.p, i);
+      const len = Math.hypot(i.dx, i.dz);
+      if (len > 1e-4) { thr += Math.min(1, len); n++; ran ||= i.run; }
+    }
+    return { thr: n ? thr / n : 0, ran, sent: intents.length };
+  };
+  const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.z - b.z);
+
+  it('chega desacelerando e para na faixa de 2 a 3 m, sem grudar', () => {
+    const w = new Walker('central_plaza');
+    const me = { p: { x: -10, z: 12 } };
+    const ana = { x: 0, z: 12 };
+    w.follow(() => ana);
+    const thrs: number[] = [];
+    let minDist = Infinity;
+    for (let b = 0; b < 8 * 15; b++) {
+      const r = batch(w, me);
+      if (r.sent) thrs.push(r.thr);
+      minDist = Math.min(minDist, dist(me.p, ana));
+      assert.ok(!r.ran, 'não corre atrás de quem está parado a 10 m');
+    }
+    assert.ok(dist(me.p, ana) >= FOLLOW.near - 0.15 && dist(me.p, ana) <= FOLLOW.far, `parou a ${dist(me.p, ana).toFixed(2)} m`);
+    assert.ok(minDist >= FOLLOW.near - 0.15, `passou do ponto: ${minDist.toFixed(2)} m`);
+    // Acelerou de leve no começo e chegou devagar: o primeiro lote pede menos que o auge, o último anda no mínimo.
+    const peak = Math.max(...thrs);
+    assert.ok(thrs[0]! < peak, 'saiu em tranco');
+    assert.ok(peak > 0.95, 'nunca andou a passo cheio');
+    const moving = thrs.filter((t) => t > 0);
+    assert.ok(moving[moving.length - 1]! <= 0.5, `chegou a ${moving[moving.length - 1]} do passo`);
+    assert.ok(w.idle && w.following, 'parado, mas ainda acompanhando');
+  });
+
+  it('parado, fica parado enquanto a pessoa anda dentro da faixa; retoma quando ela se afasta', () => {
+    const w = new Walker('central_plaza');
+    const me = { p: { x: -10, z: 12 } };
+    const ana = { x: 0, z: 12 };
+    w.follow(() => ana);
+    for (let b = 0; b < 8 * 15; b++) batch(w, me);
+    assert.ok(w.idle);
+    // Ela dá um passo para o lado (fica a ~2,6 m): ele não se mexe.
+    const before = { ...me.p };
+    ana.x += 0.6;
+    for (let b = 0; b < 8 * 3; b++) batch(w, me);
+    assert.ok(dist(before, me.p) < 1e-6, 'deu passinho dentro da faixa');
+    // Ela vai para longe: ele retoma e volta a parar na faixa.
+    ana.x += 4;
+    for (let b = 0; b < 8 * 15; b++) batch(w, me);
+    assert.ok(dist(me.p, ana) >= FOLLOW.near - 0.15 && dist(me.p, ana) <= FOLLOW.far, `parou a ${dist(me.p, ana).toFixed(2)} m`);
+  });
+
+  it('acompanha quem anda, corre atrás de quem corre, e para de correr antes de chegar', () => {
+    const w = new Walker('central_plaza');
+    const me = { p: { x: -8, z: 12 } };
+    const ana = { x: -5, z: 12 };
+    w.follow(() => ana);
+    // Andando junto: a distância fica dentro da faixa + um passo de folga.
+    for (let b = 0; b < 8 * 10; b++) {
+      ana.x += walk * 3;
+      batch(w, me);
+      if (b > 24) assert.ok(dist(me.p, ana) <= FOLLOW.far + 0.6, `ficou para trás: ${dist(me.p, ana).toFixed(2)} m`);
+    }
+    // Ela sai correndo por 3 s: ele acaba correndo também.
+    let ran = false;
+    for (let b = 0; b < 8 * 3; b++) {
+      ana.x += run * 3;
+      ran ||= batch(w, me).ran;
+    }
+    assert.ok(ran, 'nunca correu');
+    // Ela para: ele chega andando, não correndo, e para na faixa.
+    let ranNear = false;
+    for (let b = 0; b < 8 * 10; b++) {
+      const r = batch(w, me);
+      if (r.ran && dist(me.p, ana) < FOLLOW.walkBelow - 1) ranNear = true;
+    }
+    assert.ok(!ranNear, 'chegou correndo em cima da pessoa');
+    assert.ok(dist(me.p, ana) >= FOLLOW.near - 0.15 && dist(me.p, ana) <= FOLLOW.far, `parou a ${dist(me.p, ana).toFixed(2)} m`);
+  });
+
+  it('quem já ficou longe demais, ele alcança correndo mesmo que esteja parado', () => {
+    const w = new Walker('central_plaza');
+    const me = { p: { x: -18, z: 12 } };
+    w.follow(() => ({ x: 0, z: 12 }));
+    let ran = false;
+    for (let b = 0; b < 8 * 2; b++) ran ||= batch(w, me).ran;
+    assert.ok(ran);
+  });
+
+  it('parado, vira-se quando a pessoa muda de lado; e desiste de acompanhar quem sumiu', () => {
+    const w = new Walker('central_plaza');
+    const me = { p: { x: 0, z: 12 } };
+    let ana: Point | null = { x: 2.5, z: 12 };
+    w.follow(() => ana);
+    batch(w, me);
+    const before = { ...me.p };
+    ana = { x: 0, z: 14.5 };
+    const yawIntents = w.intents(me.p, 3);
+    assert.equal(yawIntents.length, 1);
+    assert.ok(Math.abs(yawIntents[0]!.yaw) < 0.05, 'não olhou para o norte');
+    assert.equal(w.intents(me.p, 3).length, 0, 'repetiu a virada');
+    assert.ok(dist(before, me.p) < 1e-6);
+    ana = null;
+    assert.equal(w.intents(me.p, 3).length, 0);
+    w.stop();
+    assert.ok(!w.following && w.idle);
+  });
+
+  it('preso atrás de um banco, pausa e tenta de novo em vez de empurrar para sempre', () => {
+    const w = new Walker('central_plaza');
+    const stuck = { x: -10, z: -10 };
+    w.follow(() => ({ x: 10, z: 10 }));
+    w.intents(stuck, 3);
+    (w as unknown as { lastProgressAt: number }).lastProgressAt = Date.now() - 3_000;
+    const out = w.intents(stuck, 3);
+    assert.equal(out.length, 1);
+    assert.equal(Math.hypot(out[0]!.dx, out[0]!.dz), 0);
+    assert.equal(w.stuckCount, 1);
+    assert.ok(w.idle && w.following);
+    assert.equal(w.intents(stuck, 3).length, 0, 'voltou a empurrar na hora');
   });
 });
 
