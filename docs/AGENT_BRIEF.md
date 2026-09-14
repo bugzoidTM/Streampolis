@@ -990,6 +990,16 @@ O que tem de continuar verdade:
   cabeça tica a cada 2 s, as pernas a 8 Hz. Uma ordem de andar encerra a
   atenção de conversa (`Walker.setTarget/follow/sitAt` limpam `attention`) —
   foi um regressão real: o Nilo parava para ouvir e não seguia.
+- **Pontos de interesse por categoria** (`poi.ts`): `social` (lados dos
+  quiosques, bordas da pista), `rest` (sombra das árvores; lounge do clube com
+  `seat`), `service` (frente dos quiosques e bar do clube, com FILA), `landmark`
+  (monumento; telão em duas filas escalonadas a 11/14,5 m com `viewDir` — e
+  `freeSpot` recusa vaga na frente de quem já olha), `transit` (portas,
+  travessias). Passo de programa `visit {kind, poi?}`; caminhada livre vira
+  visita em 55 % das vezes com pesos por categoria. Filas em `queues.ts`
+  (registro por sala; avança quando o primeiro sai; sem compra). Rotinas do
+  Clube Sombra na migration 0025 (pista/bar/lounge/bordas/porta). Geometria
+  intocada: tudo é leitura da planta.
 - **Um "oi" sem nome tem UMA resposta** (`arbiter.ts`): a primeira cabeça a
   receber a mensagem decide para todas (mesmo processo) — quem já conversa
   com a pessoa (respondeu há <60 s, a ≤10 m) ou, senão, quem ela está

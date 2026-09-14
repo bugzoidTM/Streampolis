@@ -1,0 +1,14 @@
+-- 0025_npc_club_routines.sql — rotinas do Clube Sombra por pontos de interesse.
+--
+-- GERADO por packages/npc/scripts/gen-population.mjs (bloco CLUBE); não edite
+-- à mão. Troca o programa de oito figurantes do clube por passos `visit`
+-- (poi.ts): pista (dançar), bar (fila curta), lounge (sentar), bordas
+-- (conversar de frente), porta. DJ e segurança ficam nos postos.
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"service","poi":"club:bar"},{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"social","poi":"club:edge"}]}'::jsonb WHERE slug = 'kaique';
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"social","poi":"club:edge"},{"do":"visit","kind":"service","poi":"club:bar"},{"do":"visit","kind":"landmark","poi":"club:floor"}]}'::jsonb WHERE slug = 'rafa';
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"service","poi":"club:bar"},{"do":"visit","kind":"rest","poi":"club:lounge"},{"do":"visit","kind":"landmark","poi":"club:floor"}]}'::jsonb WHERE slug = 'bruno';
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"rest","poi":"club:lounge"},{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"transit","poi":"club:door","secs":[3,8]}]}'::jsonb WHERE slug = 'mirela';
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"social","poi":"club:edge"},{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"service","poi":"club:bar"}]}'::jsonb WHERE slug = 'taina';
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"landmark","poi":"club:floor"},{"do":"visit","kind":"rest","poi":"club:lounge"},{"do":"visit","kind":"service","poi":"club:bar"},{"do":"visit","kind":"landmark","poi":"club:floor"}]}'::jsonb WHERE slug = 'livia';
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"social","poi":"club:edge"},{"do":"visit","kind":"service","poi":"club:bar"},{"do":"visit","kind":"rest","poi":"club:lounge"},{"do":"visit","kind":"social","poi":"club:edge"}]}'::jsonb WHERE slug = 'priscila';
+UPDATE streampolis.npc_agents SET profile = profile || '{"program":[{"do":"visit","kind":"social","poi":"club:edge"},{"do":"visit","kind":"rest","poi":"club:lounge"},{"do":"visit","kind":"landmark","poi":"club:floor","secs":[40,90]},{"do":"visit","kind":"service","poi":"club:bar"}]}'::jsonb WHERE slug = 'marcio';

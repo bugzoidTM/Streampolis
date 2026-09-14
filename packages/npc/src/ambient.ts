@@ -5,6 +5,8 @@ import { mulberry32, seedOf, type Mind } from './mind.js';
 import type { AmbientProfile, AmbientStep } from './roster.js';
 import { ahead, clearanceFor, coveredPoints, isCovered, nearestFree, sceneKnowledge, weatherApplies } from './scenes.js';
 import { freeSeatNear } from './seats.js';
+import { freeSpot, poiById, poisOfKind, type Poi, type PoiKind, type Spot } from './poi.js';
+import { QUEUES } from './queues.js';
 import type { AnimState, ChatMessage } from './shared.js';
 import type { Point } from './walker.js';
 import type { Nearby, World } from './world.js';
@@ -54,6 +56,28 @@ const RAIN = {
   /** Chance de pular um passo de sentar (banco descoberto). */
   skipSit: 0.7,
 } as const;
+
+/**
+ * Caminhada livre vira visita a um ponto de interesse com esta chance, e a
+ * categoria sai destes pesos: quem passeia passa (trânsito), olha (marco),
+ * para para conversar, entra numa fila curta, descansa. É o que faz um
+ * passante ter motivo visível em vez de sortear chão.
+ */
+const FREE_WALK_VISIT = 0.55;
+const KIND_WEIGHTS: Array<[PoiKind, number]> = [['transit', 40], ['landmark', 25], ['social', 15], ['service', 12], ['rest', 8]];
+/** Numa fila, espera-se no máximo isto pela vez; depois desiste. */
+const QUEUE_MAX_WAIT_MS = 90_000;
+
+interface Visit {
+  poi: Poi;
+  spot: Spot;
+  /** Índice na fila (service), ou −1. */
+  queueIdx: number;
+  arrived: boolean;
+  doneAt: number;
+  startedAt: number;
+  secs?: [number, number];
+}
 
 const CALL_M = 6;
 const LINE_GAP_MS = 60_000;
@@ -107,6 +131,7 @@ export class AmbientMind implements Mind {
   private lastEncounterAt = 0;
   private readonly encounteredAt = new Map<string, number>();
   private gathering: InGathering | null = null;
+  private visit: Visit | null = null;
   private gatherCooldownUntil = 0;
   /** `stuckCount` das pernas quando o passo começou: se não subiu, parar é ter chegado. */
   private stuckMark = 0;
@@ -128,6 +153,8 @@ export class AmbientMind implements Mind {
   }
 
   rebind(world: World): void {
+    if (this.visit?.queueIdx !== undefined && this.visit.queueIdx >= 0) QUEUES.leave(this.world.roomId ?? '', this.visit.poi, this.npc.id);
+    this.visit = null;
     this.world = world;
     this.step = -1;
     this.phase = 'going';
@@ -141,6 +168,7 @@ export class AmbientMind implements Mind {
     return {
       role: this.profile.role, step: this.step, phase: this.phase, doing: s?.do ?? null, pose: this.world.pose,
       encounter: this.encounterUntil > Date.now(), gathering: this.gathering ? this.gathering.g.id : null, rain: this.raining(),
+      visit: this.visit ? `${this.visit.poi.id}${this.visit.queueIdx >= 0 ? `#${this.visit.queueIdx}` : ''}${this.visit.arrived ? '' : ' (indo)'}` : null,
     };
   }
 
@@ -186,6 +214,8 @@ export class AmbientMind implements Mind {
     this.maybeEncounter(me, now);
     if (this.encounterUntil > now) return;
     if (this.maybeGather(me, now)) return;
+
+    if (this.visit) { this.visitTick(me, now); return; }
 
     const step = this.current();
     if (!step) { this.advance(me); return; }
@@ -236,6 +266,7 @@ export class AmbientMind implements Mind {
       return;
     }
 
+    if (step.do !== 'sit') { this.advance(me); return; }
     // sit
     if (this.phase === 'going') {
       if (this.doneAt === 0 && !walker.sitting && this.raining() && this.rng() < RAIN.skipSit) { this.advance(me); return; }
@@ -289,10 +320,14 @@ export class AmbientMind implements Mind {
       // `stayAt` para tudo o que era ordem; a ordem de ir tem de vir depois dela.
       walker.stayAt(at);
       if (Math.hypot(at.x - me.x, at.z - me.z) > 1.0) walker.setTarget(at);
+    } else if (step.do === 'visit') {
+      if (!this.startVisit(me, step.kind, step.poi, step.secs)) this.advance(me);
     } else if (step.do === 'walk') {
       if (step.to) {
         step.to = nearestFree(this.npc.sceneId, step.to);
         walker.setTarget(step.to);
+      } else if (this.rng() < FREE_WALK_VISIT && this.startVisit(me, this.pickKind(), undefined, undefined)) {
+        // Caminhada livre com motivo: um ponto de interesse da cena.
       } else if (this.raining() && this.rng() < RAIN.coveredWalks && coveredPoints(this.npc.sceneId).length) {
         // Chovendo: para debaixo de alguma coisa (o mais das vezes).
         const covered = coveredPoints(this.npc.sceneId).filter((c) => !walker.occupied(c));
@@ -304,12 +339,138 @@ export class AmbientMind implements Mind {
     }
   }
 
+  // -------------------------------------------------------------- visitas
+
+  private pickKind(): PoiKind {
+    const total = KIND_WEIGHTS.reduce((a, [, w]) => a + w, 0);
+    let r = this.rng() * total;
+    for (const [k, w] of KIND_WEIGHTS) { r -= w; if (r <= 0) return k; }
+    return 'transit';
+  }
+
+  private bodies(): Point[] {
+    return this.world.people().map((p) => ({ x: p.x, z: p.z }));
+  }
+
+  /**
+   * Começa uma visita: escolhe o ponto (por id, ou um da categoria — coberto,
+   * se chove), a vaga (fila, se é serviço), e manda as pernas. Falso quando
+   * não há vaga: o programa segue.
+   */
+  private startVisit(me: Point, kind: PoiKind, poiId: string | undefined, secs: [number, number] | undefined): boolean {
+    const scene = this.npc.sceneId;
+    let pool = poiId ? [poiById(scene, poiId)].filter((p): p is Poi => !!p && p.kind === kind) : poisOfKind(scene, kind);
+    if (this.raining()) {
+      const covered = pool.filter((p) => p.covered);
+      if (covered.length) pool = covered;
+    }
+    if (!pool.length) return false;
+    // Mais perto pesa mais, sem ser sempre o mais perto.
+    const scored = pool.map((p) => ({ p, s: Math.hypot(p.at.x - me.x, p.at.z - me.z) * (0.6 + this.rng() * 0.8) })).sort((a, b) => a.s - b.s);
+    for (const { p: poi } of scored) {
+      const walker = this.world.walker;
+      if (poi.queue) {
+        const idx = QUEUES.join(this.world.roomId ?? '', poi, this.npc.id);
+        if (idx === null) continue;
+        const at = nearestFree(scene, QUEUES.slot(poi, idx));
+        this.visit = { poi, spot: { at, yaw: poi.queue.faceYaw }, queueIdx: idx, arrived: false, doneAt: 0, startedAt: Date.now(), secs };
+        walker.release();
+        walker.setTarget(at);
+        return true;
+      }
+      const spot = freeSpot(poi, this.bodies(), this.rng, me);
+      if (!spot) continue;
+      this.visit = { poi, spot, queueIdx: -1, arrived: false, doneAt: 0, startedAt: Date.now(), secs };
+      walker.release();
+      if (poi.seat) walker.sitAt({ at: spot.at, yaw: spot.yaw });
+      else walker.setTarget(spot.at);
+      return true;
+    }
+    return false;
+  }
+
+  private visitTick(me: Point, now: number): void {
+    const v = this.visit!;
+    const walker = this.world.walker;
+    const room = this.world.roomId ?? '';
+    const dwell = () => this.secs(v.secs, v.poi.dwell) * this.dwellFactor(v.spot.at);
+
+    if (v.queueIdx >= 0) {
+      // Fila: a vaga é a do meu índice AGORA (quem estava na frente pode ter saído).
+      const idx = QUEUES.indexOf(room, v.poi, this.npc.id);
+      if (idx < 0 || now - v.startedAt > QUEUE_MAX_WAIT_MS + 60_000) { this.endVisit(me); return; }
+      const want = nearestFree(this.npc.sceneId, QUEUES.slot(v.poi, idx));
+      if (Math.hypot(want.x - v.spot.at.x, want.z - v.spot.at.z) > 0.3) {
+        v.spot = { at: want, yaw: v.poi.queue!.faceYaw };
+        v.arrived = false;
+        v.queueIdx = idx;
+        walker.release();
+        walker.setTarget(want);
+        return;
+      }
+      v.queueIdx = idx;
+      const d = Math.hypot(v.spot.at.x - me.x, v.spot.at.z - me.z);
+      if (!v.arrived) {
+        if (d <= 0.7 || (walker.idle && d <= 1.6)) {
+          v.arrived = true;
+          walker.stayAt(v.spot.at);
+          this.world.faceTo(ahead(me, v.spot.yaw));
+          if (idx === 0) v.doneAt = now + dwell();
+        } else if (walker.idle) {
+          this.endVisit(me);
+        }
+        return;
+      }
+      if (idx === 0) {
+        if (!v.doneAt) v.doneAt = now + dwell();
+        if (now >= v.doneAt) this.endVisit(me);
+      } else if (now - v.startedAt > QUEUE_MAX_WAIT_MS) {
+        this.endVisit(me);
+      }
+      return;
+    }
+
+    if (v.poi.seat) {
+      if (!v.arrived) {
+        if (walker.seated) { v.arrived = true; walker.hold = 'seated'; v.doneAt = now + dwell(); }
+        else if (!walker.sitting) this.endVisit(me);
+        return;
+      }
+      if (now >= v.doneAt) { walker.standUp(); this.endVisit(me); }
+      return;
+    }
+
+    const d = Math.hypot(v.spot.at.x - me.x, v.spot.at.z - me.z);
+    if (!v.arrived) {
+      if (d <= 0.8 || (walker.idle && d <= 1.8)) {
+        v.arrived = true;
+        v.doneAt = now + dwell();
+        walker.stayAt(d <= 1.8 ? v.spot.at : { x: me.x, z: me.z });
+        this.world.faceTo(ahead(me, v.spot.yaw));
+        if (v.poi.pose) { this.world.pose = v.poi.pose; walker.hold = 'gesture'; }
+      } else if (walker.idle) {
+        this.endVisit(me);
+      }
+      return;
+    }
+    if (now >= v.doneAt) this.endVisit(me);
+  }
+
+  /** Fim da visita (ou desistência): sai da fila, larga a postura e o programa segue. */
+  private endVisit(me: Point): void {
+    const v = this.visit;
+    if (!v) return;
+    if (v.queueIdx >= 0) QUEUES.leave(this.world.roomId ?? '', v.poi, this.npc.id);
+    this.visit = null;
+    this.advance(me);
+  }
+
   // ------------------------------------------------------------ encontros
 
   /** Livre para parar e cumprimentar alguém: nem sentado, nem em postura, nem numa rodinha. */
   eligibleForEncounter(now = Date.now()): boolean {
     const w = this.world.walker;
-    if (!this.world.connected || this.gathering || this.encounterUntil > now || w.attending) return false;
+    if (!this.world.connected || this.gathering || this.visit || this.encounterUntil > now || w.attending) return false;
     if (w.sitting || w.seated || w.hold !== 'free') return false;
     return now - this.lastEncounterAt >= ENCOUNTER.selfCooldownMs;
   }
@@ -347,7 +508,7 @@ export class AmbientMind implements Mind {
   // ------------------------------------------------------------- rodinhas
 
   private maybeGather(me: Point, now: number): boolean {
-    if (!this.roams || now < this.gatherCooldownUntil || !this.world.roomId) return false;
+    if (!this.roams || this.visit || now < this.gatherCooldownUntil || !this.world.roomId) return false;
     if (this.rng() > GATHER_CHANCE) return false;
     const room = this.world.roomId;
     const rain = this.raining();
@@ -436,6 +597,8 @@ export class AmbientMind implements Mind {
   dispose(): void {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
+    if (this.visit && this.visit.queueIdx >= 0) QUEUES.leave(this.world.roomId ?? '', this.visit.poi, this.npc.id);
+    this.visit = null;
     this.leaveGathering(false);
     AMBIENT_PEERS.delete(this.npc.id);
   }

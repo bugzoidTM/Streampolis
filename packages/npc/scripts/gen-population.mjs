@@ -577,3 +577,30 @@ for (const [slug, patch] of Object.entries(RAIN_SHELTER)) rainSql.push(`UPDATE s
 const out24 = join(HERE, '..', '..', 'api', 'migrations', '0024_npc_rain.sql');
 writeFileSync(out24, rainSql.join('\n') + '\n');
 console.log(`gerado ${out24}: ${Object.keys(RAIN_SHELTER).length} abrigos`);
+
+// ============================================================ CLUBE (0025) ==
+//
+// Rotinas do Clube Sombra por pontos de interesse (poi.ts): pista (dançar),
+// bar (fila curta), lounge (sentar de verdade nos sofás), bordas (conversar
+// de frente) e a porta. Sem LLM, sem compra: é o passo `visit` por categoria.
+const CLUB_PROGRAMS = {
+  kaique: [{ do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'service', poi: 'club:bar' }, { do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'social', poi: 'club:edge' }],
+  rafa: [{ do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'social', poi: 'club:edge' }, { do: 'visit', kind: 'service', poi: 'club:bar' }, { do: 'visit', kind: 'landmark', poi: 'club:floor' }],
+  bruno: [{ do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'service', poi: 'club:bar' }, { do: 'visit', kind: 'rest', poi: 'club:lounge' }, { do: 'visit', kind: 'landmark', poi: 'club:floor' }],
+  mirela: [{ do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'rest', poi: 'club:lounge' }, { do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'transit', poi: 'club:door', secs: [3, 8] }],
+  taina: [{ do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'social', poi: 'club:edge' }, { do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'service', poi: 'club:bar' }],
+  livia: [{ do: 'visit', kind: 'landmark', poi: 'club:floor' }, { do: 'visit', kind: 'rest', poi: 'club:lounge' }, { do: 'visit', kind: 'service', poi: 'club:bar' }, { do: 'visit', kind: 'landmark', poi: 'club:floor' }],
+  priscila: [{ do: 'visit', kind: 'social', poi: 'club:edge' }, { do: 'visit', kind: 'service', poi: 'club:bar' }, { do: 'visit', kind: 'rest', poi: 'club:lounge' }, { do: 'visit', kind: 'social', poi: 'club:edge' }],
+  marcio: [{ do: 'visit', kind: 'social', poi: 'club:edge' }, { do: 'visit', kind: 'rest', poi: 'club:lounge' }, { do: 'visit', kind: 'landmark', poi: 'club:floor', secs: [40, 90] }, { do: 'visit', kind: 'service', poi: 'club:bar' }],
+};
+for (const slug of Object.keys(CLUB_PROGRAMS)) if (!usedSlugs.has(slug)) throw new Error(`programa de clube para slug desconhecido: ${slug}`);
+const clubSql = [`-- 0025_npc_club_routines.sql — rotinas do Clube Sombra por pontos de interesse.
+--
+-- GERADO por packages/npc/scripts/gen-population.mjs (bloco CLUBE); não edite
+-- à mão. Troca o programa de oito figurantes do clube por passos \`visit\`
+-- (poi.ts): pista (dançar), bar (fila curta), lounge (sentar), bordas
+-- (conversar de frente), porta. DJ e segurança ficam nos postos.`];
+for (const [slug, program] of Object.entries(CLUB_PROGRAMS)) clubSql.push(`UPDATE streampolis.npc_agents SET profile = profile || ${j({ program })} WHERE slug = ${q(slug)};`);
+const out25 = join(HERE, '..', '..', 'api', 'migrations', '0025_npc_club_routines.sql');
+writeFileSync(out25, clubSql.join('\n') + '\n');
+console.log(`gerado ${out25}: ${Object.keys(CLUB_PROGRAMS).length} rotinas do clube`);

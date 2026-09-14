@@ -3,6 +3,7 @@ import {
   type Collider, type SceneId,
 } from './shared.js';
 import { sceneSeats, type Seat } from './seats.js';
+import { poisOfKind } from './poi.js';
 import { plazaDestinations, type Point } from './walker.js';
 
 /**
@@ -46,7 +47,14 @@ const cache = new Map<SceneId, SceneKnowledge>();
 export function sceneKnowledge(id: SceneId): SceneKnowledge {
   let k = cache.get(id);
   if (!k) {
-    k = { id, label: SCENE_LABEL[id], destinations: destinationsOf(id), seats: sceneSeats(id), colliders: SCENE_COLLIDERS[id] ?? [] };
+    // Vagas de sentar: os bancos da praça (seats.ts) e os assentos de verdade
+    // dos pontos de descanso (o lounge do clube, em poi.ts).
+    const seats: Seat[] = [...sceneSeats(id)];
+    for (const poi of poisOfKind(id, 'rest')) {
+      if (!poi.seat) continue;
+      for (const sp of poi.spots) seats.push({ at: sp.at, yaw: sp.yaw, bench: poi.at });
+    }
+    k = { id, label: SCENE_LABEL[id], destinations: destinationsOf(id), seats, colliders: SCENE_COLLIDERS[id] ?? [] };
     cache.set(id, k);
   }
   return k;

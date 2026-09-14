@@ -670,7 +670,8 @@ describe('clima do mundo', () => {
     assert.ok(isCovered('central_plaza', dest), `destino coberto: ${JSON.stringify(dest)}`);
     // Chega e "permanece": num ponto aberto a permanência cai para 30 %.
     w.me = { ...w.me, x: 0, z: 9 };
-    (m as unknown as { step: number; phase: string; doneAt: number; goingUntil: number; stuckMark: number }).step = 0;
+    (m as unknown as { step: number; visit: unknown }).step = 0;
+    (m as unknown as { step: number; visit: unknown }).visit = null; // a caminhada livre pode ter virado visita (a uma porta coberta)
     m.tick();
     w.walker.release();
     (m as unknown as { advance: (me: Point) => void }).advance(w.me); // vai para o passo 1 (stand no pátio aberto)
@@ -770,5 +771,100 @@ describe('um "oi" sem nome tem UMA resposta', () => {
     a.dispose(); b.dispose();
     resetArbiter();
     void named;
+  });
+});
+
+// ------------------------------------------------------ pontos de interesse
+
+import { poisOf, poisOfKind, poiById, freeSpot } from '../src/poi.js';
+import { QUEUES } from '../src/queues.js';
+
+describe('pontos de interesse e rotinas por categoria', () => {
+  it('a praça e o clube têm as cinco categorias, com vagas em chão livre', () => {
+    for (const scene of ['central_plaza', 'noir_club'] as SceneId[]) {
+      const kinds = new Set(poisOf(scene).map((p) => p.kind));
+      for (const k of ['social', 'rest', 'service', 'landmark', 'transit']) assert.ok(kinds.has(k as never), `${scene} sem ${k}`);
+      for (const p of poisOf(scene)) for (const s of p.spots) assert.ok(isFree(scene, s.at, 0), `${p.id} (${s.at.x}, ${s.at.z})`);
+    }
+    assert.equal(poisOfKind('central_plaza', 'service').length, 3, 'três quiosques com fila');
+    assert.ok(poiById('central_plaza', 'telao')!.spots.length === 9);
+    assert.ok(poiById('noir_club', 'club:lounge')!.seat && poiById('noir_club', 'club:lounge')!.spots.length >= 6);
+    assert.equal(poiById('noir_club', 'club:floor')!.pose, 'dance');
+    assert.ok(sceneKnowledge('noir_club').seats.length >= 6, 'o lounge vira vaga de sentar para os sociais também');
+  });
+
+  it('a fila do quiosque é ordenada, curta, e avança quando o primeiro sai', () => {
+    QUEUES.reset();
+    const k = poiById('central_plaza', 'kiosk:0')!;
+    assert.equal(QUEUES.join('r', k, 'a'), 0);
+    assert.equal(QUEUES.join('r', k, 'b'), 1);
+    assert.equal(QUEUES.join('r', k, 'c'), 2);
+    assert.equal(QUEUES.join('r', k, 'd'), 3);
+    assert.equal(QUEUES.join('r', k, 'e'), null, 'a quinta não cabe');
+    const s0 = QUEUES.slot(k, 0);
+    const s1 = QUEUES.slot(k, 1);
+    assert.ok(Math.abs(Math.hypot(s1.x - s0.x, s1.z - s0.z) - k.queue!.spacing) < 1e-6, 'vagas espaçadas');
+    assert.ok(Math.hypot(s1.x - k.at.x, s1.z - k.at.z) > Math.hypot(s0.x - k.at.x, s0.z - k.at.z), 'a fila cresce para longe do quiosque');
+    QUEUES.leave('r', k, 'a');
+    assert.equal(QUEUES.indexOf('r', k, 'b'), 0, 'o segundo virou primeiro');
+    assert.equal(QUEUES.indexOf('r', k, 'a'), -1);
+    assert.equal(QUEUES.length('r2', k), 0, 'outra sala, outra fila');
+    QUEUES.reset();
+  });
+
+  it('no telão ninguém para na frente de quem já está olhando', () => {
+    const telao = poiById('central_plaza', 'telao')!;
+    const rng = () => 0.1;
+    // Alguém na fila de trás, x = -4.5 (entre −6 e −3 da da frente): as vagas da frente ao lado dele continuam livres…
+    const back = telao.spots.find((s) => Math.abs(s.at.x - (telao.at.x - 4.5)) < 0.3)!;
+    const chosen = freeSpot(telao, [back.at], rng, { x: -4.5, z: telao.at.z + 30 });
+    assert.ok(chosen && Math.hypot(chosen.at.x - back.at.x, chosen.at.z - back.at.z) > 0.8);
+    // …mas uma vaga exatamente à frente dele (mesmo x, fila da frente) é recusada.
+    const inFront = { at: { x: back.at.x, z: back.at.z - 3.5 }, yaw: 0 };
+    const test = { ...telao, spots: [inFront, telao.spots[0]!] };
+    const pick = freeSpot(test, [back.at], rng);
+    assert.ok(pick && pick.at !== inFront.at, 'não tapou quem estava atrás');
+  });
+
+  it('o figurante visita: vai à fila, é atendido e segue; dança na pista; senta no lounge', () => {
+    QUEUES.reset();
+    const w = new FakeWorld('central_plaza');
+    const m = ambient(w, '00000000-0000-4000-8000-0000000000c5', 'Fila', {
+      role: 'teste', program: [{ do: 'visit', kind: 'service', poi: 'kiosk:1', secs: [0.05, 0.05] }, { do: 'walk', to: { x: 0, z: 20 } }],
+    });
+    m.tick();
+    assert.match(m.status().visit as string, /^kiosk:1#0/);
+    const k = poiById('central_plaza', 'kiosk:1')!;
+    assert.equal(QUEUES.indexOf(w.roomId, k, m.npc.id), 0);
+    const slot = w.walker.destination!;
+    w.me = { ...w.me, x: slot.x, z: slot.z };
+    m.tick(); // chegou: atendido por 50 ms
+    assert.ok(w.walker.staying);
+    return sleep(80).then(() => {
+      m.tick();
+      assert.equal(m.status().visit, null, 'foi embora');
+      assert.equal(QUEUES.length(w.roomId, k), 0, 'saiu da fila');
+      assert.equal(m.status().step, 1);
+      m.dispose();
+
+      const wc = new FakeWorld('noir_club');
+      const d = ambient(wc, '00000000-0000-4000-8000-0000000000c6', 'Dança', {
+        role: 'teste', program: [{ do: 'visit', kind: 'landmark', poi: 'club:floor', secs: [0.05, 0.05] }, { do: 'visit', kind: 'rest', poi: 'club:lounge', secs: [0.05, 0.05] }],
+      });
+      d.tick();
+      const spot = wc.walker.destination!;
+      wc.me = { ...wc.me, x: spot.x, z: spot.z };
+      d.tick();
+      assert.equal(wc.pose, 'dance', 'na pista, dança');
+      assert.equal(wc.walker.hold, 'gesture');
+      return sleep(80).then(() => {
+        d.tick(); // acabou: vai ao lounge (sentar)
+        assert.equal(wc.pose, null);
+        assert.match(d.status().visit as string, /^club:lounge/);
+        assert.ok(wc.walker.sitting, 'as pernas receberam a ordem de sentar');
+        d.dispose();
+        QUEUES.reset();
+      });
+    });
   });
 });

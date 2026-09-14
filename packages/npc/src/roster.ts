@@ -1,6 +1,7 @@
 import { pool } from './db.js';
 import { hourWithin, type AnimState, type SceneId, type Weather } from './shared.js';
 import { weatherApplies } from './scenes.js';
+import type { PoiKind } from './poi.js';
 import type { Point } from './walker.js';
 
 /**
@@ -32,7 +33,13 @@ export type AmbientStep =
   /** Andar até um ponto (ou um destino qualquer da cena) e ficar ali um pouco. */
   | { do: 'walk'; to?: Point; secs?: [number, number] }
   /** Sentar numa vaga de banco perto de um ponto (só onde há bancos). */
-  | { do: 'sit'; near?: Point; secs: [number, number] };
+  | { do: 'sit'; near?: Point; secs: [number, number] }
+  /**
+   * Ir a um ponto de interesse de uma CATEGORIA (poi.ts): social, rest,
+   * service (entra na fila), landmark (olha, sem tapar ninguém), transit.
+   * `poi` escolhe um ponto específico ('telao', 'kiosk:1', 'club:bar').
+   */
+  | { do: 'visit'; kind: PoiKind; poi?: string; secs?: [number, number] };
 
 export interface AmbientProfile {
   /** O papel, como legenda para o painel ("porteiro do hotel"). */
