@@ -82,6 +82,14 @@ export class PlayerState extends Schema {
    * quando o alvo sai da sala.
    */
   @type('string') lookAt = '';
+  /**
+   * Um personagem guiando alguém: a sessão guiada e o destino. Só a permissão
+   * `npc` escreve (`MSG.guide`); limpo quando o guiado sai. O cliente do
+   * guiado desenha isso no minimapa.
+   */
+  @type('string') guideTo = '';
+  @type('float32') guideX = 0;
+  @type('float32') guideZ = 0;
 }
 
 export class PKStateSchema extends Schema {

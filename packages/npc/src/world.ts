@@ -269,6 +269,26 @@ export class World {
     if (me) this.walker.face(target, me);
   }
 
+  private guiding: string | null = null;
+
+  /**
+   * Declara à sala "estou levando fulano até ali" (ou encerra, com nulo): o
+   * cliente da pessoa desenha o destino e o guia no minimapa. Só a intenção
+   * viaja; a sala confere que quem manda é personagem.
+   */
+  guide(userId: string | null, dest: Point | null): void {
+    if (!this.room) return;
+    const who = userId ? this.personAt(userId) : null;
+    if (!userId || !who || !dest) {
+      if (this.guiding !== null) { this.room.send(MSG.guide, { sessionId: '', x: 0, z: 0 }); this.guiding = null; }
+      return;
+    }
+    const key = `${who.sessionId}@${dest.x.toFixed(1)},${dest.z.toFixed(1)}`;
+    if (key === this.guiding) return;
+    this.guiding = key;
+    this.room.send(MSG.guide, { sessionId: who.sessionId, x: dest.x, z: dest.z });
+  }
+
   /**
    * Alguém fala com ele: parar, corpo e olhar na pessoa por `ms`. O que estava
    * fazendo (seguir, guiar) fica suspenso nas pernas e volta sozinho depois.

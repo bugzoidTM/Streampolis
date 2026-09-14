@@ -25,7 +25,7 @@ export type WorldIntent =
    * central", que é exatamente o resultado errado: a praça certa, com a pessoa
    * certa dentro, é o ponto todo do botão.
    */
-  | { kind: 'meet'; roomId: string; sceneId: SceneId }
+  | { kind: 'meet'; roomId: string; sceneId: SceneId; friendId?: string }
   /** Abrir a PRÓPRIA live. O host sai do token; o cliente só escolhe o assunto. */
   | { kind: 'golive'; title: string; category: string; sceneId?: SceneId }
   /** Assistir à live de outra pessoa, pela sala que o feed listou. */
@@ -69,7 +69,7 @@ export function intentFromQuery(params: URLSearchParams, hasToken: boolean): Wor
   // `?meet=<shard>` abre direto na sala de alguém. Serve à captura de tela e ao
   // link de convite; o portão de amizade é da API, que é quem dá o shard.
   const meet = params.get('meet');
-  if (meet) return { kind: 'meet', roomId: meet, sceneId: CITY_SCENES.has(scene) ? scene : 'central_plaza' };
+  if (meet) return { kind: 'meet', roomId: meet, sceneId: CITY_SCENES.has(scene) ? scene : 'central_plaza', friendId: params.get('friend') ?? undefined };
 
   const apartment = params.get('apartment');
   if (apartment) return { kind: 'apartment', apartmentId: apartment };

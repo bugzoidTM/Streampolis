@@ -298,7 +298,10 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
 
   /** Quem olhava para quem saiu volta a olhar para frente. */
   private forgetLookTarget(sessionId: string): void {
-    this.state.players.forEach((p) => { if (p.lookAt === sessionId) p.lookAt = ''; });
+    this.state.players.forEach((p) => {
+      if (p.lookAt === sessionId) p.lookAt = '';
+      if (p.guideTo === sessionId) p.guideTo = '';
+    });
   }
 
   /** False for clients that watch instead of inhabiting the room. */
@@ -456,6 +459,22 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
       const other = this.state.players.get(target);
       if (!other || Math.hypot(other.x - player.x, other.z - player.z) > LOOK_MAX_M) { player.lookAt = ''; return; }
       player.lookAt = target;
+    });
+
+    this.onMessage(MSG.guide, (client, message: { sessionId?: unknown; x?: unknown; z?: unknown }) => {
+      const session = this.sessions.get(client.sessionId);
+      const player = this.state.players.get(client.sessionId);
+      // Só personagem guia — é uma declaração de intenção de NPC, não um comando.
+      if (!session || !player || !isNpc(session.identity)) return;
+      const target = typeof message?.sessionId === 'string' ? message.sessionId : '';
+      if (target === '' || target === client.sessionId || !this.state.players.has(target)) { player.guideTo = ''; return; }
+      const x = Number(message?.x);
+      const z = Number(message?.z);
+      const area = PLAY_AREA[this.sceneId];
+      if (!Number.isFinite(x) || !Number.isFinite(z) || x < area.minX || x > area.maxX || z < area.minZ || z > area.maxZ) return;
+      player.guideTo = target;
+      player.guideX = x;
+      player.guideZ = z;
     });
 
     this.onMessage(MSG.mute, (client, message: { userId?: unknown; ms?: unknown }) => {

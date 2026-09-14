@@ -25,6 +25,7 @@ function scene_children(scene: { scene: THREE.Scene } | null): THREE.Object3D[] 
   return scene ? [...scene.scene.children] : [];
 }
 import { useClockStore } from '../state/useClockStore.js';
+import { useMinimapStore, type MinimapState } from '../state/useMinimapStore.js';
 import { createAvatar, isPackaged, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
 import { SpeechBubble } from './SpeechBubble.js';
@@ -73,6 +74,8 @@ export interface WorldOptions {
   connection?: AnyWorldConnection | null;
   /** Só no offline: qual cena desenhar sem servidor nenhum. */
   sceneId?: SceneId;
+  /** O amigo que se veio encontrar ("Encontrar"): marcado no minimapa enquanto estiver nesta sala. */
+  markedFriendId?: string;
   tier?: 'low' | 'medium' | 'high';
   /** Look used only in offline mode; online it comes signed in the token. */
   avatar?: AvatarConfig;
@@ -492,6 +495,7 @@ export class World {
       }
     }
     if (me) this.pickInteraction(me.avatar.root.position);
+    this.publishMinimap(dt);
 
     if (me && this.gigMarker) {
       const p = me.avatar.root.position;
@@ -617,6 +621,49 @@ export class World {
       this.opts.onInteraction?.(next);
     }
     if (this.portals) this.portals.activeId = next?.kind === 'portal' ? next.portal.id : null;
+  }
+
+  private minimapAcc = 0;
+
+  /**
+   * O minimapa recebe um retrato a ~10 Hz: jogador, portas, alvo da
+   * interação, amigo marcado, parada do bico e o personagem que está guiando
+   * o jogador (o `guideTo` dele aponta para a nossa sessão). Escrever na store
+   * a cada quadro faria a UI re-renderizar 60 vezes por segundo à toa.
+   */
+  private publishMinimap(dt: number): void {
+    this.minimapAcc += dt;
+    if (this.minimapAcc < 0.1) return;
+    this.minimapAcc = 0;
+    const me = this.actors.get(this.localKey());
+    if (!me) return;
+    const mySession = this.connection?.sessionId ?? this.localKey();
+    let friend: MinimapState['friend'] = null;
+    let guide: MinimapState['guide'] = null;
+    const poses = this.connection ? this.connection.poses() : [];
+    for (const pose of poses) {
+      if (pose.isLocal) continue;
+      if (this.opts.markedFriendId && pose.id === this.opts.markedFriendId) friend = { x: pose.x, z: pose.z, name: pose.name };
+      if (pose.npc && pose.guideTo && pose.guideTo === mySession) {
+        guide = { npc: { x: pose.x, z: pose.z, name: pose.name }, dest: { x: pose.guideX ?? 0, z: pose.guideZ ?? 0 } };
+      }
+    }
+    let target: MinimapState['target'] = null;
+    if (this.interaction?.kind === 'portal') target = { id: this.interaction.id, x: this.interaction.portal.x, z: this.interaction.portal.z };
+    else if (this.interaction?.kind === 'npc') {
+      const a = this.actors.get(this.interaction.sessionId);
+      if (a) target = { id: this.interaction.id, x: a.avatar.root.position.x, z: a.avatar.root.position.z };
+    }
+    const p = me.avatar.root.position;
+    useMinimapStore.getState().set({
+      sceneId: this.sceneId,
+      player: { x: p.x, z: p.z, yaw: me.yaw },
+      portals: (PORTALS[this.sceneId] ?? []).map((pt) => ({ id: pt.id, label: pt.label, x: pt.x, z: pt.z })),
+      target,
+      friend,
+      gig: this.gigTarget,
+      guide,
+    });
   }
 
   /** O alvo atual da interação (a UI pergunta ao apertar E). */

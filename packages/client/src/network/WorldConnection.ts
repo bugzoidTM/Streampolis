@@ -475,6 +475,9 @@ function toRenderPose(player: PlayerView, sessionId: string, isLocal: boolean): 
     isLocal,
     npc: player.npc === true,
     lookAt: player.lookAt || '',
+    guideTo: player.guideTo || '',
+    guideX: player.guideX ?? 0,
+    guideZ: player.guideZ ?? 0,
   };
 }
 

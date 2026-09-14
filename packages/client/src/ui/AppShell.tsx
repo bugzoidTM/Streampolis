@@ -145,7 +145,7 @@ export function AppShell(props: AppShellProps) {
         // A cena vem do game server, que é quem tem o socket; ela só é usada
         // como PLANO B (a cena para onde cair se o shard estiver cheio), e uma
         // cena desconhecida cai na praça lá dentro.
-        ? { kind: 'meet', roomId: presence.roomId, sceneId: presence.sceneId as SceneId }
+        ? { kind: 'meet', roomId: presence.roomId, sceneId: presence.sceneId as SceneId, friendId: userId }
         : { kind: 'watch', roomId: presence.roomId });
     } catch (err) {
       setRecado(err instanceof ApiError ? err.message : 'Não foi possível descobrir onde essa pessoa está.');

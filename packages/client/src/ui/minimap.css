@@ -1,0 +1,14 @@
+/* Minimapa: canto inferior direito, acima da barra. */
+.minimap {
+  position: fixed;
+  right: max(env(safe-area-inset-right), 14px);
+  bottom: calc(max(env(safe-area-inset-bottom), 14px) + 88px);
+  z-index: 24;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+  opacity: 0.92;
+}
+@media (max-width: 620px) {
+  .minimap { transform: scale(0.72); transform-origin: bottom right; }
+}

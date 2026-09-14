@@ -227,6 +227,25 @@ mundo desde a migração v2 — com o avatar dançando na tela.
   a ≤16 m) ou quando ele é o alvo; some em ~0,3 s. A marca NPC não sai de
   personagem nenhum (PRD §25). Jogador continua com a placa sempre.
 
+## Minimapa, guia do personagem e letreiro de região
+
+- **Minimapa** (`ui/Minimap.tsx`, canvas em rAF lendo `useMinimapStore`, que
+  o World escreve a 10 Hz em `publishMinimap`): a área da cena atual como
+  quadro (disco/retângulo de `SCENE_AREA`), colisores maiores como sombra,
+  portas (a escolhida acende), alvo da interação, amigo marcado (`?friend=`
+  / `intent.friendId` do "Encontrar", enquanto estiver na sala), parada do
+  bico (`gigTarget`) e o guia. Não é mapa mundial.
+- **Guia** (`MSG.guide`, `PlayerState.guideTo/guideX/guideZ`): só a permissão
+  `npc` escreve; a sala valida (sessão na sala, destino dentro da área) e
+  limpa quando o guiado sai. O worker declara em `World.guide` quando o Nilo
+  (`go_to` guiando) ou um social (`take_me`) leva alguém, e encerra ao chegar,
+  desistir ou trocar de ação. O cliente do guiado desenha o guia e o destino.
+- **Letreiro de região** (`RegionBanner`, `useRegionStore.enter`): disparado
+  em `WorldView` quando o mundo APARECE (não na montagem da cena atrás da
+  tela de carregamento); 3,2 s, `pointer-events: none`. Nota: screenshots do
+  `tools/shoot.mjs` desligam animações e o pegam já invisível — conferir pelo
+  DOM (`.region`).
+
 ## Portas e onde se nasce
 
 Duas tabelas em `packages/shared`: `portals.ts` (onde estão as portas) e os

@@ -32,6 +32,10 @@ export interface PlayerView {
   npc?: boolean;
   /** Para quem está olhando (sessionId), quando a sala sabe; '' = ninguém em especial. */
   lookAt?: string;
+  /** Um personagem guiando alguém: a sessão guiada e o destino (só desenho: minimapa). */
+  guideTo?: string;
+  guideX?: number;
+  guideZ?: number;
 }
 
 export interface ListLike<V> extends Iterable<V> {
@@ -118,4 +122,8 @@ export interface RenderPose {
   npc?: boolean;
   /** Alvo do Head Look vindo da sala (sessionId); vazio = a escolha local de sempre. */
   lookAt?: string;
+  /** Personagem guiando esta sessão (ou outra): quem, e para onde. */
+  guideTo?: string;
+  guideX?: number;
+  guideZ?: number;
 }

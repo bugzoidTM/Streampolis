@@ -153,3 +153,31 @@ it('o clima do mundo chega no estado e é o que a fórmula compartilhada (ou o o
   assert.equal(weatherAt(0, 120, 'rain'), 'rain');
   await ana.leave();
 });
+
+it('MSG.guide: só personagem declara quem guia e para onde; some quando o guiado sai', async () => {
+  const guia = await join('npc:guia');
+  const ana = await join('ana2');
+  const beto = await join('beto2');
+  const anaSession = ana.sessionId;
+  guia.send('guide', { sessionId: anaSession, x: 5, z: 7 });
+  await until(() => ana.state.players.get(guia.sessionId)?.guideTo === anaSession, 'guia declarado');
+  const g = ana.state.players.get(guia.sessionId)!;
+  assert.equal(g.guideX, 5);
+  assert.equal(g.guideZ, 7);
+  // Um jogador não guia ninguém, por mais que mande.
+  beto.send('guide', { sessionId: anaSession, x: 1, z: 1 });
+  await delay(200);
+  assert.equal(ana.state.players.get(beto.sessionId)?.guideTo, '');
+  // Fora da área: ignorado; limpar com '' funciona.
+  guia.send('guide', { sessionId: anaSession, x: 9999, z: 0 });
+  await delay(150);
+  assert.equal(ana.state.players.get(guia.sessionId)?.guideX, 5);
+  guia.send('guide', { sessionId: '', x: 0, z: 0 });
+  await until(() => beto.state.players.get(guia.sessionId)?.guideTo === '', 'encerrado');
+  // Guiado sai: a sala limpa sozinha.
+  guia.send('guide', { sessionId: anaSession, x: 5, z: 7 });
+  await until(() => beto.state.players.get(guia.sessionId)?.guideTo === anaSession, 'de novo');
+  await ana.leave();
+  await until(() => beto.state.players.get(guia.sessionId)?.guideTo === '', 'limpo ao sair');
+  await Promise.all([guia.leave(), beto.leave()]);
+});

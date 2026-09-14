@@ -291,6 +291,11 @@ export class SocialMind implements Mind {
       GATHERINGS.leave(prev.g, this.npc.id);
       this.gatherCooldownUntil = Date.now() + GATHER.cooldownMs;
     }
+    if (prev.kind === 'guide' && a !== prev) this.world.guide(null, null);
+    if (a.kind === 'guide') {
+      const place = placesOf(this.npc.sceneId).find((p) => p.name === a.place);
+      if (place) this.world.guide(a.userId, place.standing);
+    }
     if (a.kind !== 'follow' && a.kind !== 'guide') walker.release();
     this.activity = a;
     // Só o que envolve alguém vai ao log: passear e sentar a cada minuto seriam ruído.

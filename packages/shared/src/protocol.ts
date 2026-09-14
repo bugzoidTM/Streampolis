@@ -27,6 +27,13 @@ export interface EmoteIntent { anim: AnimState }
  * personagem conversando com alguém olharia para quem está assistindo.
  */
 export interface LookIntent { sessionId: string }
+/**
+ * "Estou levando fulano até (x,z)": um PERSONAGEM declara quem guia e para
+ * onde, para o cliente da pessoa guiada desenhar o destino e o guia no
+ * minimapa. Só a permissão `npc` pode mandar; `sessionId: ''` encerra. A sala
+ * só relê e replica — nenhuma regra de jogo depende disto.
+ */
+export interface GuideIntent { sessionId: string; x: number; z: number }
 export interface GiftIntent {
   giftId: string;
   quantity: number;
@@ -247,6 +254,7 @@ export const MSG = {
   chat: 'chat',
   emote: 'emote',
   look: 'look',
+  guide: 'guide',
   gift: 'gift',
   like: 'like',
   goLive: 'goLive',

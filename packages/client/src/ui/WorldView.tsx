@@ -13,6 +13,10 @@ import { WorldChat } from './chat/WorldChat.js';
 import { EmoteBar } from './EmoteBar.js';
 import { RosterPanel } from './RosterPanel.js';
 import { WorldClock } from './WorldClock.js';
+import { Minimap } from './Minimap.js';
+import { RegionBanner } from './RegionBanner.js';
+import { useRegionStore } from '../state/useMinimapStore.js';
+import { SCENES } from '@streampolis/shared';
 import { InteractionPrompt } from './InteractionPrompt.js';
 import type { InteractionTarget } from '../game/World.js';
 import { GigPanel } from './GigPanel.js';
@@ -163,6 +167,7 @@ export function WorldView(props: WorldViewProps) {
         displayName: props.displayName,
         avatar: props.avatar,
         onInteraction: (t) => { if (!cancelled) setInteraction(t); },
+        markedFriendId: props.intent.kind === 'meet' ? props.intent.friendId : undefined,
       });
 
       Object.assign(window as object, {
@@ -182,6 +187,9 @@ export function WorldView(props: WorldViewProps) {
       await world.start((report) => { if (!cancelled) setProgress(report); });
       if (cancelled) return;
       setReady(world);
+      // O letreiro de região entra quando o MUNDO aparece — não quando a cena
+      // é montada atrás da tela de carregamento, senão passa sem ninguém ver.
+      useRegionStore.getState().enter(SCENES[world.sceneId]?.name ?? world.sceneId);
       // Sem servidor a pílula do canto precisa DIZER isso. Ela mostrava a
       // descrição da intenção ("Praça Central"), que não é aviso nenhum —
       // sobra do tempo em que esta mesma pílula também anunciava o
@@ -250,6 +258,10 @@ export function WorldView(props: WorldViewProps) {
       {/* A hora do mundo, como a sala a publica. Fica fora da live pelo mesmo
           motivo do chat: lá o tempo que importa é o da transmissão. */}
       <WorldClock hidden={inLive || props.paused === true || status === 'loading'} />
+      {/* O minimapa da cena e o letreiro de região. Fora da live (lá o quadro é
+          a transmissão) e enquanto uma tela cobre o mundo. */}
+      <Minimap hidden={inLive || props.paused === true || status === 'loading'} />
+      {!inLive && !props.paused && status !== 'loading' && <RegionBanner />}
 
       {props.onOpenProfile && (
         <RosterPanel

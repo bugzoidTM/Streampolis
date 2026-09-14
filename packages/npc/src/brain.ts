@@ -308,6 +308,7 @@ export class Brain implements Mind {
 
   /** Troca a ação em curso. Vem do modelo (via `parseAction`) ou do próprio tique. */
   setAction(action: Action): void {
+    if (this.action.type === 'go_to' && this.action.guiding) this.world.guide(null, null);
     this.action = action;
     const now = Date.now();
     this.actionUntil = action.type === 'follow' ? now + FOLLOW_TTL_MS
@@ -318,6 +319,7 @@ export class Brain implements Mind {
       // Guiando: as pernas esperam quem fica para trás (`ESCORT`); sozinho, é só ir.
       const who = action.guiding?.userId;
       this.world.walker.guide(action.place.standing, who ? this.world.tracker(who) : null);
+      if (who) this.world.guide(who, action.place.standing);
     }
     if (action.type === 'sit') {
       const me = this.world.position;
@@ -347,9 +349,11 @@ export class Brain implements Mind {
       if (a.guiding && now > this.actionUntil) {
         // Esperou demais por quem ficou para trás: chega sozinho e volta a passear.
         a.guiding = null;
+        this.world.guide(null, null);
         if (walker.destination) walker.guide(a.place.standing, null);
       }
       if (walker.idle && Math.hypot(a.place.standing.x - me.x, a.place.standing.z - me.z) <= 1.2) {
+        this.world.guide(null, null);
         // Chegou: fica um tempo ali antes de voltar a passear.
         this.action = { type: 'stay' };
         this.lingerUntil = now + 45_000;
@@ -357,7 +361,7 @@ export class Brain implements Mind {
       } else if (walker.idle) {
         // Desistiu no caminho (preso, ou quem guiava sumiu): tenta de novo poucas vezes e para.
         if (this.goToRetries++ < 3) walker.guide(a.place.standing, a.guiding ? this.world.tracker(a.guiding.userId) : null);
-        else { this.action = { type: 'stay' }; this.lingerUntil = now + 20_000; }
+        else { this.world.guide(null, null); this.action = { type: 'stay' }; this.lingerUntil = now + 20_000; }
       }
       return;
     }
