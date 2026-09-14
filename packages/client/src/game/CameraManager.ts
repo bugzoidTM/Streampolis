@@ -83,8 +83,30 @@ export class CameraManager {
   pitch = 0.18;
   distance = 2.82;
 
-  /** Objects the camera must not pass through; usually the scene's colliders. */
-  obstacles: THREE.Object3D[] = [];
+  /**
+   * Malhas que a câmera não atravessa. Atribuir aqui (raízes da cena) achata
+   * a lista em MALHAS uma vez — o raio de cada quadro corre sobre uma lista
+   * plana, sem `traverse` por quadro, e já sem o que a câmera atravessa
+   * (feixes, marcas, sprites, linhas, corpos de avatar).
+   */
+  set obstacles(roots: THREE.Object3D[]) {
+    const meshes: THREE.Object3D[] = [];
+    for (const root of roots) {
+      root.traverse((o) => {
+        if (passesThrough(o)) return;
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || (o as THREE.Sprite).isSprite) return;
+        meshes.push(o);
+      });
+    }
+    this.solids = meshes;
+  }
+
+  get obstacles(): THREE.Object3D[] {
+    return this.solids;
+  }
+
+  private solids: THREE.Object3D[] = [];
 
   private target = new THREE.Vector3();
   private smoothTarget = new THREE.Vector3();
@@ -201,26 +223,53 @@ export class CameraManager {
     }
   }
 
-  /** Shortens the boom so the camera does not end up inside geometry. */
+  // Reaproveitados a cada quadro: cinco raios por quadro não podem alocar cinco vetores.
+  private readonly castDir = new THREE.Vector3();
+  private readonly castFrom = new THREE.Vector3();
+  private readonly castTo = new THREE.Vector3();
+  private readonly castRight = new THREE.Vector3();
+  private readonly castUp = new THREE.Vector3();
+
+  /**
+   * Encurta o braço para a câmera não acabar dentro de parede, coluna ou
+   * móvel.
+   *
+   * Cinco raios, do alvo até a posição DESEJADA (com o deslocamento lateral
+   * do enquadramento, que o raio antigo ignorava): o central e quatro
+   * "bigodes" deslocados nos cantos do plano próximo, com 22 cm de margem.
+   * Um raio só passava ao lado de uma coluna fina enquanto o canto do quadro
+   * já estava dentro dela. O menor acerto manda; quem decide o ritmo é
+   * `update`: entra rápido, volta devagar quando o obstáculo some.
+   */
   private collide(desired: number): number {
-    if (this.obstacles.length === 0) return desired;
+    if (this.solids.length === 0) return desired;
     const cp = Math.cos(this.pitch);
-    const dir = new THREE.Vector3(
-      Math.sin(this.yaw) * cp,
-      Math.sin(this.pitch),
-      Math.cos(this.yaw) * cp,
-    );
-    this.ray.set(this.smoothTarget, dir);
-    this.ray.far = desired;
-    const hits = this.ray.intersectObjects(this.obstacles, true);
-    // Nem toda geometria é parede. Feixes de luz, marcas no chão e brilhos
-    // aditivos são decoração que a câmera atravessa — tratá-los como obstáculo
-    // encurtava o braço para 1,5 m toda vez que um refletor cruzava o caminho,
-    // e o enquadramento da live virava um close no umbigo do host.
-    const blocker = hits.find((hit) => !passesThrough(hit.object));
-    if (!blocker) return desired;
+    this.castDir.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp);
+    this.castRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    this.castTo.copy(this.smoothTarget).addScaledVector(this.castDir, desired).addScaledVector(this.castRight, this.offsetX);
+    this.castDir.copy(this.castTo).sub(this.smoothTarget);
+    const span = this.castDir.length();
+    if (span < 1e-4) return desired;
+    this.castDir.divideScalar(span);
+    this.castUp.crossVectors(this.castRight, this.castDir).normalize();
+
+    const MARGIN = 0.22;
+    let nearest = Infinity;
+    const offsets: Array<[number, number]> = [[0, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+    for (const [rx, uy] of offsets) {
+      this.castFrom.copy(this.smoothTarget)
+        .addScaledVector(this.castRight, rx * MARGIN)
+        .addScaledVector(this.castUp, uy * MARGIN);
+      this.ray.set(this.castFrom, this.castDir);
+      this.ray.far = span;
+      // A lista já é só de malhas sólidas (ver `obstacles`): nem feixe de
+      // luz, nem marca de chão, nem corpo de avatar.
+      const hit = this.ray.intersectObjects(this.solids, false)[0];
+      if (hit && hit.distance < nearest) nearest = hit.distance;
+    }
+    if (nearest === Infinity) return desired;
     // Keep the near plane clear of the surface we hit.
-    return Math.max(this.limits.minDistance, blocker.distance - 0.28);
+    return Math.max(this.limits.minDistance, Math.min(desired, nearest - 0.28));
   }
 
   resize(width: number, height: number) {

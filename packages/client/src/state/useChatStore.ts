@@ -8,6 +8,9 @@ interface ChatState {
   limit: ChatRateLimit;
   draft: string;
   setDraft: (v: string) => void;
+  /** Contador que a UI observa para levar o foco ao campo (a interação "Falar com…"). */
+  focusTick: number;
+  requestFocus: () => void;
   /**
    * Manda a mensagem. Conectado, ela vai pelo socket e VOLTA pelo servidor —
    * sem eco local, porque o servidor é quem decide se a mensagem existe, se foi
@@ -26,6 +29,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   limit: { remaining: 3, capacity: 5, resetAt: Date.now() + 6_400, maxLength: 140 },
   draft: '',
   setDraft: (v) => set({ draft: v.slice(0, get().limit.maxLength) }),
+  focusTick: 0,
+  requestFocus: () => set((s) => ({ focusTick: s.focusTick + 1 })),
   send: () => {
     const { draft, limit, messages } = get();
     const text = draft.trim();

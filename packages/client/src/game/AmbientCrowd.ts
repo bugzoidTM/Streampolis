@@ -110,6 +110,8 @@ export class AmbientCrowd {
 
   constructor(scene: THREE.Scene, routines: readonly Routine[], budget: number) {
     this.root.name = 'ambient-crowd';
+    // Figurante não é parede para a câmera.
+    this.root.userData.noCameraCollision = true;
     scene.add(this.root);
 
     const count = Math.min(budget, routines.length);

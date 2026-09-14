@@ -13,7 +13,8 @@ import { WorldChat } from './chat/WorldChat.js';
 import { EmoteBar } from './EmoteBar.js';
 import { RosterPanel } from './RosterPanel.js';
 import { WorldClock } from './WorldClock.js';
-import { PortalPrompt } from './PortalPrompt.js';
+import { InteractionPrompt } from './InteractionPrompt.js';
+import type { InteractionTarget } from '../game/World.js';
 import { GigPanel } from './GigPanel.js';
 import { GigTracker } from './GigTracker.js';
 import { GigDock } from './GigDock.js';
@@ -80,7 +81,7 @@ export function WorldView(props: WorldViewProps) {
   const [message, setMessage] = useState<string>(describeIntent(props.intent));
   const [inLive, setInLive] = useState(false);
   const [progress, setProgress] = useState<LoadReport | null>(null);
-  const [portal, setPortal] = useState<Portal | null>(null);
+  const [interaction, setInteraction] = useState<InteractionTarget | null>(null);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -161,7 +162,7 @@ export function WorldView(props: WorldViewProps) {
         tier: props.tier,
         displayName: props.displayName,
         avatar: props.avatar,
-        onPortal: (p) => { if (!cancelled) setPortal(p); },
+        onInteraction: (t) => { if (!cancelled) setInteraction(t); },
       });
 
       Object.assign(window as object, {
@@ -275,7 +276,7 @@ export function WorldView(props: WorldViewProps) {
       {/* "Acessar outros locais" é outra delas. Numa live não: quem está
           transmitindo não atravessa uma porta sem querer. */}
       {!inLive && !props.paused && props.onTravel && (
-        <PortalPrompt portal={portal} onEnter={props.onTravel} />
+        <InteractionPrompt target={interaction} onEnter={props.onTravel} />
       )}
       {/* A barra decide sozinha se a casa é do jogador; visitante vê a
           mobília do anfitrião e nenhuma alça. */}

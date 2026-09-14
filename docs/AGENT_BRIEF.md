@@ -205,6 +205,28 @@ clássico desta feature.
 ao `Animator`, que só o corpo procedural tem, e respondia `'idle'` para todo
 mundo desde a migração v2 — com o avatar dançando na tela.
 
+## Câmera, interação contextual e placas de personagem
+
+- **Câmera** (`CameraManager.collide`): cinco raios do alvo até a posição
+  DESEJADA (com o deslocamento lateral do enquadramento) — o central e quatro
+  "bigodes" nos cantos do plano próximo com 22 cm de margem; o menor acerto
+  encurta o braço. A lista de obstáculos é achatada em MALHAS uma vez ao
+  atribuir (`camera.obstacles = raízes`), sem o que é atravessável
+  (`makeCameraTransparent`: feixes, marcas, portais, figurantes, chuva e todo
+  corpo de avatar). Entra rápido, volta devagar quando o obstáculo some.
+  Mobília colocada depois (`World.furnish`) reatribui a lista. Controles
+  intocados.
+- **Interação contextual** (`World.pickInteraction` → `InteractionPrompt`):
+  entre portas ao alcance e personagens a até 3,4 m, o alvo é o mais alinhado
+  com a direção da câmera (cosseno − distância), com histerese de 0,15; UM
+  prompt por vez. Porta: E atravessa; personagem: E abre o chat com
+  "Nome, " já escrito e foco no campo (`useChatStore.requestFocus`). A porta
+  destacada no chão é a escolhida (`Portals.activeId`).
+- **Placa de personagem**: discreta — `NameTag.fade` (material próprio, textura
+  do cache) mostra a placa a ≤5 m, quando a câmera olha para ele (cos >0,93
+  a ≤16 m) ou quando ele é o alvo; some em ~0,3 s. A marca NPC não sai de
+  personagem nenhum (PRD §25). Jogador continua com a placa sempre.
+
 ## Portas e onde se nasce
 
 Duas tabelas em `packages/shared`: `portals.ts` (onde estão as portas) e os

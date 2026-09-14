@@ -40,6 +40,7 @@ export function WorldChat({ world, hidden }: WorldChatProps) {
   const draft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
   const send = useChatStore((s) => s.send);
+  const focusTick = useChatStore((s) => s.focusTick);
 
   const [typing, setTyping] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -71,6 +72,15 @@ export function WorldChat({ world, hidden }: WorldChatProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [hidden]);
+
+  // "Falar com Bia" (interação contextual, tecla E): o rascunho já vem com o
+  // nome, e o foco vai para o campo — o resto é a pessoa escrever.
+  useEffect(() => {
+    if (focusTick > 0 && !hidden) {
+      const el = inputRef.current;
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }
+  }, [focusTick, hidden]);
 
   // Relógio de baixa frequência, só para as falas antigas sumirem sozinhas com
   // o painel fechado. 1 Hz: isto não é animação.

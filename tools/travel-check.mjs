@@ -60,7 +60,7 @@ await page.goto(`${CLIENT}/?scene=central_plaza&token=${token}&tier=low`, { wait
 await page.waitForFunction(() => window.__ready === true, { timeout: 180_000 });
 await page.waitForTimeout(600);
 const plaza = await stats();
-check('a praça publica três destinos', plaza.portals === 3, `${plaza.portals}`);
+check('a praça publica quatro destinos (loja, torres e o Distrito Sombra)', plaza.portals === 4, `${plaza.portals}`);
 check('nascer no meio da praça não oferece viagem nenhuma', plaza.portal === null);
 await page.screenshot({ path: 'shots/portal-praca.png', timeout: 120_000 });
 

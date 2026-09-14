@@ -48,3 +48,7 @@
 @media (max-width: 620px) {
   .portal { bottom: calc(var(--sp-s6) + 132px); font-size: 13px; }
 }
+
+/* Falar com um personagem: o mesmo convite, em outra cor. */
+.portal--npc { border-color: rgba(124, 92, 255, 0.55); }
+.portal--npc .portal__key { background: rgba(124, 92, 255, 0.25); }

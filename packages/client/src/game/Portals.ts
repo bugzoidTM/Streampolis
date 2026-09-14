@@ -131,9 +131,13 @@ export class Portals {
   }
 
   /** A porta ao alcance de um ponto, e o brilho de quem está perto. */
+  /** Qual porta acende: por padrão a mais perto ao alcance; a interação contextual pode mandar outra (ou nenhuma). */
+  activeId: string | null | undefined = undefined;
+
   update(dt: number, x: number, z: number): Portal | null {
     this.clock += dt;
-    const near = portalNear(this.sceneId, x, z);
+    const nearest = portalNear(this.sceneId, x, z);
+    const near = this.activeId === undefined ? nearest : (this.markers.find((m) => m.portal.id === this.activeId)?.portal ?? null);
     // Respiração lenta: um anel estático some no chão de pedra, e um anel
     // piscando forte lê como alerta de erro.
     const pulse = 0.62 + Math.sin(this.clock * 1.6) * 0.12;
@@ -148,7 +152,12 @@ export class Portals {
       beam.opacity = active ? 0.30 : 0.15;
       m.group.scale.setScalar(active ? 1.06 : 1);
     }
-    return near;
+    return nearest;
+  }
+
+  /** Todas as portas ao alcance de um ponto (o raio de cada uma), para a interação escolher. */
+  inReach(x: number, z: number): Portal[] {
+    return this.markers.map((m) => m.portal).filter((p) => Math.hypot(x - p.x, z - p.z) <= p.r);
   }
 
   dispose(): void {

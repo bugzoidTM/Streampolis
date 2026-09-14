@@ -15,10 +15,15 @@ import {
 } from '@streampolis/shared';
 import { Renderer } from './Renderer.js';
 import { LoadTracker, type LoadReport } from './assets/loading.js';
-import { CameraManager } from './CameraManager.js';
+import { CameraManager, makeCameraTransparent } from './CameraManager.js';
 import { InputManager } from './InputManager.js';
 import type { AvatarLike, ProceduralFrame } from './avatar/AvatarLike.js';
 import { crowdParts } from './AmbientCrowd.js';
+
+/** As raízes da cena que contam como obstáculo de câmera: tudo, menos o que se marcou atravessável. */
+function scene_children(scene: { scene: THREE.Scene } | null): THREE.Object3D[] {
+  return scene ? [...scene.scene.children] : [];
+}
 import { useClockStore } from '../state/useClockStore.js';
 import { createAvatar, isPackaged, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
@@ -42,7 +47,18 @@ import { attachStores } from '../network/bridge.js';
  */
 const REVEAL_FRAME = 4;
 
+/**
+ * O alvo da interação contextual (tecla E / toque): UMA porta ou UM personagem
+ * por vez — o mais alinhado com a direção da câmera entre os que estão ao
+ * alcance, com histerese para não piscar entre dois.
+ */
+export type InteractionTarget =
+  | { kind: 'portal'; id: string; portal: Portal }
+  | { kind: 'npc'; id: string; sessionId: string; userId: string; name: string };
+
 export interface WorldOptions {
+  /** O alvo de interação mudou (ou sumiu). Um só prompt por vez. */
+  onInteraction?: (target: InteractionTarget | null) => void;
   /**
    * Avisa que o jogador entrou (ou saiu) do alcance de uma porta. Quem oferece
    * a viagem é a interface; quem sabe onde o corpo está é o mundo.
@@ -66,6 +82,9 @@ export interface WorldOptions {
 interface Actor {
   /** Id do jogador (o da API), não o da sessão: é por ele que o presente chega. */
   userId: string;
+  name: string;
+  /** Personagem da cidade (PRD §25): placa discreta, alvo de "Falar com…". */
+  npc: boolean;
   /**
    * Tipado pela INTERFACE, não pela classe. É o que faz a troca por um corpo
    * comprado ser uma linha em `createAvatar()` e não uma cirurgia aqui — o
@@ -116,6 +135,9 @@ export class World {
   private offChat: (() => void) | null = null;
   private portals: Portals | null = null;
   private nearPortal: Portal | null = null;
+  private interaction: InteractionTarget | null = null;
+  /** Até onde se "fala com" um personagem pela tecla E. */
+  private static readonly TALK_REACH_M = 3.4;
   /**
    * A parada da vez de um bico (PRD §26). Vive fora da cena pelo mesmo motivo
    * das portas: é navegação, não cenário — e o destino muda de lugar sem que a
@@ -469,6 +491,7 @@ export class World {
         this.opts.onPortal?.(near);
       }
     }
+    if (me) this.pickInteraction(me.avatar.root.position);
 
     if (me && this.gigMarker) {
       const p = me.avatar.root.position;
@@ -547,6 +570,58 @@ export class World {
       avatar: this.opts.avatar ?? DEFAULT_AVATAR,
       isLocal: true,
     };
+  }
+
+  /**
+   * Escolhe o alvo da interação entre portas ao alcance e personagens a até
+   * 3,4 m: pontua pelo alinhamento com a direção da câmera (cosseno) menos um
+   * pouco pela distância; quem está atrás da câmera não conta, salvo colado.
+   * O alvo atual só é trocado por outro claramente melhor (histerese de
+   * 0,15), senão o prompt piscaria entre dois candidatos parecidos.
+   */
+  private pickInteraction(at: THREE.Vector3): void {
+    const fx = -Math.sin(this.camera.yaw);
+    const fz = -Math.cos(this.camera.yaw);
+    const score = (x: number, z: number, reach: number): number | null => {
+      const dx = x - at.x;
+      const dz = z - at.z;
+      const d = Math.hypot(dx, dz);
+      if (d > reach) return null;
+      const cos = d < 1e-3 ? 1 : (dx * fx + dz * fz) / d;
+      if (cos < -0.2 && d > 1.2) return null;
+      return cos - d / (reach * 2);
+    };
+    const options: Array<{ target: InteractionTarget; score: number }> = [];
+    if (this.portals) {
+      for (const portal of this.portals.inReach(at.x, at.z)) {
+        const sc = score(portal.x, portal.z, portal.r + 0.01);
+        if (sc !== null) options.push({ target: { kind: 'portal', id: `portal:${portal.id}`, portal }, score: sc });
+      }
+    }
+    const localKey = this.localKey();
+    for (const [sessionId, actor] of this.actors) {
+      if (sessionId === localKey || !actor.npc || !actor.avatar.root.visible) continue;
+      const p = actor.avatar.root.position;
+      const sc = score(p.x, p.z, World.TALK_REACH_M);
+      if (sc !== null) options.push({ target: { kind: 'npc', id: `npc:${sessionId}`, sessionId, userId: actor.userId, name: actor.name }, score: sc });
+    }
+    options.sort((a, b) => b.score - a.score);
+    const best = options[0] ?? null;
+    const current = this.interaction ? options.find((o) => o.target.id === this.interaction!.id) : undefined;
+    let next: InteractionTarget | null;
+    if (!best) next = null;
+    else if (current && current.score >= best.score - 0.15) next = current.target;
+    else next = best.target;
+    if ((next?.id ?? null) !== (this.interaction?.id ?? null)) {
+      this.interaction = next;
+      this.opts.onInteraction?.(next);
+    }
+    if (this.portals) this.portals.activeId = next?.kind === 'portal' ? next.portal.id : null;
+  }
+
+  /** O alvo atual da interação (a UI pergunta ao apertar E). */
+  get interactionTarget(): InteractionTarget | null {
+    return this.interaction;
   }
 
   private lastCrowdLimit = -1;
@@ -666,6 +741,8 @@ export class World {
       if (actor && !actor.avatar.root.visible) actor.avatar.root.visible = true;
       if (!actor) {
         const avatar = createAvatar(pose.avatar ?? DEFAULT_AVATAR);
+        // Corpo não é parede: a câmera atravessa gente (a sua e a dos outros).
+        makeCameraTransparent(avatar.root);
         // O próprio jogador não ganha placa: em terceira pessoa ela fica entre
         // a câmera e a cabeça dele, e numa live tapa exatamente o que está
         // sendo transmitido.
@@ -676,6 +753,8 @@ export class World {
         this.scene?.scene.add(avatar.root);
         actor = {
           userId: pose.id,
+          name: pose.name,
+          npc: pose.npc === true,
           avatar, tag, bubble: null, yaw: pose.yaw,
           last: new THREE.Vector3(pose.x, pose.y, pose.z),
           speed: 0,
@@ -764,6 +843,20 @@ export class World {
         actor.bubble.dispose();
         actor.bubble = null;
         if (actor.tag) actor.tag.sprite.visible = true;
+      }
+
+      // Placa de personagem é discreta: aparece quando o jogador está perto,
+      // olha para ele ou o tem como alvo de interação; some devagar depois.
+      // Jogador de verdade continua com a placa sempre, e a marca NPC não sai
+      // de personagem nenhum (PRD §25).
+      if (actor.tag && pose.npc && local) {
+        const dx = pose.x - local.x;
+        const dz = pose.z - local.z;
+        const d = Math.hypot(dx, dz);
+        const cos = d < 1e-3 ? 1 : (dx * -Math.sin(this.camera.yaw) + dz * -Math.cos(this.camera.yaw)) / d;
+        const targeted = this.interaction?.kind === 'npc' && this.interaction.sessionId === pose.sessionId;
+        const show = targeted || d <= 5 || (cos > 0.93 && d <= 16);
+        actor.tag.fade(show ? (targeted ? 1 : 0.85) : 0, dt);
       }
     }
 
@@ -908,6 +1001,8 @@ export class World {
     const scene = this.scene as { setPlacements?: (l: readonly HomePlacement[]) => void } | null;
     if (!scene?.setPlacements) return false;
     scene.setPlacements(list);
+    // A mobília nova é parede para a câmera também (a lista é achatada uma vez).
+    this.camera.obstacles = [...scene_children(this.scene)];
     return true;
   }
 

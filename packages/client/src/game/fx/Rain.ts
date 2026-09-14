@@ -161,6 +161,9 @@ export class Rain {
     // bounding volume calculado no build está sempre errado por construção.
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 3;
+    // A câmera atravessa a chuva: a geometria instanciada tem um volume que o
+    // raio da câmera acertaria como se fosse uma parede de 30 m.
+    this.mesh.userData.noCameraCollision = true;
   }
 
   /** Chover ou não, a partir do estado da sala. */

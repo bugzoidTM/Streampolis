@@ -97,11 +97,39 @@ function draw(name: string, gifterLevel: number, npc = false): THREE.SpriteMater
 export class NameTag {
   readonly sprite: THREE.Sprite;
 
+  private alpha = 1;
+
   constructor(name: string, gifterLevel: number, private height: number, private npc = false) {
     // `height` é a ESTATURA do avatar: do chão ao alto do crânio.
-    this.sprite = new THREE.Sprite(draw(name, gifterLevel, npc));
+    this.sprite = new THREE.Sprite(this.materialFor(name, gifterLevel, npc));
     this.sprite.renderOrder = 10;
     this.applyScale();
+  }
+
+  /**
+   * A placa de PERSONAGEM tem opacidade própria (ela some quando ninguém
+   * está perto nem olhando), então recebe uma CÓPIA do material — a textura
+   * continua a do cache compartilhado. Jogador usa o material partilhado.
+   */
+  private materialFor(name: string, gifterLevel: number, npc: boolean): THREE.SpriteMaterial {
+    const base = draw(name, gifterLevel, npc);
+    if (!npc) return base;
+    const own = base.clone();
+    own.transparent = true;
+    own.opacity = 0;
+    this.alpha = 0;
+    return own;
+  }
+
+  /** Alvo de opacidade (0..1), atingido em ~0,3 s. Só faz sentido em placa de personagem. */
+  fade(target: number, dt: number): void {
+    if (!this.npc) return;
+    const k = 1 - Math.exp(-dt / 0.3);
+    this.alpha += (target - this.alpha) * k;
+    if (Math.abs(this.alpha - target) < 0.01) this.alpha = target;
+    const mat = this.sprite.material as THREE.SpriteMaterial;
+    mat.opacity = this.alpha;
+    this.sprite.visible = this.alpha > 0.02;
   }
 
   private applyScale(): void {
@@ -117,14 +145,18 @@ export class NameTag {
 
   set(name: string, gifterLevel: number, height = this.height, npc = this.npc): void {
     this.height = height;
+    if (this.npc) (this.sprite.material as THREE.SpriteMaterial).dispose();
     this.npc = npc;
-    this.sprite.material = draw(name, gifterLevel, npc);
+    this.sprite.material = this.materialFor(name, gifterLevel, npc);
+    if (npc) (this.sprite.material as THREE.SpriteMaterial).opacity = this.alpha;
     this.applyScale();
   }
 
   dispose(): void {
     // The material and its texture live in the shared cache on purpose: two
-    // hundred plaza visitors named the same thing cost one texture.
+    // hundred plaza visitors named the same thing cost one texture. A cópia
+    // da placa de personagem é dela, e vai embora com ela (a textura fica).
+    if (this.npc) (this.sprite.material as THREE.SpriteMaterial).dispose();
     this.sprite.removeFromParent();
   }
 }
