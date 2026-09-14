@@ -8,7 +8,9 @@ import { config } from './config.js';
  */
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
-  max: 4,
+  // Dezenas de personagens num processo, mas quase todos mudos para o banco:
+  // só os cognitivos escrevem a cada fala e os sociais gravam de 30 em 30 s.
+  max: 6,
   options: `-c search_path=${config.dbSchema},pg_catalog`,
 });
 

@@ -31,7 +31,13 @@ export interface RosterPanelProps {
 }
 
 export function RosterPanel({ onOpenProfile, hidden }: RosterPanelProps) {
-  const people = useRoomStore((s) => s.people);
+  const everyone = useRoomStore((s) => s.people);
+  // Pessoas primeiro, personagens depois — e o NÚMERO do cabeçalho conta só
+  // gente (PRD §25: personagem nunca é apresentado como jogador). Com trinta
+  // personagens na praça, "31 por perto" seria uma mentira sobre a cidade.
+  const people = everyone.filter((p) => !p.npc);
+  const characters = everyone.filter((p) => p.npc);
+  const [showCharacters, setShowCharacters] = useState(false);
   // Aberta no computador, recolhida no telefone. `matchMedia` uma vez, no
   // primeiro render: isto é uma preferência inicial, não um layout responsivo
   // — quem recolher a lista numa tela larga quer que ela fique recolhida.
@@ -40,39 +46,54 @@ export function RosterPanel({ onOpenProfile, hidden }: RosterPanelProps) {
   );
 
   // Sozinho na sala não há "quem está aqui": o painel só apareceria para
-  // informar que não há ninguém, o que é pior do que não aparecer.
-  if (hidden || people.length < 2) return null;
+  // informar que não há ninguém, o que é pior do que não aparecer. Personagens
+  // não contam como companhia para esta decisão, mas contam para o painel
+  // existir: uma praça com gente da cidade merece a lista.
+  if (hidden || (people.length < 2 && characters.length === 0)) return null;
 
   return (
     <aside className={`roster${open ? ' is-open' : ''}`} aria-label="Quem está aqui">
       <button type="button" className="roster__head" onClick={() => setOpen(!open)}>
         <span className="roster__dot" aria-hidden />
         <strong>{people.length}</strong>
-        <span className="roster__title">por perto</span>
+        <span className="roster__title">por perto{characters.length > 0 && <small className="roster__npcs"> · {characters.length} personagens</small>}</span>
         <span className="roster__chev" aria-hidden>{open ? '▾' : '▸'}</span>
       </button>
 
       {open && (
         <ul className="roster__list">
-          {people.map((p) => (
-            <li key={p.sessionId}>
-              <button
-                type="button"
-                className={`roster__row${p.isSelf ? ' is-self' : ''}`}
-                onClick={() => onOpenProfile(p.userId)}
-              >
-                <span className="roster__mono" aria-hidden>{(p.name.trim()[0] ?? '?').toUpperCase()}</span>
-                <span className="roster__who">
-                  <span className="roster__name">{p.name}{p.isSelf && ' (você)'}</span>
-                  <small>{legenda(p)}</small>
-                </span>
-                {p.gifterLevel > 0 && <GifterBadge xp={p.gifterXp} compact />}
+          {people.map((p) => <Row key={p.sessionId} p={p} onOpenProfile={onOpenProfile} />)}
+          {characters.length > 0 && (
+            <li className="roster__group">
+              <button type="button" className="roster__grouphead" onClick={() => setShowCharacters(!showCharacters)}>
+                <span>Personagens da cidade ({characters.length})</span>
+                <span className="roster__chev" aria-hidden>{showCharacters ? '▾' : '▸'}</span>
               </button>
             </li>
-          ))}
+          )}
+          {showCharacters && characters.map((p) => <Row key={p.sessionId} p={p} onOpenProfile={onOpenProfile} />)}
         </ul>
       )}
     </aside>
+  );
+}
+
+function Row({ p, onOpenProfile }: { p: RoomPerson; onOpenProfile: (userId: string) => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        className={`roster__row${p.isSelf ? ' is-self' : ''}${p.npc ? ' is-npc' : ''}`}
+        onClick={() => onOpenProfile(p.userId)}
+      >
+        <span className="roster__mono" aria-hidden>{(p.name.trim()[0] ?? '?').toUpperCase()}</span>
+        <span className="roster__who">
+          <span className="roster__name">{p.name}{p.isSelf && ' (você)'}</span>
+          <small>{legenda(p)}</small>
+        </span>
+        {p.gifterLevel > 0 && <GifterBadge xp={p.gifterXp} compact />}
+      </button>
+    </li>
   );
 }
 

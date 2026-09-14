@@ -18,6 +18,13 @@ export interface QualitySettings {
   drawDistance: number;
   /** Decorative crowd NPCs in public scenes. */
   ambientNpcs: number;
+  /**
+   * Quantos PERSONAGENS da cidade (corpos vindos do servidor, PRD §25) são
+   * desenhados ao mesmo tempo — os mais próximos; o resto existe, colide e
+   * fala, mas não é desenhado neste tier. Pessoas de verdade nunca entram
+   * nesta conta: jogador é sempre desenhado.
+   */
+  characterBudget: number;
   anisotropy: number;
   /** Texture resolution divisor for procedurally generated maps. */
   textureScale: number;
@@ -27,17 +34,17 @@ const PRESETS: Record<QualityTier, Omit<QualitySettings, 'tier'>> = {
   low: {
     maxPixelRatio: 1.0, shadows: false, shadowMapSize: 1024, ssao: false,
     bloom: true, smaa: false, grade: true, particleBudget: 250,
-    drawDistance: 90, ambientNpcs: 0, anisotropy: 1, textureScale: 0.5,
+    drawDistance: 90, ambientNpcs: 0, characterBudget: 10, anisotropy: 1, textureScale: 0.5,
   },
   medium: {
     maxPixelRatio: 1.5, shadows: true, shadowMapSize: 2048, ssao: false,
     bloom: true, smaa: true, grade: true, particleBudget: 900,
-    drawDistance: 160, ambientNpcs: 6, anisotropy: 4, textureScale: 1,
+    drawDistance: 160, ambientNpcs: 6, characterBudget: 22, anisotropy: 4, textureScale: 1,
   },
   high: {
     maxPixelRatio: 2.0, shadows: true, shadowMapSize: 4096, ssao: true,
     bloom: true, smaa: true, grade: true, particleBudget: 2400,
-    drawDistance: 260, ambientNpcs: 14, anisotropy: 8, textureScale: 1,
+    drawDistance: 260, ambientNpcs: 14, characterBudget: 40, anisotropy: 8, textureScale: 1,
   },
 };
 

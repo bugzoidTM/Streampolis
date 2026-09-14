@@ -30,11 +30,17 @@ export class NpcError extends Error {
   }
 }
 
+export type NpcKind = 'cognitive' | 'social' | 'ambient';
+
 export interface NpcAgent {
   id: string;
   slug: string;
   displayName: string;
   sceneId: string;
+  /** Classe do personagem (migration 0022): cognitivo (LLM), social (caixa) ou ambiente (rotina). */
+  kind: NpcKind;
+  /** Legenda curta do que ele faz: o papel (ambiente) ou o arquétipo (social). */
+  role: string | null;
   enabled: boolean;
   lastHeartbeat: string | null;
   roomId: string | null;
@@ -47,6 +53,8 @@ interface AgentRow {
   display_name: string;
   avatar: unknown;
   scene_id: string;
+  kind: NpcKind;
+  profile: Record<string, unknown> | null;
   enabled: boolean;
   last_heartbeat: Date | null;
   room_id: string | null;
@@ -57,11 +65,15 @@ const ONLINE_WINDOW_MS = 90_000;
 
 function toAgent(row: AgentRow): NpcAgent {
   const beat = row.last_heartbeat ? row.last_heartbeat.getTime() : 0;
+  const profile = row.profile ?? {};
+  const role = typeof profile.role === 'string' ? profile.role : typeof profile.archetype === 'string' ? profile.archetype : null;
   return {
     id: row.id,
     slug: row.slug,
     displayName: row.display_name,
     sceneId: row.scene_id,
+    kind: row.kind ?? 'cognitive',
+    role,
     enabled: row.enabled,
     lastHeartbeat: row.last_heartbeat ? row.last_heartbeat.toISOString() : null,
     roomId: row.room_id,
@@ -72,7 +84,7 @@ function toAgent(row: AgentRow): NpcAgent {
 async function loadAgent(idOrSlug: string): Promise<AgentRow | null> {
   const bySlug = !/^[0-9a-f-]{36}$/i.test(idOrSlug);
   const { rows } = await pool.query<AgentRow>(
-    `SELECT id, slug, display_name, avatar, scene_id, enabled, last_heartbeat, room_id
+    `SELECT id, slug, display_name, avatar, scene_id, kind, profile, enabled, last_heartbeat, room_id
        FROM npc_agents WHERE ${bySlug ? 'slug' : 'id'} = $1`,
     [idOrSlug],
   );
@@ -146,8 +158,8 @@ async function npcAvatar(raw: unknown): Promise<AvatarConfigDTO> {
 
 export async function listAgents(): Promise<NpcAgent[]> {
   const { rows } = await pool.query<AgentRow>(
-    `SELECT id, slug, display_name, avatar, scene_id, enabled, last_heartbeat, room_id
-       FROM npc_agents ORDER BY created_at`,
+    `SELECT id, slug, display_name, avatar, scene_id, kind, profile, enabled, last_heartbeat, room_id
+       FROM npc_agents ORDER BY kind, scene_id, created_at`,
   );
   return rows.map(toAgent);
 }
@@ -334,6 +346,21 @@ export async function calls(idOrSlug: string, limit: number): Promise<unknown[]>
   const { rows } = await pool.query(
     `SELECT id, tier, purpose, model, ok, error, latency_ms, prompt_chars, reply_chars, created_at
        FROM npc_calls WHERE npc_id = $1 ORDER BY id DESC LIMIT $2`,
+    [row.id, Math.max(1, Math.min(limit, 500))],
+  );
+  return rows;
+}
+
+/**
+ * As relações de um personagem SOCIAL (migration 0022): com quem ele se dá,
+ * quanto, e o que anotou. Para um cognitivo o equivalente é `people`.
+ */
+export async function relations(idOrSlug: string, limit: number): Promise<unknown[]> {
+  const row = await loadAgent(idOrSlug);
+  if (!row) throw new NpcError('NOT_FOUND', 'Personagem não existe.', 404);
+  const { rows } = await pool.query(
+    `SELECT other_id, other_kind, other_name, affinity, stage, encounters, exchanges, facts, first_seen, last_seen, last_greeted, updated_at
+       FROM npc_relations WHERE npc_id = $1 ORDER BY affinity DESC, last_seen DESC LIMIT $2`,
     [row.id, Math.max(1, Math.min(limit, 500))],
   );
   return rows;

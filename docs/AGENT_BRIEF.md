@@ -904,6 +904,50 @@ mexe nos fatos que ele mede, espera o relógio virar e confere o banco pela API 
 inclusive apurando duas vezes de propósito. A flag `events_enabled` (§64) para o
 PAGAMENTO, nunca a leitura.
 
+## Personagens da cidade: três cabeças, um corpo
+
+A cidade tem população (PRD §25): 77 personagens que são clientes Colyseus
+como um navegador — entram pelo matchmaking com token da API (permissão
+`npc`, que só a API emite), andam pela mesma `MovementController`, passam pelo
+mesmo ChatGuard. O código é `packages/npc`; o processo é o serviço `sp-npc`,
+UM para o elenco todo, que lê `npc_agents` a cada 30 s.
+
+O corpo é sempre o mesmo (`world.ts` + `walker.ts`: as pernas a 8 Hz, com
+seguir, guiar, sentar, olhar e microgestos). O que muda é a cabeça
+(`mind.ts`), e a classe é a coluna `npc_agents.kind`:
+
+| classe | cabeça | decide | fala | custo |
+|---|---|---|---|---|
+| `cognitive` | `brain.ts` | um LLM, com persona versionada, memória, diário e auditor | pelo modelo, sanitizada | chamadas ao qwenproxy/chatgptproxy |
+| `social` | `social.ts` | utilidade sobre personalidade × humor × necessidade × **relação** — lista fechada de atividades | `speech.ts`: intenção por regra, resposta por banco de frases | zero |
+| `ambient` | `ambient.ts` | um programa cíclico (ficar/andar/sentar/dançar) | só uma fala de balcão, se o perfil tiver e chamarem pelo nome | zero |
+
+O que tem de continuar verdade:
+
+- **Tudo que reage à posição de alguém mora nas pernas**, não na cabeça: a
+  cabeça tica a cada 2 s, as pernas a 8 Hz. Uma ordem de andar encerra a
+  atenção de conversa (`Walker.setTarget/follow/sitAt` limpam `attention`) —
+  foi um regressão real: o Nilo parava para ouvir e não seguia.
+- **Relação é número e estágio** (`relations.ts`): `stranger < 6 ≤ known < 20
+  ≤ friend < 45 ≤ close`, `grudge ≤ −10`. Ganho por conversa tem teto diário
+  por pessoa; grosseria não tem. Desconhecido pede "vem comigo" e ouve não;
+  amigo, sim. É a caixa — e é o que se testa em `test/population.test.ts`.
+- **Lotação de sala é de PESSOAS** (`hasReachedMaxClients` em
+  `BaseWorldRoom`): personagem não ocupa vaga nem abre shard. Personagem não
+  gera "chegou/saiu" no chat.
+- **O cliente tem orçamento de personagens por tier** (`characterBudget`):
+  desenha os mais próximos e esconde o resto; os figurantes locais
+  (`AmbientCrowd`) cedem lugar um a um (`GameScene.limitCrowd`).
+- **O elenco é gerado** (`scripts/gen-population.mjs` → migration 0022), com
+  cada posto validado contra a planta da cena. Perfil vive em
+  `npc_agents.profile` (programa ou personalidade+cantos+frases).
+- Freios: `npc_enabled` (todos), `npc_ambient_enabled`, `npc_social_enabled`;
+  `npc_agents.enabled` por personagem. Sem redeploy.
+
+Provas: `npm test --workspace @streampolis/npc` (a caixa, sem servidor),
+`npm run e2e` (o Nilo, com modelo de mentira) e `npm run e2e:population`
+(os 77 numa sala de verdade).
+
 ## Animação: do estado na rede ao corpo na tela
 
 `state.anim` viajar não é o avatar se mexer. O caminho completo:

@@ -52,6 +52,16 @@ export const config = {
   presenceHeartbeatMs: num('PRESENCE_HEARTBEAT_MS', 15_000),
 
   cityCapacity: num('CITY_CAPACITY', 36),
+  /**
+   * Quantos PERSONAGENS (PRD §25) cabem numa sala além da lotação de pessoas.
+   *
+   * A lotação de uma sala conta só gente de verdade: um bairro com trinta
+   * personagens e lotação 36 deixaria seis cadeiras para jogadores e abriria
+   * um segundo shard vazio de personagens. `maxClients` do Colyseus vira
+   * lotação + esta folga (teto físico), e a trava do matchmaking passa a ser
+   * "pessoas + assentos reservados ≥ lotação" (ver `hasReachedMaxClients`).
+   */
+  npcHeadroom: num('NPC_HEADROOM', 48),
   cityAoiRadius: num('CITY_AOI_RADIUS', 24),
   cityAoiLeaveRadius: num('CITY_AOI_LEAVE_RADIUS', 28),
   apartmentCapacity: num('APARTMENT_CAPACITY', 12),

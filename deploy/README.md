@@ -363,36 +363,62 @@ só existe no worker que a criou.
 igual aos outros subdomínios da casa. O certificado é do Let's Encrypt via
 desafio HTTP-01 do próprio Traefik.
 
-## O personagem da cidade (NPC)
+## Os personagens da cidade (NPC)
 
-Desde 12/09/2026 a praça tem um morador: **Nilo**, o primeiro personagem da
-cidade (PRD §25). É o serviço `sp-npc` — um processo que entra na sala pelo
-gateway como um navegador entraria, com token da API (`POST /internal/npc/token`,
-que é a única fonte da permissão `npc`), conversa com quem fala com ele,
-lembra das pessoas e, de tempos em tempos, escreve um diário e propõe uma
-versão nova da própria persona, que um auditor (segundo chamado de LLM) aprova
-ou deixa pendente. Código em `packages/npc`; tabelas `npc_*` na migration 0021.
+Desde 12/09/2026 a praça tem um morador — **Nilo** — e desde 14/09/2026 a
+cidade tem **população**: 77 personagens em seis cenas, de três classes (a
+classe é a coluna `npc_agents.kind`, migration 0022):
+
+| classe | o que é | quantos | custo |
+|---|---|---|---|
+| `cognitive` | guiado por LLM: persona versionada, memória, diário, reflexão com auditor | 2 (Nilo na praça, **Dalva** no Distrito Sombra) | chamadas ao qwenproxy/chatgptproxy (teto diário `NPC_DAILY_CALL_BUDGET`, 900) |
+| `social` | parece ter vontade — e tem, dentro de uma caixa: personalidade em cinco números, humor, necessidades e **relações** que crescem e esfriam (`npc_relations`); intenção por regra, resposta por banco de frases | 15 | zero LLM |
+| `ambient` | máquina de estados sobre um programa (ficar, andar, sentar, dançar); mudo, salvo uma fala de balcão para quem o chama pelo nome | 60 | zero LLM |
+
+Todos são o serviço `sp-npc` — UM processo que lê o elenco do banco a cada
+30 s e entra na sala com cada corpo pelo gateway, como um navegador entraria,
+com token da API (`POST /internal/npc/token`, a única fonte da permissão
+`npc`). O código está em `packages/npc` (`mind.ts` explica as três cabeças;
+`social.ts` é a caixa; `ambient.ts` a rotina; `brain.ts` o cognitivo). O
+elenco é GERADO: `packages/npc/scripts/gen-population.mjs` escreve a
+migration 0022 validando cada posto contra a planta da cena — para mudar um
+personagem de lugar, mude o gerador e gere de novo (ou dê um UPDATE em
+`npc_agents.profile`, que o processo relê em meio minuto).
+
+Duas regras do servidor que vieram com a população: a **lotação de uma sala
+conta só pessoas** (`hasReachedMaxClients` em `BaseWorldRoom`; `NPC_HEADROOM`
+é a folga física para personagens) e personagem não gera "fulano chegou" no
+chat. No cliente, o tier de qualidade tem um `characterBudget` (10/22/40): só
+os personagens mais próximos são desenhados, e os figurantes locais cedem
+lugar a eles um a um.
 
 O que se opera pelo painel (rotas `/admin/npc/*`, moderador lê, admin mexe):
 
 ```
-GET  /admin/npc                                  quem existe, online?, última batida
+GET  /admin/npc                                  o elenco: classe, papel, online?, última batida
 GET  /admin/npc/nilo                             persona ativa, contagens, custo do dia
 GET  /admin/npc/nilo/persona                     todas as versões, com o veredito do auditor
 POST /admin/npc/nilo/persona/:v/activate         aprovar uma pendente OU reverter para antiga
 POST /admin/npc/nilo/persona/:v/reject           recusar uma pendente
-PUT  /admin/npc/nilo/enabled                     {enabled:false} tira SÓ este personagem
-GET  /admin/npc/nilo/memory|diary|people|calls   o que ele viveu, escreveu, conhece e gastou
+PUT  /admin/npc/bia/enabled                      {enabled:false} tira SÓ este personagem
+GET  /admin/npc/nilo/memory|diary|people|calls   o que um cognitivo viveu, escreveu, conhece e gastou
+GET  /admin/npc/bia/relations                    com quem um social se dá, quanto, e o que anotou
 PUT  /admin/flags/npc_enabled                    o freio de mão de TODOS os personagens
+PUT  /admin/flags/npc_ambient_enabled            só os de ambiente (se 60 corpos pesarem, tira-se a classe)
+PUT  /admin/flags/npc_social_enabled             só os sociais
 ```
 
-Desligar pela flag não exige redeploy: o worker lê o banco a cada 30 s, sai da
-sala e fica esperando. `docker service logs streampolis_sp-npc` mostra cada
-fala recusada, cada reflexão e cada reconexão; `/health` na porta 8791 (só na
-rede interna) diz se está conectado, em que sala, com que versão de persona e
-quanto do orçamento diário de chamadas já foi.
+Desligar pela flag não exige redeploy: o worker lê o banco a cada 30 s, tira
+os corpos da sala e fica esperando. `docker service logs streampolis_sp-npc`
+mostra cada fala recusada, cada reflexão e cada reconexão; `/health` na porta
+8791 (só na rede interna) lista todos (`agents[]`, `byKind`) e, para
+compatibilidade, os campos antigos do Nilo no topo.
 
 O e2e do personagem (`npm run e2e --workspace @streampolis/npc`) sobe o game
 server, um banco de dev e um modelo de MENTIRA, e prova o contrato inteiro:
 entrada com a marca, resposta a quem fala, diário → proposta → auditoria →
-versão nova, reversão pelo banco e freio de mão.
+versão nova, reversão pelo banco e freio de mão. O da população
+(`npm run e2e:population`) põe os 77 na sala de uma vez e prova que ninguém
+ocupa vaga de gente, que um social responde sem modelo e recusa seguir
+desconhecido, que um figurante mudo só se vira, e que o freio por classe
+tira só a classe.

@@ -166,6 +166,14 @@ export class Walker {
     this.senses = senses;
   }
 
+  /**
+   * Postura mantida enquanto parado. 'gesture' (dançar, bater palma): sem o
+   * meio passo de lado dos microgestos — um passo derruba o gesto na sala;
+   * olhar ao redor fica. 'seated' (sentado num sofá, sem vaga de banco): só
+   * a cabeça se mexe — virar o corpo sentado lê como deslizar pelo assento.
+   */
+  hold: 'free' | 'gesture' | 'seated' = 'free';
+
   get destination(): Point | null {
     return this.target;
   }
@@ -221,8 +229,13 @@ export class Walker {
     return d;
   }
 
-  /** Ir a um ponto. Cancela seguir, guiar e sentar; `stay` continua (é a ordem em vigor). */
+  /**
+   * Ir a um ponto. Cancela seguir, guiar e sentar; `stay` continua (é a ordem
+   * em vigor). Encerra também a atenção da conversa: uma ordem de andar dada
+   * no meio dela ("vem comigo") vale mais que ficar parado ouvindo.
+   */
   setTarget(p: Point | null): void {
+    this.attention = null;
     this.unfollow();
     this.suspendedFollow = null;
     this.escort = null;
@@ -256,6 +269,7 @@ export class Walker {
    */
   follow(who: () => Someone | null): void {
     this.stop();
+    this.attention = null;
     this.stayAnchor = null;
     this.facing = null;
     this.followed = who;
@@ -303,6 +317,7 @@ export class Walker {
 
   /** Ir sentar numa vaga: anda até ela, vira de costas para o banco e pede o gesto. */
   sitAt(seat: SeatSpot): void {
+    this.attention = null;
     if (this.followed) this.suspendedFollow = this.followed;
     this.unfollow();
     this.escort = null;
@@ -589,7 +604,7 @@ export class Walker {
         this.lookWanted = who.sessionId;
         // O corpo só acompanha se a pessoa saiu muito do campo de visão.
         const want = Math.atan2(who.x - current.x, who.z - current.z);
-        if (this.lastYaw !== null && Math.abs(angleDiff(want, this.lastYaw)) > 1.0) {
+        if (this.hold !== 'seated' && this.lastYaw !== null && Math.abs(angleDiff(want, this.lastYaw)) > 1.0) {
           this.gesture = { kind: 'glance', targetYaw: want };
         }
         return [];
@@ -613,9 +628,10 @@ export class Walker {
       const who = near[Math.floor(rng() * near.length)]!;
       this.gesture = { kind: 'watch', who, until: now + IDLE.watchMinMs + rng() * (IDLE.watchMaxMs - IDLE.watchMinMs) };
       const want = Math.atan2(who.x - current.x, who.z - current.z);
-      if (this.lastYaw !== null && Math.abs(angleDiff(want, this.lastYaw)) > 1.0) this.gesture = { kind: 'glance', targetYaw: want };
+      if (this.hold !== 'seated' && this.lastYaw !== null && Math.abs(angleDiff(want, this.lastYaw)) > 1.0) this.gesture = { kind: 'glance', targetYaw: want };
       return this.idleIntents(current, steps, now, rng);
     }
+    if (this.hold === 'seated') return [];
     if (roll < 0.8 || this.lastYaw === null) {
       const base = this.lastYaw ?? 0;
       const amount = IDLE.glanceMin + rng() * (IDLE.glanceMax - IDLE.glanceMin);
@@ -623,6 +639,7 @@ export class Walker {
       return this.idleIntents(current, steps, now, rng);
     }
     // Mudar o apoio: meio passo para um lado livre, curto o bastante para não virar caminhada.
+    if (this.hold !== 'free') return [];
     const side = rng() < 0.5 ? 1 : -1;
     const yaw = this.lastYaw ?? 0;
     const dir = { x: Math.cos(yaw) * side, z: -Math.sin(yaw) * side };

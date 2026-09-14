@@ -2,7 +2,7 @@ import type { Client } from '@colyseus/core';
 import { CITY_SCENE_IDS, SCENES, type SceneId } from '../shared.js';
 import type { AuthIdentity } from '../auth/AuthProvider.js';
 import { config } from '../config.js';
-import { BaseWorldRoom, type RoomCreateOptions } from './BaseWorldRoom.js';
+import { BaseWorldRoom, isNpc, type RoomCreateOptions } from './BaseWorldRoom.js';
 import { CityMemberState, CityState, type PlayerState } from './schema.js';
 import { CityInterest } from '../world/CityInterest.js';
 import { GigTracker } from '../world/GigTracker.js';
@@ -83,7 +83,9 @@ export class CityRoom extends BaseWorldRoom<CityState> {
     // da API e sobrevive a trocar de sala, a recarregar a página e a este
     // processo reiniciar.
     void this.gigs?.adopt(identity.userId);
-    this.systemChat(`${identity.displayName} chegou.`);
+    // Personagem não anuncia chegada: vinte deles entrando no boot do worker
+    // seriam vinte linhas de "chegou" no chat de quem já estava na praça.
+    if (!isNpc(identity)) this.systemChat(`${identity.displayName} chegou.`);
   }
 
   protected override onPlayerRemoving(sessionId: string, player: PlayerState): void {
@@ -111,6 +113,6 @@ export class CityRoom extends BaseWorldRoom<CityState> {
 
   protected override onPlayerLeft(_client: Client, identity: AuthIdentity): void {
     this.gigs?.forget(identity.userId);
-    this.systemChat(`${identity.displayName} saiu.`);
+    if (!isNpc(identity)) this.systemChat(`${identity.displayName} saiu.`);
   }
 }

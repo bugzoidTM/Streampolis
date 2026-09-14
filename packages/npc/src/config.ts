@@ -19,7 +19,11 @@ function num(name: string, fallback: number): number {
 export const isProduction = (): boolean => process.env.NODE_ENV === 'production';
 
 export const config = {
-  /** Qual personagem este processo é. Um processo = um personagem. */
+  /**
+   * Quais personagens este processo hospeda: `NPC_SLUGS` (lista separada por
+   * vírgula) ou o antigo `NPC_SLUG`; vazio = o elenco inteiro habilitado no
+   * banco. `npcSlug` fica como padrão de quem pede um token avulso.
+   */
   npcSlug: env('NPC_SLUG', 'nilo'),
 
   apiBaseUrl: env('API_BASE_URL', 'http://127.0.0.1:8787'),
@@ -63,7 +67,7 @@ export const config = {
      * proxies são de graça — mas é o que impede um flood de chat de virar um
      * flood no proxy que a Radar e o Dramaturgo também usam.
      */
-    dailyBudget: num('NPC_DAILY_CALL_BUDGET', 600),
+    dailyBudget: num('NPC_DAILY_CALL_BUDGET', 900),
   },
 
   healthPort: num('NPC_HEALTH_PORT', 8791),

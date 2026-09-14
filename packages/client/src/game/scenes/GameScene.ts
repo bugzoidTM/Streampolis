@@ -34,6 +34,14 @@ export interface GameScene {
    * num tier baixo o certo é nenhum, e não uma praça a 12 fps.
    */
   populate?(budget: number): void;
+  /**
+   * Quantos figurantes LOCAIS podem aparecer agora. Os personagens da cidade
+   * (corpos do servidor) tomam o lugar deles um a um: uma praça com vinte
+   * personagens de verdade e mais catorze figurantes desenhados só aqui é o
+   * dobro de corpos que o tier pagou — e figurante ao lado de personagem lê
+   * como gente que não responde.
+   */
+  limitCrowd?(count: number): void;
   /** Simple collision: returns the corrected position. */
   clamp(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3;
   dispose(): void;

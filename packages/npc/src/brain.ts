@@ -3,10 +3,13 @@ import { budgetLeft, call, parseJsonObject, type ChatTurn } from './llm.js';
 import { log, warn } from './log.js';
 import * as memory from './memory.js';
 import { CONDUCT, WORLD_FACTS, renderPersona, type PersonaVersion } from './persona.js';
-import type { ChatMessage } from './shared.js';
+import type { ChatMessage, SceneId } from './shared.js';
 import type { Nearby, World } from './world.js';
 import { findPlace, perceptionBlock, type Place } from './places.js';
 import { fold } from './text.js';
+import type { Mind } from './mind.js';
+import { SCENE_LABEL, sceneKnowledge } from './scenes.js';
+import { freeSeatNear } from './seats.js';
 
 /**
  * A cabeça do personagem: percebe, decide, age.
@@ -32,10 +35,9 @@ const MIN_GAP_PER_USER_MS = 2_500;
 // personagem no meio do primeiro diálogo de verdade.
 const MAX_REPLIES_PER_USER_10MIN = 20;
 const MAX_CHAT_CALLS_PER_MIN = 12;
-/** Guiando alguém: quando a pessoa fica para trás, ele espera. */
-const GUIDE_WAIT_M = 9;
-const GUIDE_RESUME_M = 6;
+/** Guiando alguém: a espera por quem fica para trás mora nas pernas (`ESCORT` em walker.ts). */
 const GUIDE_TTL_MS = 4 * 60_000;
+const SIT_TTL_MS = 3 * 60_000;
 /** A distância de acompanhamento mora nas pernas (`FOLLOW` em walker.ts): faixa 2–3 m, com desaceleração. */
 const FOLLOW_TTL_MS = 4 * 60_000;
 const GREET_COOLDOWN_MS = 30 * 60_000;
@@ -67,6 +69,7 @@ interface ChatLine {
 export type Action =
   | { type: 'go_to'; place: Place; guiding: { userId: string; name: string } | null }
   | { type: 'follow'; userId: string; name: string }
+  | { type: 'sit'; near: { userId: string; name: string } | null }
   | { type: 'stay' }
   | { type: 'wander' };
 
@@ -122,7 +125,7 @@ function horaBrasilia(): string {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', weekday: 'long' }).format(new Date());
 }
 
-export class Brain {
+export class Brain implements Mind {
   private lines: ChatLine[] = [];
   private conversations = new Map<string, Conversation>();
   private greeted = new Map<string, number>();
@@ -144,11 +147,16 @@ export class Brain {
   persona: PersonaVersion;
 
   constructor(
-    readonly npc: { id: string; name: string; sceneId: string },
+    readonly npc: { id: string; name: string; sceneId: SceneId },
     private world: World,
     persona: PersonaVersion,
   ) {
     this.persona = persona;
+  }
+
+  /** Como o lugar onde ele mora se chama, em prosa. */
+  private get here(): string {
+    return SCENE_LABEL[this.npc.sceneId];
   }
 
   /** Corpo novo depois de uma reconexão; a cabeça (conversas, limites) fica. */
@@ -159,7 +167,7 @@ export class Brain {
     this.lingerUntil = 0;
   }
 
-  status(): BrainStatus {
+  status(): BrainStatus & Record<string, unknown> {
     return {
       conversations: this.conversations.size,
       recentLines: this.lines.length,
@@ -167,7 +175,8 @@ export class Brain {
       lastReflectionAt: this.lastReflectionAt,
       exchangesSinceReflection: this.exchangesSinceReflection,
       action: this.action.type === 'go_to' ? `go_to ${this.action.place.name}${this.action.guiding ? ` guiando ${this.action.guiding.name}` : ''}`
-        : this.action.type === 'follow' ? `follow ${this.action.name}` : this.action.type,
+        : this.action.type === 'follow' ? `follow ${this.action.name}`
+          : this.action.type === 'sit' ? `sit${this.action.near ? ` com ${this.action.near.name}` : ''}` : this.action.type,
     };
   }
 
@@ -179,14 +188,15 @@ export class Brain {
     this.lines.push({ userId: msg.senderId, name: msg.senderName, text: msg.text, at: msg.timestamp, mine });
     if (this.lines.length > RECENT_CHAT_LINES * 2) this.lines.splice(0, this.lines.length - RECENT_CHAT_LINES * 2);
     if (mine) return;
+    // Outro personagem falando: ouve, não responde nem guarda. Dois NPCs
+    // conversando entre si é um laço que gasta orçamento e ninguém pediu — e
+    // com dezenas de personagens na cidade, a memória dele seria só isso.
+    if (msg.npc) return;
     this.lastAnyChatAt = Date.now();
 
-    // Outro personagem falando: ouve, não responde. Dois NPCs conversando
-    // entre si é um laço que gasta orçamento e ninguém pediu.
     void memory.remember(this.npc.id, {
       kind: 'heard', userId: msg.senderId, userName: msg.senderName, text: msg.text, roomId: this.world.roomId,
     }).catch((err) => warn('brain', 'não lembrou', { err: String(err) }));
-    if (msg.npc) return;
 
     const speaker = this.world.people().find((p) => p.userId === msg.senderId);
     const near = speaker ? speaker.distance <= NEAR_TALK_M : false;
@@ -269,8 +279,24 @@ export class Brain {
   setAction(action: Action): void {
     this.action = action;
     const now = Date.now();
-    this.actionUntil = action.type === 'follow' ? now + FOLLOW_TTL_MS : action.type === 'go_to' ? now + GUIDE_TTL_MS : 0;
-    if (action.type === 'go_to') { this.goToRetries = 0; this.world.walker.setTarget(action.place.standing); }
+    this.actionUntil = action.type === 'follow' ? now + FOLLOW_TTL_MS
+      : action.type === 'go_to' ? now + GUIDE_TTL_MS
+        : action.type === 'sit' ? now + SIT_TTL_MS : 0;
+    if (action.type === 'go_to') {
+      this.goToRetries = 0;
+      // Guiando: as pernas esperam quem fica para trás (`ESCORT`); sozinho, é só ir.
+      const who = action.guiding?.userId;
+      this.world.walker.guide(action.place.standing, who ? this.world.tracker(who) : null);
+    }
+    if (action.type === 'sit') {
+      const me = this.world.position;
+      const anchor = action.near ? this.world.personAt(action.near.userId) ?? me : me;
+      const seats = sceneKnowledge(this.npc.sceneId).seats;
+      const occupied = this.world.people().map((p) => ({ x: p.x, z: p.z }));
+      const seat = anchor ? freeSeatNear(seats, anchor, occupied) : null;
+      if (seat) this.world.walker.sitAt({ at: seat.at, yaw: seat.yaw });
+      else { this.action = { type: 'stay' }; this.lingerUntil = now + 30_000; }
+    }
     if (action.type === 'follow') {
       // As pernas leem a posição viva da pessoa a cada lote; aqui só se decide quando parar de seguir.
       const userId = action.userId;
@@ -287,27 +313,33 @@ export class Brain {
     const a = this.action;
 
     if (a.type === 'go_to') {
-      if (a.guiding) {
-        const p = this.world.people().find((x) => x.userId === a.guiding!.userId);
-        if (!p || now > this.actionUntil) {
-          // Quem estava sendo guiado sumiu: chega sozinho e volta a passear.
-          a.guiding = null;
-        } else if (walker.destination && p.distance > GUIDE_WAIT_M) {
-          // A pessoa ficou para trás: espera olhando para ela.
-          this.world.faceTo({ x: p.x, z: p.z });
-        } else if (walker.idle && Math.hypot(a.place.standing.x - me.x, a.place.standing.z - me.z) > 1 && p.distance <= GUIDE_RESUME_M) {
-          walker.setTarget(a.place.standing);
-        }
+      if (a.guiding && now > this.actionUntil) {
+        // Esperou demais por quem ficou para trás: chega sozinho e volta a passear.
+        a.guiding = null;
+        if (walker.destination) walker.guide(a.place.standing, null);
       }
       if (walker.idle && Math.hypot(a.place.standing.x - me.x, a.place.standing.z - me.z) <= 1.2) {
         // Chegou: fica um tempo ali antes de voltar a passear.
         this.action = { type: 'stay' };
         this.lingerUntil = now + 45_000;
         log('brain', 'chegou', { place: a.place.name });
-      } else if (walker.idle && !a.guiding) {
-        // Desistiu no caminho (preso): tenta de novo poucas vezes e para.
-        if (this.goToRetries++ < 3) walker.setTarget(a.place.standing);
+      } else if (walker.idle) {
+        // Desistiu no caminho (preso, ou quem guiava sumiu): tenta de novo poucas vezes e para.
+        if (this.goToRetries++ < 3) walker.guide(a.place.standing, a.guiding ? this.world.tracker(a.guiding.userId) : null);
         else { this.action = { type: 'stay' }; this.lingerUntil = now + 20_000; }
+      }
+      return;
+    }
+
+    if (a.type === 'sit') {
+      if (walker.seated) {
+        if (now > this.actionUntil) { walker.standUp(); this.action = { type: 'wander' }; this.lingerUntil = now + LINGER_MIN_MS; }
+        return;
+      }
+      if (!walker.sitting) {
+        // Não chegou à vaga (ocupada no caminho, preso): fica em pé onde está.
+        this.action = { type: 'stay' };
+        this.lingerUntil = now + 30_000;
       }
       return;
     }
@@ -352,12 +384,15 @@ export class Brain {
     if (!me) return null;
     switch (a.type) {
       case 'go_to': {
-        const place = typeof a.place === 'string' ? findPlace(a.place, me) : null;
+        const place = typeof a.place === 'string' ? findPlace(a.place, me, this.npc.sceneId) : null;
         if (!place) return null;
         return { type: 'go_to', place, guiding: who };
       }
       case 'follow':
         return who ? { type: 'follow', userId: who.userId, name: who.name } : null;
+      case 'sit':
+        if (!sceneKnowledge(this.npc.sceneId).seats.length) return null;
+        return { type: 'sit', near: who };
       case 'stay':
         return { type: 'stay' };
       case 'wander':
@@ -377,8 +412,9 @@ export class Brain {
     }
     c.name = name;
     c.lastAt = Date.now();
-    if (speaker && (this.action.type === 'wander' || this.action.type === 'stay')) {
-      this.world.faceTo({ x: speaker.x, z: speaker.z });
+    if (speaker) {
+      // Parar, corpo e olhar em quem fala; o que estava fazendo fica suspenso nas pernas.
+      this.world.attend(userId, 25_000);
       this.stoppedForTalkUntil = Date.now() + 25_000;
     }
     if (c.pending) {
@@ -414,8 +450,9 @@ export class Brain {
     const a = this.action;
     if (a.type === 'go_to') return `indo até ${a.place.name}${a.guiding ? `, guiando ${a.guiding.name}` : ''}`;
     if (a.type === 'follow') return `seguindo ${a.name}`;
+    if (a.type === 'sit') return this.world.walker.seated ? `sentado num banco${a.near ? `, com ${a.near.name}` : ''}` : 'indo sentar';
     if (a.type === 'stay') return 'parado';
-    return this.world.walker.idle ? 'parado, olhando a praça' : 'passeando pela praça';
+    return this.world.walker.idle ? `parado, olhando ${this.here}` : `passeando por ${this.here}`;
   }
 
   private systemPrompt(): string {
@@ -433,16 +470,19 @@ export class Brain {
       ...WORLD_FACTS.map((f) => `- ${f}`),
       '',
       `AGORA: ${horaBrasilia()} (horário de Brasília).`,
-      me ? perceptionBlock(me) : 'ONDE VOCÊ ESTÁ: na Praça Central.',
+      me ? perceptionBlock(me, this.npc.sceneId) : `ONDE VOCÊ ESTÁ: em ${this.here}.`,
       `PESSOAS PERTO DE VOCÊ: ${people.length ? people.join('; ') : 'ninguém'}.`,
       `O QUE VOCÊ ESTÁ FAZENDO AGORA: ${this.doingNow()}.`,
       '',
       'O QUE O SEU CORPO SABE FAZER (e só isso):',
       '- "go_to": andar até um lugar da lista acima; quem pediu vem junto e você espera se a pessoa ficar para trás. Use quando alguém pedir para ser levado ou quando você mesmo propuser ir a um lugar.',
-      '- "follow": ir atrás da pessoa que está falando com você, para onde ela for dentro da praça.',
+      `- "follow": ir atrás da pessoa que está falando com você, para onde ela for dentro d${this.here}.`,
+      ...(sceneKnowledge(this.npc.sceneId).seats.length
+        ? ['- "sit": sentar num banco perto (da pessoa, se ela estiver falando com você). Use quando convidarem para sentar ou quando a conversa pedir calma.']
+        : []),
       '- "stay": ficar onde está.',
       '- "wander": voltar a passear sozinho.',
-      'Você NÃO sai da praça, não entra em prédio, não senta, não compra, não dá nada. Para um lugar fora da praça (Distrito Sombra, Clube Sombra, loja, torres, apartamento), leve até a PORTA certa e diga que dali a pessoa segue sozinha. Nunca diga que vai fazer algo que não está nesta lista, e nunca diga que está indo a um lugar sem mandar a ação.',
+      `Você NÃO sai d${this.here}, não entra em prédio, não compra, não dá nada. Para um lugar fora daqui, leve até a PORTA certa e diga que dali a pessoa segue sozinha. Nunca diga que vai fazer algo que não está nesta lista, e nunca diga que está indo a um lugar sem mandar a ação.`,
       '',
       'Se a pessoa digitar errado ("sifo", "nIlo"), entenda pelo contexto e não repita o erro.',
     ].join('\n');
@@ -468,8 +508,8 @@ export class Brain {
     const lines = this.lines.slice(-RECENT_CHAT_LINES);
     const mine = this.lines.filter((l) => l.mine).slice(-5);
     const out: string[] = [];
-    if (!lines.length) out.push('Conversa recente na praça: (silêncio)');
-    else out.push('Conversa recente na praça (mais antigo primeiro):', ...lines.map((l) => `  [${l.name}] ${l.text}`));
+    if (!lines.length) out.push('Conversa recente por perto: (silêncio)');
+    else out.push('Conversa recente por perto (mais antigo primeiro):', ...lines.map((l) => `  [${l.name}] ${l.text}`));
     if (mine.length) {
       out.push('', 'SUAS ÚLTIMAS FALAS — não repita frases, imagens nem a mesma estrutura ("Vem, Ana. O telão…"):', ...mine.map((l) => `  - ${l.text}`));
     }
@@ -477,7 +517,8 @@ export class Brain {
   }
 
   private outputSpec(withNote: string | null): string {
-    const action = '"action": null ou {"type": "go_to", "place": "nome do lugar da lista"} ou {"type": "follow"} ou {"type": "stay"} ou {"type": "wander"}';
+    const sit = sceneKnowledge(this.npc.sceneId).seats.length ? ' ou {"type": "sit"}' : '';
+    const action = `"action": null ou {"type": "go_to", "place": "nome do lugar da lista"} ou {"type": "follow"}${sit} ou {"type": "stay"} ou {"type": "wander"}`;
     const note = withNote
       ? `, "note": um FATO que ${withNote} disse sobre si (de onde é, o que faz, do que gosta, o que veio fazer), em até 100 caracteres, sem interpretação psicológica — ou null se não houve fato novo`
       : '';
@@ -550,7 +591,7 @@ export class Brain {
   private async greet(userId: string, name: string, p: Nearby & { distance: number }): Promise<void> {
     if (!this.allowChatCall(null)) return;
     try {
-      this.world.faceTo({ x: p.x, z: p.z });
+      this.world.attend(userId, 12_000);
       this.stoppedForTalkUntil = Date.now() + 12_000;
       const user = [
         await this.personBlock(userId, name),
@@ -573,7 +614,7 @@ export class Brain {
       const user = [
         this.recentBlock(),
         '',
-        `A praça está quieta há alguns minutos e há gente perto: ${near.map((p) => p.name).join(', ')}. Se tiver algo pequeno e VERDADEIRO a dizer — sobre a hora, o lugar onde está, algo que viveu com alguém que está aqui —, diga em uma frase. Só chame alguém pelo nome se essa pessoa estiver na lista acima. Nada de inventar o que o telão mostra. Se não tiver nada, fique quieto.`,
+        `${this.here.charAt(0).toUpperCase()}${this.here.slice(1)} está quieta há alguns minutos e há gente perto: ${near.map((p) => p.name).join(', ')}. Se tiver algo pequeno e VERDADEIRO a dizer — sobre a hora, o lugar onde está, algo que viveu com alguém que está aqui —, diga em uma frase. Só chame alguém pelo nome se essa pessoa estiver na lista acima. Nada de inventar o que o telão mostra. Se não tiver nada, fique quieto.`,
         this.outputSpec(null),
       ].join('\n');
       const out = await this.generate('ambient', user);

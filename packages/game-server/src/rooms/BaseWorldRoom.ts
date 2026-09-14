@@ -14,6 +14,7 @@ import {
   type SceneId,
   type SystemNotice,
 } from '../shared.js';
+import { config } from '../config.js';
 import { AuthError, defaultAuthProvider, type AuthIdentity, type AuthProvider } from '../auth/AuthProvider.js';
 import { ChatGuard } from '../social/ChatGuard.js';
 import { MovementController } from '../sim/Movement.js';
@@ -87,6 +88,10 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
   protected readonly sessions = new Map<string, Session>();
   /** Monotonic, so two players joining on the same ms get different spawns. */
   private joinCounter = 0;
+  /** Lotação de PESSOAS. `maxClients` é maior que isto pela folga dos personagens. */
+  protected humanCapacity = Infinity;
+  /** A sala foi trancada por ESTA regra (e não por `lock()` explícito de uma live). */
+  private lockedForHumans = false;
 
   /** Concrete rooms build their own state subclass here. */
   protected abstract createState(): S;
@@ -98,7 +103,8 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
     this.setState(state);
 
     if (typeof options.capacity === 'number' && options.capacity > 0) {
-      this.maxClients = options.capacity;
+      this.humanCapacity = options.capacity;
+      this.maxClients = options.capacity + config.npcHeadroom;
     }
 
     // 24 Hz simulation, 20 Hz patches (SPECs §18): rendering is decoupled, so
@@ -149,6 +155,53 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
       if (penetrates(session.movement.current, colliders)) {
         session.movement.place(spawnFor(this.sceneId, this.joinCounter++));
       }
+    }
+  }
+
+  /**
+   * "Cheia" para o matchmaking = cheia de PESSOAS.
+   *
+   * O Colyseus tranca a sala quando isto responde verdadeiro (na reserva de
+   * assento) e destranca quando volta a falso. Personagens da cidade não
+   * contam: eles não são público, e trinta deles na praça não podem empurrar
+   * o próximo jogador para um shard vazio. Quem ainda não terminou o `onJoin`
+   * (sem sessão) conta como pessoa — é a leitura conservadora, e dura um
+   * instante. O teto físico (`maxClients`) continua valendo por cima.
+   */
+  override hasReachedMaxClients(): boolean {
+    if (super.hasReachedMaxClients()) return true;
+    let humans = 0;
+    for (const client of this.clients) {
+      const session = this.sessions.get(client.sessionId);
+      if (!session || !isNpc(session.identity)) humans++;
+    }
+    const reserved = Object.keys(this.reservedSeats).length;
+    return humans + reserved >= this.humanCapacity;
+  }
+
+  /**
+   * Reconcilia a tranca com a regra acima.
+   *
+   * O Colyseus destranca a sala quando QUALQUER cliente sai, se foi ele quem
+   * trancou — e um personagem saindo de uma sala cheia de pessoas a
+   * destrancaria com a lotação de pessoas ainda batida. Roda a cada tique: a
+   * comparação é barata e a ordem entre `onLeave` e a contagem interna do
+   * Colyseus deixa de importar. Nunca mexe numa tranca explícita (a live
+   * tranca a sala quando acaba).
+   */
+  private reconcileLock(): void {
+    const full = this.hasReachedMaxClients();
+    const explicit = (this as unknown as { _lockedExplicitly?: boolean })._lockedExplicitly === true;
+    const internalLock = this.lock as unknown as (internal: boolean) => Promise<void>;
+    const internalUnlock = this.unlock as unknown as (internal: boolean) => Promise<void>;
+    if (full && !this.locked) {
+      this.lockedForHumans = true;
+      void internalLock.call(this, true);
+    } else if (!full && this.locked && this.lockedForHumans && !explicit) {
+      this.lockedForHumans = false;
+      void internalUnlock.call(this, true);
+    } else if (!this.locked) {
+      this.lockedForHumans = false;
     }
   }
 
@@ -477,6 +530,7 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
 
   private tick(): void {
     this.state.tick = (this.state.tick + 1) >>> 0;
+    if (this.humanCapacity !== Infinity) this.reconcileLock();
 
     for (const client of this.clients) {
       const session = this.sessions.get(client.sessionId);

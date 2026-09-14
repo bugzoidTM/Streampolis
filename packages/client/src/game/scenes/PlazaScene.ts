@@ -129,6 +129,10 @@ export class PlazaScene extends SceneBase {
     this.own(this.crowd);
   }
 
+  limitCrowd(count: number): void {
+    this.crowd?.limit(count);
+  }
+
   /** Instances one prop family at the placements the layout dictates. */
   private scatter(stamp: Prop, spots: readonly Placement[], y = 0): void {
     if (spots.length === 0) return;

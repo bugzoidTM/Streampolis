@@ -107,6 +107,10 @@ export class NoirDistrictScene extends SceneBase {
     this.own(this.crowd);
   }
 
+  limitCrowd(count: number): void {
+    this.crowd?.limit(count);
+  }
+
   private scatter(stamp: Prop, spots: readonly Placement[], y = 0): void {
     if (spots.length === 0) return;
     const at = spots.map((p) => xform(p.x, y, p.z, p.ry, p.s ?? 1));

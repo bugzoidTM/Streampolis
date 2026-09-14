@@ -547,6 +547,40 @@ export class World {
     };
   }
 
+  private lastCrowdLimit = -1;
+
+  /**
+   * Quais PERSONAGENS da cidade ficam fora do quadro neste tier.
+   *
+   * Pessoas são sempre desenhadas. Personagens (`npc`) entram por distância
+   * até o jogador, os `characterBudget` mais próximos; quem já está sendo
+   * desenhado ganha 2 m de vantagem para a borda do orçamento não piscar. Os
+   * figurantes locais cedem lugar um a um aos personagens visíveis: o total
+   * de corpos que o tier paga é o mesmo de antes de a cidade ter população.
+   */
+  private characterCull(poses: RenderPose[], local: RenderPose | undefined): Set<string> {
+    const hidden = new Set<string>();
+    const budget = this.renderer.quality.settings.characterBudget;
+    const npcs = poses.filter((p) => p.npc && !p.isLocal);
+    let visibleNpcs = npcs.length;
+    if (npcs.length > budget) {
+      const ox = local?.x ?? this.camera.camera.position.x;
+      const oz = local?.z ?? this.camera.camera.position.z;
+      const ranked = npcs.map((p) => {
+        const shown = this.actors.get(p.sessionId)?.avatar.root.visible === true;
+        return { id: p.sessionId, d: Math.hypot(p.x - ox, p.z - oz) - (shown ? 2 : 0) };
+      }).sort((a, b) => a.d - b.d);
+      for (let i = budget; i < ranked.length; i++) hidden.add(ranked[i]!.id);
+      visibleNpcs = budget;
+    }
+    const crowd = Math.max(0, this.renderer.quality.settings.ambientNpcs - visibleNpcs);
+    if (crowd !== this.lastCrowdLimit) {
+      this.lastCrowdLimit = crowd;
+      this.scene?.limitCrowd?.(crowd);
+    }
+    return hidden;
+  }
+
   /**
    * Reconciles the actor pool with this frame's poses. Avatars are built and
    * destroyed here and nowhere else, which is what keeps a busy plaza from
@@ -557,10 +591,17 @@ export class World {
     const local = poses.find(pose => pose.isLocal);
     const tier = this.renderer.quality.settings.tier;
     let refinements = tier === 'high' ? 12 : tier === 'medium' ? 6 : 0;
+    const hidden = this.characterCull(poses, local);
 
     for (const pose of poses) {
       seen.add(pose.sessionId);
       let actor = this.actors.get(pose.sessionId);
+      if (hidden.has(pose.sessionId)) {
+        // Personagem além do orçamento do tier: existe na sala, não no quadro.
+        if (actor) actor.avatar.root.visible = false;
+        continue;
+      }
+      if (actor && !actor.avatar.root.visible) actor.avatar.root.visible = true;
       if (!actor) {
         const avatar = createAvatar(pose.avatar ?? DEFAULT_AVATAR);
         // O próprio jogador não ganha placa: em terceira pessoa ela fica entre

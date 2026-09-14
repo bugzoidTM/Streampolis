@@ -143,6 +143,10 @@ export class NoirClubScene extends InteriorScene {
     this.crowd = new AmbientCrowd(this.scene, CROWD, Math.max(1, budget));
   }
 
+  limitCrowd(count: number): void {
+    this.crowd?.limit(count);
+  }
+
   /** `dress()` é o gancho do `InteriorScene` para o que é só desta sala. */
   protected override dress(): void {
     /**

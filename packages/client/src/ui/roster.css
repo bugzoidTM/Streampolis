@@ -103,3 +103,24 @@
 @media (max-width: 620px) {
   .roster { width: 176px; }
 }
+
+/* Personagens da cidade: um grupo recolhido abaixo das pessoas. */
+.roster__npcs { color: var(--sp-text-3); font-weight: 400; }
+.roster__group { list-style: none; }
+.roster__grouphead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sp-text-3);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.roster__grouphead:hover { color: var(--sp-text-2); }
+.roster__row.is-npc .roster__mono { background: rgba(124, 92, 255, 0.18); color: var(--sp-text-2); }

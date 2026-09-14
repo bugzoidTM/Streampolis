@@ -60,7 +60,7 @@ import { abandonGig, acceptGig, gigBoard, reachCheckpoint } from './work/Gigs.ts
 import {
   NpcError, activatePersona, calls as npcCalls, diary as npcDiary, issueNpcToken,
   listAgents as listNpcs, listPersonaVersions, overview as npcOverview, people as npcPeople,
-  recentMemory as npcMemory, rejectPersona, setAgentEnabled,
+  recentMemory as npcMemory, rejectPersona, relations as npcRelations, setAgentEnabled,
 } from './world/Npc.ts';
 import {
   EVENT_METRICS, cancelEvent, createEvent, eventBySlug, eventsBoard, isEventMetric,
@@ -1344,6 +1344,10 @@ app.get('/admin/npc/:id/people', ...staff, async (req: AuthedRequest, res, next)
 
 app.get('/admin/npc/:id/calls', ...staff, async (req: AuthedRequest, res, next) => {
   try { res.json({ calls: await npcCalls(param(req.params.id), npcLimit(req)) }); } catch (err) { next(err); }
+});
+
+app.get('/admin/npc/:id/relations', ...staff, async (req: AuthedRequest, res, next) => {
+  try { res.json({ relations: await npcRelations(param(req.params.id), npcLimit(req)) }); } catch (err) { next(err); }
 });
 
 app.get('/admin/audit', ...staff, async (req: AuthedRequest, res, next) => {

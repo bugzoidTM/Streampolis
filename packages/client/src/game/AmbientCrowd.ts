@@ -154,8 +154,18 @@ export class AmbientCrowd {
     if (m.routine.kind !== 'walk') m.avatar.root.rotation.y = m.routine.facing ?? 0;
   }
 
+  private shown = Infinity;
+
+  /** Mostra só os `count` primeiros; os outros somem (e param de animar). Ver `GameScene.limitCrowd`. */
+  limit(count: number): void {
+    if (count === this.shown) return;
+    this.shown = count;
+    this.members.forEach((m, i) => { m.avatar.root.visible = i < count; });
+  }
+
   update(dt: number): void {
-    for (const m of this.members) {
+    for (const [i, m] of this.members.entries()) {
+      if (i >= this.shown) continue;
       if (m.routine.kind === 'walk') this.walk(m, dt);
       // Speed drives the locomotion clip's timing, so a stander must report 0
       // or its feet slide on the spot.

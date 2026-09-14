@@ -10,7 +10,8 @@
     "start": "node dist/npc/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test \"dist/npc/test/*.test.js\"",
-    "e2e": "npm run build && node scripts/e2e-npc.mjs"
+    "e2e": "npm run build && node scripts/e2e-npc.mjs",
+    "e2e:population": "npm run build && node scripts/e2e-population.mjs"
   },
   "dependencies": {
     "colyseus.js": "^0.16.22",

@@ -12,14 +12,14 @@ export interface NpcIdentity {
  * server não tem como distinguir este processo de um navegador, o que é
  * exatamente o ponto.
  */
-export async function fetchIdentity(): Promise<NpcIdentity> {
+export async function fetchIdentity(slug: string = config.npcSlug): Promise<NpcIdentity> {
   const res = await fetch(`${config.apiBaseUrl}/internal/npc/token`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${config.apiServiceToken}`,
     },
-    body: JSON.stringify({ npc: config.npcSlug }),
+    body: JSON.stringify({ npc: slug }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) {

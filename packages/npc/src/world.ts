@@ -1,7 +1,8 @@
 import { Client, type Room } from 'colyseus.js';
 import { config } from './config.js';
 import { log, warn } from './log.js';
-import { MSG, TICK_MS, type ChatMessage, type MoveIntent, type SceneId } from './shared.js';
+import { MSG, TICK_MS, type AnimState, type ChatMessage, type MoveIntent, type SceneId } from './shared.js';
+import { sceneKnowledge } from './scenes.js';
 import { Walker, type Point, type Someone } from './walker.js';
 
 /**
@@ -95,9 +96,17 @@ export class World {
   private nearby = new Map<string, Nearby>();
   private lastSaidAt = 0;
 
-  constructor(private readonly sceneId: SceneId, private readonly events: WorldEvents) {
+  /**
+   * Postura mantida enquanto parado ('dance', 'sit', 'clap'…), ou nula.
+   * Andar cancela o gesto na sala; ao parar de novo, o corpo o pede outra vez.
+   */
+  pose: AnimState | null = null;
+
+  constructor(readonly sceneId: SceneId, private readonly events: WorldEvents) {
     this.client = new Client(config.gameServerUrl, { urlBuilder: internalUrlBuilder() });
-    this.walker = new Walker(sceneId);
+    this.walker = new Walker(sceneId, sceneKnowledge(sceneId).destinations);
+    // Quem está por perto, para os microgestos de quem está parado.
+    this.walker.sense(() => this.people().filter((p) => p.distance <= 10).map((p) => ({ x: p.x, z: p.z, sessionId: p.sessionId })));
   }
 
   get connected(): boolean {
@@ -113,9 +122,9 @@ export class World {
   }
 
   /** Onde a SALA diz que o corpo está (e para onde está virado). Nulo até o primeiro estado chegar. */
-  get position(): (Point & { yaw: number; moving: boolean }) | null {
+  get position(): (Point & { yaw: number; moving: boolean; anim: string }) | null {
     const me = this.room?.state?.players?.get(this.room.sessionId);
-    return me ? { x: me.x, z: me.z, yaw: me.yaw ?? 0, moving: me.moving === true } : null;
+    return me ? { x: me.x, z: me.z, yaw: me.yaw ?? 0, moving: me.moving === true, anim: me.anim ?? 'idle' } : null;
   }
 
   /** Onde uma pessoa está agora (e a sessão dela na sala), ou nulo se saiu. */
@@ -280,6 +289,11 @@ export class World {
       const emote = this.walker.takeEmote();
       if (emote) {
         room.send(MSG.emote, { anim: emote });
+        this.lastEmoteAt = now;
+      } else if (this.pose && this.walker.idle && !this.walker.sitting && me.anim !== this.pose && now - this.lastEmoteAt >= 1_500) {
+        // A postura do posto (dançando na pista, por exemplo): a sala derruba o
+        // gesto quando o corpo anda; parado de novo, ele volta sozinho.
+        room.send(MSG.emote, { anim: this.pose });
         this.lastEmoteAt = now;
       }
     }

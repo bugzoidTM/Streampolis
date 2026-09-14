@@ -81,7 +81,11 @@ it('ignores client-supplied capacity and keeps the operator/scene ceiling', asyn
     room.onMessage('correction', () => {});
     await until(() => !!room.state?.players?.has(room.sessionId), 'capacity test initial state');
     const actual = matchMaker.getLocalRoomById(room.roomId) as InterestRoom;
-    assert.equal(actual.maxClients, Math.min(SCENES.central_plaza.capacity, config.cityCapacity));
+    const ceiling = Math.min(SCENES.central_plaza.capacity, config.cityCapacity);
+    // A lotação de PESSOAS é o teto do operador; `maxClients` é maior só pela
+    // folga dos personagens (ver npc-capacity.test.ts).
+    assert.equal((actual as unknown as { humanCapacity: number }).humanCapacity, ceiling);
+    assert.equal(actual.maxClients, ceiling + config.npcHeadroom);
     await room.leave();
   }
 });
