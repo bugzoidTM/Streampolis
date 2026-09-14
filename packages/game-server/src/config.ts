@@ -51,6 +51,8 @@ export const config = {
   /** Batimento do retrato. Tem de ser bem menor que o TTL do lado da API. */
   presenceHeartbeatMs: num('PRESENCE_HEARTBEAT_MS', 15_000),
 
+  /** Quantos minutos reais dura um dia do mundo (ver shared/clock.ts). 1440 = tempo real. */
+  worldDayMinutes: num('WORLD_DAY_MINUTES', 120),
   cityCapacity: num('CITY_CAPACITY', 36),
   /**
    * Quantos PERSONAGENS (PRD §25) cabem numa sala além da lotação de pessoas.

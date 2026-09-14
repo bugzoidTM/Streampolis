@@ -1,0 +1,32 @@
+/* O relógio do mundo: uma pílula discreta no alto, à esquerda. */
+.wclock {
+  position: fixed;
+  top: max(env(safe-area-inset-top), 14px);
+  left: max(env(safe-area-inset-left), 14px);
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--sp-line);
+  border-radius: 999px;
+  background: var(--sp-glass);
+  backdrop-filter: blur(12px);
+  color: var(--sp-text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+}
+.wclock__orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffd25a;
+  box-shadow: 0 0 8px rgba(255, 210, 90, 0.7);
+}
+.wclock.is-night .wclock__orb {
+  background: #cfd8ff;
+  box-shadow: inset -3px -1px 0 0 #6e7bb0, 0 0 6px rgba(207, 216, 255, 0.5);
+}
+.wclock__time { letter-spacing: 0.02em; }

@@ -104,6 +104,14 @@ export class WorldState extends Schema {
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   /** Server tick counter; useful for client-side debug overlays. */
   @type('uint32') tick = 0;
+  /**
+   * O relógio do mundo (shared/clock.ts): minutos do dia, 0 ≤ clock < 1440,
+   * escrito pela sala a cada segundo, e a taxa (minutos do mundo por minuto
+   * real) para quem quiser interpolar entre duas escritas. O cliente só
+   * desenha o que chega; nenhuma regra de jogo muda por causa dele.
+   */
+  @type('float32') clock = 0;
+  @type('float32') clockRate = 12;
 }
 
 /** Social roster: stays visible across the city without streaming distant poses. */
@@ -138,6 +146,8 @@ export class CityState extends Schema {
   @type('string') shard = '';
   @view() @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @type('uint32') tick = 0;
+  @type('float32') clock = 0;
+  @type('float32') clockRate = 12;
   @type({ map: CityMemberState }) members = new MapSchema<CityMemberState>();
 }
 

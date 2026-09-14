@@ -42,6 +42,12 @@ export interface GameScene {
    * como gente que não responde.
    */
   limitCrowd?(count: number): void;
+  /**
+   * A hora do mundo (minutos do dia, shared/clock.ts), já suavizada pelo
+   * World a cada quadro. A cena que reage — céu, sol, luz de rua — implementa;
+   * as outras ignoram. Só desenho: nenhuma regra de jogo lê isto aqui.
+   */
+  setTimeOfDay?(minutes: number, dt: number): void;
   /** Simple collision: returns the corrected position. */
   clamp(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3;
   dispose(): void;

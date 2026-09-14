@@ -3,7 +3,7 @@ import {
   PLAZA, SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS, type Placement, type SceneId,
 } from '@streampolis/shared';
 import { LOOK_DAY, type GradeLook } from '../Renderer.js';
-import { GOLDEN_HOUR } from '../Environment.js';
+import { GOLDEN_HOUR, type Environment } from '../Environment.js';
 import {
   bakeProps, boxUV, disposeProp, instanceProp, ringSlab, singleProp, xform, type Prop,
 } from '../props/Geometry.js';
@@ -53,8 +53,19 @@ export class PlazaScene extends SceneBase {
   private crowd: AmbientCrowd | null = null;
   /** Modelos que passaram pelo passe; nulo quando a praça roda procedural. */
   private lib: AssetLibrary | null = null;
+  /** O rig de luz, tipado: é nele que a hora do mundo mexe a cada quadro. */
+  private sky: Environment | null = null;
+  private lampGlass: THREE.MeshStandardMaterial | null = null;
+  private lampLights: THREE.PointLight[] = [];
+  private lampPick = 0;
+  private lastTod = -1;
+  private lastRebakeAt = 0;
+  private lastRebakeTod = -1;
+
+  private tier: QualityTier = 'high';
 
   async build(renderer: THREE.WebGLRenderer, tier: QualityTier = 'high'): Promise<void> {
+    this.tier = tier;
     // No tier baixo a praça continua procedural. Dez copas modeladas dobram a
     // contagem de triângulos da cena, e onde o governador já cortou figurante
     // e sombra a resposta certa não é uma praça bonita a 12 fps.
@@ -66,7 +77,7 @@ export class PlazaScene extends SceneBase {
       else this.own(this.lib);
     }
 
-    const env = this.makeEnvironment(renderer, {
+    const env = this.sky = this.makeEnvironment(renderer, {
       ...GOLDEN_HOUR,
       elevation: 27, azimuth: 138,
       // Less fill than the default: the sun has to be able to carve a shadow,
@@ -242,6 +253,19 @@ export class PlazaScene extends SceneBase {
   private buildFurniture(): void {
     this.scatter(bench(this.mats), PLAZA.benches);
     this.scatter(lampPost(this.mats, 4.6), PLAZA.lamps);
+    // O vidro da luminária é UM material partilhado (a MatLib guarda por
+    // chave): a hora do mundo o acende e apaga por aqui.
+    this.lampGlass = this.mats.emissive(0xffd9a0, 3.2) as THREE.MeshStandardMaterial;
+    // Luz de verdade só em alguns postes — os mais perto da câmera, escolhidos
+    // de tempos em tempos (ver `setTimeOfDay`). Doze luzes pontuais na praça
+    // inteira seriam o custo de sombra que o tier baixo não paga.
+    const budget = this.tier === 'high' ? 8 : this.tier === 'medium' ? 5 : 3;
+    for (let i = 0; i < budget; i++) {
+      const light = new THREE.PointLight(0xffd9a0, 0, 22, 2);
+      light.position.set(PLAZA.lamps[i % PLAZA.lamps.length]!.x, 4.6, PLAZA.lamps[i % PLAZA.lamps.length]!.z);
+      this.scene.add(light);
+      this.lampLights.push(light);
+    }
     this.scatter(bollard(this.mats), PLAZA.bollards);
     this.scatter(litterBin(this.mats), PLAZA.bins);
     this.scatter(planter(this.mats, 1.6, 1.6, 0.55), PLAZA.planters);
@@ -456,9 +480,123 @@ export class PlazaScene extends SceneBase {
     this.wall = wall;
   }
 
+  /**
+   * A praça reage à hora do mundo (shared/clock.ts): céu, sol, luz ambiente e
+   * iluminação urbana, por interpolação entre quadros-chave. Só desenho.
+   *
+   * O céu procedural recebe o sol de verdade (abaixo do horizonte à noite); a
+   * luz que projeta sombra recebe, à noite, uma "lua" noutra direção — sem
+   * isso o céu ficaria claro de madrugada ou a sombra viria de baixo do chão.
+   * O IBL medido (HDRI) não muda; só a intensidade dele, que é um número. Sem
+   * HDRI, o rebote do céu procedural é re-assado no máximo a cada 12 s quando
+   * a hora andou o bastante.
+   */
+  setTimeOfDay(minutes: number, _dt: number): void {
+    if (!this.sky) return;
+    if (Math.abs(minutes - this.lastTod) < 0.05) return;
+    this.lastTod = minutes;
+    const p = timeOfDayParams(minutes);
+    const withLib = this.lib !== null;
+    this.sky.applyLive({
+      turbidity: p.turbidity, rayleigh: p.rayleigh, mieCoefficient: p.mie, mieDirectionalG: 0.82,
+      elevation: p.elevation, azimuth: p.azimuth,
+      lightElevation: p.lightElevation, lightAzimuth: p.lightAzimuth,
+      sunIntensity: p.sunIntensity, sunColor: p.sunColor,
+      skyColor: p.skyColor, groundColor: p.groundColor,
+      ambientIntensity: p.ambient * (withLib ? 0.8 : 1),
+      fogColor: p.fogColor, fogNear: p.fogNear, fogFar: p.fogFar,
+      envIntensity: p.env * (withLib ? 0.7 : 1),
+    });
+    if (!withLib) {
+      const now = performance.now();
+      if (now - this.lastRebakeAt > 12_000 && Math.abs(minutes - this.lastRebakeTod) > 20) {
+        this.lastRebakeAt = now;
+        this.lastRebakeTod = minutes;
+        this.sky.refreshEnvironment();
+      }
+    }
+    // Iluminação urbana: acende quando a luz do dia cai.
+    if (this.lampGlass) this.lampGlass.emissiveIntensity = 0.15 + 4.5 * p.lamps;
+    for (const l of this.lampLights) l.intensity = 70 * p.lamps;
+  }
+
+  /** As luzes pontuais mudam de poste para acompanhar a câmera, uma vez por segundo. */
+  private relampLights(camera: THREE.Camera): void {
+    if (!this.lampLights.length) return;
+    const cx = camera.position.x;
+    const cz = camera.position.z;
+    const ranked = PLAZA.lamps
+      .map((l) => ({ l, d: Math.hypot(l.x - cx, l.z - cz) }))
+      .sort((a, b) => a.d - b.d);
+    this.lampLights.forEach((light, i) => {
+      const l = ranked[i]?.l;
+      if (l) light.position.set(l.x, 4.6, l.z);
+    });
+  }
+
   override update(dt: number, camera: THREE.Camera): void {
     this.crowd?.update(dt);
     super.update(dt, camera);
     this.wall?.update(dt);
+    this.lampPick += dt;
+    if (this.lampPick > 1) { this.lampPick = 0; this.relampLights(camera); }
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// A hora do mundo em parâmetros de luz.
+// ---------------------------------------------------------------------------
+interface TodParams {
+  elevation: number; azimuth: number; lightElevation: number; lightAzimuth: number;
+  sunIntensity: number; sunColor: number; skyColor: number; groundColor: number; ambient: number;
+  fogColor: number; fogNear: number; fogFar: number; env: number;
+  turbidity: number; rayleigh: number; mie: number;
+  /** Iluminação urbana, 0 (apagada) a 1 (acesa). */
+  lamps: number;
+}
+
+/**
+ * Quadros-chave por hora do mundo. Entre dois, interpolação linear (cores em
+ * RGB linear). A noite tem o sol do céu a −12° (céu escuro) e a luz vinda de
+ * uma lua a 35°, fria e fraca; o dia é a praça de sempre.
+ */
+const TOD_KEYS: Array<[number, TodParams]> = [
+  [0, { elevation: -12, azimuth: 300, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+  [4.8, { elevation: -12, azimuth: 80, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+  [6.2, { elevation: 2, azimuth: 100, lightElevation: 6, lightAzimuth: 100, sunIntensity: 1.3, sunColor: 0xffb070, skyColor: 0x6a6f9a, groundColor: 0x3a3040, ambient: 0.32, fogColor: 0x8a7f96, fogNear: 35, fogFar: 190, env: 0.45, turbidity: 6, rayleigh: 3, mie: 0.008, lamps: 0.6 }],
+  [7.8, { elevation: 14, azimuth: 115, lightElevation: 14, lightAzimuth: 115, sunIntensity: 3.0, sunColor: 0xfff0dc, skyColor: 0xbcd8ff, groundColor: 0x6b5f52, ambient: 0.34, fogColor: 0xc9d8e8, fogNear: 55, fogFar: 240, env: 0.78, turbidity: 4.2, rayleigh: 2.1, mie: 0.0055, lamps: 0 }],
+  [12, { elevation: 52, azimuth: 168, lightElevation: 52, lightAzimuth: 168, sunIntensity: 3.4, sunColor: 0xfff6e8, skyColor: 0xa8ccff, groundColor: 0x7a7062, ambient: 0.32, fogColor: 0xd6e4f2, fogNear: 60, fogFar: 280, env: 0.78, turbidity: 3, rayleigh: 1.4, mie: 0.004, lamps: 0 }],
+  [16.5, { elevation: 27, azimuth: 138, lightElevation: 27, lightAzimuth: 138, sunIntensity: 3.2, sunColor: 0xfff0dc, skyColor: 0xbcd8ff, groundColor: 0x6b5f52, ambient: 0.34, fogColor: 0xc9d8e8, fogNear: 55, fogFar: 260, env: 0.78, turbidity: 4.2, rayleigh: 2.1, mie: 0.0055, lamps: 0 }],
+  [18.3, { elevation: 3.5, azimuth: 235, lightElevation: 5, lightAzimuth: 235, sunIntensity: 2.0, sunColor: 0xffb26b, skyColor: 0x4a5f92, groundColor: 0x2b2540, ambient: 0.4, fogColor: 0x6d6a8c, fogNear: 30, fogFar: 180, env: 0.5, turbidity: 8, rayleigh: 3.4, mie: 0.008, lamps: 0.55 }],
+  [19.6, { elevation: -12, azimuth: 250, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+  [24, { elevation: -12, azimuth: 300, lightElevation: 35, lightAzimuth: 300, sunIntensity: 0.55, sunColor: 0xa9bcff, skyColor: 0x2a3660, groundColor: 0x151422, ambient: 0.5, fogColor: 0x141a30, fogNear: 34, fogFar: 180, env: 0.3, turbidity: 2, rayleigh: 0.6, mie: 0.003, lamps: 1 }],
+];
+
+const cA = new THREE.Color();
+const cB = new THREE.Color();
+function mixHex(a: number, b: number, t: number): number {
+  cA.setHex(a);
+  cB.setHex(b);
+  return cA.lerp(cB, t).getHex();
+}
+
+export function timeOfDayParams(minutes: number): TodParams {
+  const h = (((minutes % 1440) + 1440) % 1440) / 60;
+  let i = 0;
+  while (i < TOD_KEYS.length - 2 && h >= TOD_KEYS[i + 1]![0]) i++;
+  const [h0, a] = TOD_KEYS[i]!;
+  const [h1, b] = TOD_KEYS[i + 1]!;
+  const t = Math.max(0, Math.min(1, (h - h0) / (h1 - h0)));
+  const n = (x: number, y: number) => x + (y - x) * t;
+  return {
+    elevation: n(a.elevation, b.elevation), azimuth: n(a.azimuth, b.azimuth),
+    lightElevation: n(a.lightElevation, b.lightElevation), lightAzimuth: n(a.lightAzimuth, b.lightAzimuth),
+    sunIntensity: n(a.sunIntensity, b.sunIntensity), sunColor: mixHex(a.sunColor, b.sunColor, t),
+    skyColor: mixHex(a.skyColor, b.skyColor, t), groundColor: mixHex(a.groundColor, b.groundColor, t),
+    ambient: n(a.ambient, b.ambient), fogColor: mixHex(a.fogColor, b.fogColor, t),
+    fogNear: n(a.fogNear, b.fogNear), fogFar: n(a.fogFar, b.fogFar), env: n(a.env, b.env),
+    turbidity: n(a.turbidity, b.turbidity), rayleigh: n(a.rayleigh, b.rayleigh), mie: n(a.mie, b.mie),
+    lamps: n(a.lamps, b.lamps),
+  };
 }

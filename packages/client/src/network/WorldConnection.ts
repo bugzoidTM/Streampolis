@@ -225,6 +225,16 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
   }
 
   /** The local player's server-side entry, absent for live spectators. */
+  /**
+   * O relógio do mundo como a sala o publicou (minutos do dia), ou nulo antes
+   * da primeira escrita — o default do schema é 0 e 0 não é meia-noite.
+   */
+  get worldClock(): number | null {
+    const st = this.room.state;
+    if (!st || !(st.tick >= 24) || typeof st.clock !== 'number') return null;
+    return st.clock;
+  }
+
   get localPlayer(): PlayerView | undefined {
     return this.room.state?.players?.get(this.room.sessionId);
   }

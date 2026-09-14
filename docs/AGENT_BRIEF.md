@@ -904,6 +904,39 @@ mexe nos fatos que ele mede, espera o relógio virar e confere o banco pela API 
 inclusive apurando duas vezes de propósito. A flag `events_enabled` (§64) para o
 PAGAMENTO, nunca a leitura.
 
+## O relógio do mundo e o dia da praça
+
+`shared/clock.ts`: um dia de 24 h que dura `WORLD_DAY_MINUTES` minutos reais
+(120 por padrão; 1440 = tempo real), calculado de uma época fixa — não há
+estado a sincronizar, e dois game servers respondem a mesma hora para o mesmo
+instante. **Quem manda é o game server**: escreve `clock` (minutos do dia) e
+`clockRate` no `WorldState` a cada segundo. O cliente só desenha o que chega
+(`WorldConnection.worldClock` → `World.advanceClock` → `useClockStore` para o
+HUD e `GameScene.setTimeOfDay` para a cena); o worker dos personagens lê
+`World.clock` da sala. A fórmula local só vale sem sala (modo offline, worker
+antes de entrar). Em build de desenvolvimento `?tod=19:30` fixa a hora
+desenhada para a revisão visual (`tools/shoot.mjs`); em produção é ignorado.
+
+A Praça Central reage (`PlazaScene.setTimeOfDay`): quadros-chave por hora
+(`TOD_KEYS`) interpolados a cada quadro via `Environment.applyLive` — sol do
+céu abaixo do horizonte à noite e a luz que projeta sombra vinda de uma "lua"
+noutra direção (`lightElevation/lightAzimuth`), névoa, hemisfério, intensidade
+do IBL (o HDRI não é re-assado; o céu procedural, no máximo a cada 12 s), o
+vidro das luminárias (material partilhado da MatLib) e um pool de luzes
+pontuais que segue os postes mais perto da câmera (8/5/3 por tier). O
+Distrito Sombra é sempre noite e não lê o relógio. Nenhuma regra de jogo lê
+o relógio.
+
+**Rotina por horário** (`roster.ts: shiftOf`): perfil de ambiente ganha
+`hours` [de, até) e `night` {sceneId, program, hours}; o worker relê a cada
+30 s a hora publicada por qualquer corpo conectado, e quem muda de turno sai
+da sala e entra noutra com cabeça nova (fronteira com ±20 min de deslocamento
+por personagem para não esvaziar a praça num segundo). Agenda na migration
+0023 (gerada pelo bloco AGENDA de `gen-population.mjs`): de dia praça,
+comércio e escritório; à noite a praça fica com 9 dos 22, cinco passantes
+viram caminhantes do Distrito Sombra e o bairro ganha os seus noturnos
+(bar, fila do clube, travessa). Noite = 19 h–6 h (`isNight`).
+
 ## Personagens da cidade: três cabeças, um corpo
 
 A cidade tem população (PRD §25): 77 personagens que são clientes Colyseus

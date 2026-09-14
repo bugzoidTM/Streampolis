@@ -44,6 +44,9 @@ interface PlayerLike {
 interface StateLike {
   sceneId: SceneId;
   shard: string;
+  tick?: number;
+  clock?: number;
+  clockRate?: number;
   players: {
     get(key: string): PlayerLike | undefined;
     forEach(cb: (value: PlayerLike, key: string) => void): void;
@@ -115,6 +118,17 @@ export class World {
 
   get roomId(): string | null {
     return this.room?.roomId ?? null;
+  }
+
+  /**
+   * O relógio do mundo como a SALA o publica (minutos do dia), ou nulo antes
+   * da primeira escrita. O worker nunca calcula a hora por conta própria
+   * enquanto tem uma sala: quem manda no dia é o game server.
+   */
+  get clock(): number | null {
+    const st = this.room?.state;
+    if (!st || !((st.tick ?? 0) >= 24) || typeof st.clock !== 'number') return null;
+    return st.clock;
   }
 
   get sessionId(): string | null {

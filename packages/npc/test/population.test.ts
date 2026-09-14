@@ -574,3 +574,52 @@ describe('caminho por grade quando a reta não serve', () => {
     assert.ok(Math.abs(out[0]!.dx) > 0.5, `contornou: ${JSON.stringify(out[0])}`);
   });
 });
+
+// -------------------------------------------------------- rotina por horário
+
+import { shiftOf, type AgentRow as Row } from '../src/roster.js';
+import { hourWithin, isNight, daylight, formatClock, worldMinutesAt, worldClockRate } from '../src/shared.js';
+
+describe('relógio do mundo e turnos', () => {
+  it('a fórmula compartilhada é determinística, cíclica e formata em 24 h', () => {
+    const a = worldMinutesAt(1_000_000, 120);
+    const b = worldMinutesAt(1_000_000 + 120 * 60_000, 120);
+    assert.ok(Math.abs(a - b) < 1e-6, 'um dia depois, a mesma hora');
+    assert.equal(worldClockRate(120), 12);
+    assert.equal(formatClock(0), '00:00');
+    assert.equal(formatClock(19 * 60 + 5), '19:05');
+    assert.ok(hourWithin(23, 19, 6) && hourWithin(3, 19, 6) && !hourWithin(12, 19, 6));
+    assert.ok(hourWithin(9, 8, 20) && !hourWithin(20, 8, 20));
+    assert.ok(isNight(20 * 60) && !isNight(12 * 60));
+    assert.equal(daylight(12 * 60), 1);
+    assert.equal(daylight(23 * 60), 0);
+    assert.ok(daylight(6.5 * 60) > 0 && daylight(6.5 * 60) < 1, 'amanhecer é gradual');
+  });
+
+  it('turno: dia na cena de origem, noite noutra cena com outro programa, fora da janela = fora da cidade', () => {
+    const row: Row = {
+      id: '00000000-0000-4000-8000-0000000000fa', slug: 'x', displayName: 'X', sceneId: 'central_plaza', kind: 'ambient', enabled: true,
+      profile: {
+        role: 'passante', program: [{ do: 'walk' }], hours: [6, 22],
+        night: { sceneId: 'noir_district', hours: [19, 6], program: [{ do: 'stand', at: { x: -48, z: -5 }, secs: [10, 20] }] },
+      },
+    };
+    const day = shiftOf(row, 12 * 60);
+    assert.equal(day.key, 'day');
+    assert.equal(day.sceneId, 'central_plaza');
+    const night = shiftOf(row, 23 * 60);
+    assert.equal(night.key, 'night');
+    assert.equal(night.sceneId, 'noir_district');
+    assert.equal(night.profile.program[0]!.do, 'stand');
+    // 6h–19h de dia; 19h–6h à noite: a janela `hours` só vale fora do turno noturno.
+    assert.equal(shiftOf(row, 3 * 60).key, 'night');
+    const onlyDay: Row = { ...row, profile: { role: 'p', program: [{ do: 'walk' }], hours: [8, 20] } };
+    assert.equal(shiftOf(onlyDay, 21 * 60).key, 'off');
+    assert.equal(shiftOf(onlyDay, 9 * 60).key, 'day');
+    // O deslocamento pessoal move a fronteira.
+    assert.equal(shiftOf(onlyDay, 20 * 60 - 5, 0).key, 'day');
+    assert.equal(shiftOf(onlyDay, 20 * 60 - 5, 10).key, 'off');
+    // Social e cognitivo não têm agenda.
+    assert.equal(shiftOf({ ...row, kind: 'social' }, 23 * 60).key, 'day');
+  });
+});

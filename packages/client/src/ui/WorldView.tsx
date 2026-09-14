@@ -12,6 +12,7 @@ import { LoadingScreen } from './LoadingScreen.js';
 import { WorldChat } from './chat/WorldChat.js';
 import { EmoteBar } from './EmoteBar.js';
 import { RosterPanel } from './RosterPanel.js';
+import { WorldClock } from './WorldClock.js';
 import { PortalPrompt } from './PortalPrompt.js';
 import { GigPanel } from './GigPanel.js';
 import { GigTracker } from './GigTracker.js';
@@ -245,6 +246,10 @@ export function WorldView(props: WorldViewProps) {
       {/* Saber QUEM está por perto é a primeira metade de "encontrar
           jogadores": sem isto, a única forma de descobrir era virar a câmera e
           ler as placas sobre as cabeças ao alcance. */}
+      {/* A hora do mundo, como a sala a publica. Fica fora da live pelo mesmo
+          motivo do chat: lá o tempo que importa é o da transmissão. */}
+      <WorldClock hidden={inLive || props.paused === true || status === 'loading'} />
+
       {props.onOpenProfile && (
         <RosterPanel
           onOpenProfile={props.onOpenProfile}

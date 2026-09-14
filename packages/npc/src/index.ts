@@ -10,7 +10,9 @@ import { log, warn } from './log.js';
 import type { Mind } from './mind.js';
 import { loadActivePersona, type PersonaVersion } from './persona.js';
 import { describeOutcome, reflect, unreflectedCount } from './reflect.js';
-import { kindEnabled, loadRoster, readFlags, type AgentRow, type AmbientProfile, type NpcKind, type SocialProfile } from './roster.js';
+import { kindEnabled, loadRoster, readFlags, shiftOf, type AgentRow, type AmbientProfile, type NpcKind, type Shift, type SocialProfile } from './roster.js';
+import { seedOf } from './mind.js';
+import { formatClock, isNight, worldMinutesAt } from './shared.js';
 import { SocialMind } from './social.js';
 import { World } from './world.js';
 
@@ -43,6 +45,10 @@ const JOIN_STAGGER_MS = Number(process.env.NPC_JOIN_STAGGER_MS) || 400;
 
 interface Agent {
   row: AgentRow;
+  /** O turno em vigor (cena + programa efetivos); muda com o relógio do mundo. */
+  shift: Shift | null;
+  /** Deslocamento pessoal da fronteira de turno, em minutos do mundo (±20). */
+  jitter: number;
   identity: NpcIdentity | null;
   world: World | null;
   mind: Mind | null;
@@ -58,6 +64,21 @@ interface Agent {
 }
 
 const agents = new Map<string, Agent>();
+/** Dia do mundo em minutos reais — o mesmo valor do game server; só para o fallback sem sala. */
+const WORLD_DAY_MINUTES = Number(process.env.WORLD_DAY_MINUTES) || undefined;
+
+/**
+ * A hora do mundo: a que uma sala publicou (qualquer corpo conectado serve —
+ * é o mesmo relógio em todas), ou a fórmula compartilhada quando ainda não há
+ * ninguém dentro.
+ */
+function worldMinutesNow(): number {
+  for (const a of agents.values()) {
+    const c = a.world?.clock;
+    if (typeof c === 'number') return c;
+  }
+  return worldMinutesAt(Date.now(), WORLD_DAY_MINUTES);
+}
 let flags: Record<string, boolean> = { npc_enabled: true, npc_ambient_enabled: true, npc_social_enabled: true };
 const startedAt = Date.now();
 
@@ -68,9 +89,9 @@ function wantedSlugs(): Set<string> | null {
   return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
 }
 
-function buildMind(row: AgentRow, world: World, persona: PersonaVersion | null): Mind {
-  const npc = { id: row.id, name: row.displayName, sceneId: row.sceneId };
-  if (row.kind === 'ambient') return new AmbientMind(npc, world, row.profile as AmbientProfile);
+function buildMind(row: AgentRow, world: World, persona: PersonaVersion | null, shift: Shift | null): Mind {
+  const npc = { id: row.id, name: row.displayName, sceneId: shift?.sceneId ?? row.sceneId };
+  if (row.kind === 'ambient') return new AmbientMind(npc, world, shift?.profile ?? (row.profile as AmbientProfile));
   if (row.kind === 'social') return new SocialMind(npc, world, row.profile as SocialProfile);
   if (!persona) throw new Error('personagem cognitivo sem persona ativa no banco');
   return new Brain(npc, world, persona);
@@ -103,7 +124,7 @@ async function connect(agent: Agent): Promise<void> {
     if (agent.row.kind === 'cognitive' && !agent.persona) {
       agent.persona = await loadActivePersona(agent.row.id);
     }
-    const world = new World(agent.row.sceneId, {
+    const world = new World(agent.shift?.sceneId ?? agent.row.sceneId, {
       chat: (m) => agent.mind?.onChat(m),
       appeared: (p) => agent.mind?.onAppeared(p),
       gone: (p) => agent.mind?.onGone(p),
@@ -116,7 +137,7 @@ async function connect(agent: Agent): Promise<void> {
     });
     // A cabeça sobrevive à reconexão: conversas, relações e limites não zeram
     // porque a rede piscou.
-    if (!agent.mind) agent.mind = buildMind(agent.row, world, agent.persona);
+    if (!agent.mind) agent.mind = buildMind(agent.row, world, agent.persona, agent.shift);
     else agent.mind.rebind(world);
     await world.join(identity.token);
     agent.world = world;
@@ -165,26 +186,38 @@ async function control(): Promise<void> {
   }
   const only = wantedSlugs();
   const seen = new Set<string>();
+  const minutes = worldMinutesNow();
   for (const row of rows) {
     if (only && !only.has(row.slug)) continue;
     seen.add(row.id);
-    const want = row.enabled && kindEnabled(row.kind, flags);
     let agent = agents.get(row.id);
     if (!agent) {
       agent = {
-        row, identity: null, world: null, mind: null, persona: null, wanted: false, connecting: false, reflecting: false,
+        row, shift: null, jitter: (seedOf(row.id) % 41) - 20,
+        identity: null, world: null, mind: null, persona: null, wanted: false, connecting: false, reflecting: false,
         reconnectDelay: RECONNECT_MIN_MS, reconnectTimer: null, lastError: null, reflections: 0, lastReflection: null,
       };
       agents.set(row.id, agent);
     } else {
       agent.row = row;
     }
+    const shift = shiftOf(row, minutes, agent.jitter);
+    const want = row.enabled && kindEnabled(row.kind, flags) && shift.key !== 'off';
+    // Mudou de turno (cena ou programa): sai da sala e volta noutra, com cabeça nova.
+    if (want && agent.wanted && agent.shift && (agent.shift.key !== shift.key || agent.shift.sceneId !== shift.sceneId)) {
+      log('main', 'troca de turno', { npc: row.slug, de: `${agent.shift.key}@${agent.shift.sceneId}`, para: `${shift.key}@${shift.sceneId}`, hora: formatClock(minutes) });
+      await stopAgent(agent, 'troca de turno');
+      agent.mind?.dispose();
+      agent.mind = null;
+    }
     if (want && !agent.wanted) {
       agent.wanted = true;
-      log('main', 'entrando', { npc: row.slug, kind: row.kind, scene: row.sceneId });
+      agent.shift = shift;
+      if (agent.mind && agent.row.kind === 'ambient') { agent.mind.dispose(); agent.mind = null; }
+      log('main', 'entrando', { npc: row.slug, kind: row.kind, scene: shift.sceneId, turno: shift.key, hora: formatClock(minutes) });
       enqueueJoin(agent);
     } else if (!want && agent.wanted) {
-      await stopAgent(agent, row.enabled ? `freio ${row.kind}` : 'desligado no banco');
+      await stopAgent(agent, !row.enabled ? 'desligado no banco' : shift.key === 'off' ? `fora do horário (${formatClock(minutes)})` : `freio ${row.kind}`);
     }
   }
   for (const [id, agent] of [...agents]) {
@@ -263,7 +296,8 @@ function summary(): Record<string, unknown> {
     if (a.wanted) byKind[a.row.kind].wanted++;
     if (a.world) byKind[a.row.kind].connected++;
     return {
-      npc: a.row.slug, kind: a.row.kind, scene: a.row.sceneId, wanted: a.wanted, connected: a.world?.connected ?? false,
+      npc: a.row.slug, kind: a.row.kind, scene: a.shift?.sceneId ?? a.row.sceneId, home: a.row.sceneId, shift: a.shift?.key ?? null,
+      wanted: a.wanted, connected: a.world?.connected ?? false,
       room: a.world?.roomId ?? null, position: a.world?.position ?? null,
       personaVersion: a.mind instanceof Brain ? a.mind.persona.version : undefined,
       mind: a.mind?.status() ?? null, lastError: a.lastError,
@@ -286,6 +320,7 @@ function summary(): Record<string, unknown> {
     lastReflection: first?.lastReflection ?? null,
     lastError: first?.lastError ?? null,
     flags,
+    clock: { minutes: Math.round(worldMinutesNow() * 10) / 10, time: formatClock(worldMinutesNow()), night: isNight(worldMinutesNow()) },
     byKind,
     gatherings: GATHERINGS.all().map((g) => ({ id: g.id, scene: g.sceneId, room: g.roomId, members: [...g.members.keys()].length, secondsLeft: Math.max(0, Math.round((g.until - Date.now()) / 1000)) })),
     agents: list,

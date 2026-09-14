@@ -385,6 +385,11 @@ migration 0022 validando cada posto contra a planta da cena — para mudar um
 personagem de lugar, mude o gerador e gere de novo (ou dê um UPDATE em
 `npc_agents.profile`, que o processo relê em meio minuto).
 
+O relógio do mundo (`WORLD_DAY_MINUTES`, igual em `sp-game`, `sp-game-2` e
+`sp-npc`; 120 = um dia a cada duas horas reais) dita a rotina: fora da janela
+do personagem o corpo sai da sala, e os de turno noturno trocam de cena
+(migration 0023). O `/health` do `sp-npc` mostra `clock` e o `shift` de cada um.
+
 Duas regras do servidor que vieram com a população: a **lotação de uma sala
 conta só pessoas** (`hasReachedMaxClients` em `BaseWorldRoom`; `NPC_HEADROOM`
 é a folga física para personagens) e personagem não gera "fulano chegou" no

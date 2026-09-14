@@ -21,6 +21,14 @@ export interface SkyParams {
   fogNear: number;
   fogFar: number;
   envIntensity: number;
+  /**
+   * Direção da LUZ direcional quando diferente da do sol do céu. À noite o
+   * sol do céu fica abaixo do horizonte (céu escuro) e a luz que projeta
+   * sombra vem de uma "lua" em outra direção; sem isto, ou o céu fica claro
+   * de madrugada ou a luz vem de baixo do chão.
+   */
+  lightElevation?: number;
+  lightAzimuth?: number;
 }
 
 export const GOLDEN_HOUR: SkyParams = {
@@ -141,8 +149,13 @@ export class Environment implements LightRig {
     this.csm?.setupMaterial(mat);
   }
 
+  private lastShadowCenter: THREE.Vector3 | null = null;
+  private lastShadowRadius = 26;
+
   /** Sizes a single (non-cascaded) shadow frustum to an explicit world box. */
   frameShadows(center: THREE.Vector3, radius: number) {
+    this.lastShadowCenter = center.clone();
+    this.lastShadowRadius = radius;
     if (this.csm) return;
     const cam = this.sun.shadow.camera;
     cam.left = -radius; cam.right = radius;
@@ -156,6 +169,17 @@ export class Environment implements LightRig {
   }
 
   apply(params: Partial<SkyParams>) {
+    this.applyLive(params);
+    this.refreshEnvironment();
+  }
+
+  /**
+   * O mesmo que `apply`, sem re-assar o IBL: é o que a passagem das horas
+   * chama a cada quadro. Com HDRI a luz ambiente não depende do céu (só a
+   * intensidade, que é um número); com o céu procedural quem quiser o rebote
+   * atualizado chama `refreshEnvironment` de vez em quando.
+   */
+  applyLive(params: Partial<SkyParams>) {
     Object.assign(this.params, params);
     const p = this.params;
     const u = (this.sky.material as THREE.ShaderMaterial).uniforms;
@@ -164,10 +188,14 @@ export class Environment implements LightRig {
     u.mieCoefficient.value = p.mieCoefficient;
     u.mieDirectionalG.value = p.mieDirectionalG;
 
-    const phi = THREE.MathUtils.degToRad(90 - p.elevation);
-    const theta = THREE.MathUtils.degToRad(p.azimuth);
-    this.sunPosition.setFromSphericalCoords(1, phi, theta);
-    u.sunPosition.value.copy(this.sunPosition);
+    const skyPos = new THREE.Vector3().setFromSphericalCoords(
+      1, THREE.MathUtils.degToRad(90 - p.elevation), THREE.MathUtils.degToRad(p.azimuth),
+    );
+    u.sunPosition.value.copy(skyPos);
+    const le = p.lightElevation ?? p.elevation;
+    const la = p.lightAzimuth ?? p.azimuth;
+    this.sunPosition.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - Math.max(le, 1)), THREE.MathUtils.degToRad(la));
+    if (this.lastShadowCenter) this.frameShadows(this.lastShadowCenter, this.lastShadowRadius);
 
     this.sun.color.setHex(p.sunColor);
     this.sun.intensity = p.sunIntensity;
@@ -181,9 +209,14 @@ export class Environment implements LightRig {
       for (const l of this.csm.lights) l.color.setHex(p.sunColor);
     }
 
-    this.scene.fog = new THREE.Fog(p.fogColor, p.fogNear, p.fogFar);
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.color.setHex(p.fogColor);
+      this.scene.fog.near = p.fogNear;
+      this.scene.fog.far = p.fogFar;
+    } else {
+      this.scene.fog = new THREE.Fog(p.fogColor, p.fogNear, p.fogFar);
+    }
     this.scene.environmentIntensity = p.envIntensity;
-    this.refreshEnvironment();
   }
 
   /**

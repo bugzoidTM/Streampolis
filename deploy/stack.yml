@@ -158,6 +158,8 @@ services:
       # Vazio = o elenco inteiro habilitado no banco (cognitivos, sociais e
       # de ambiente — 77 corpos em 2026-09-14). Uma lista de slugs limita.
       NPC_SLUGS: ""
+      # Só para o fallback antes de haver sala: a hora que vale é a que a sala publica.
+      WORLD_DAY_MINUTES: "120"
       API_BASE_URL: http://sp-api:8787
       API_SERVICE_TOKEN: ${SP_SERVICE_TOKEN}
       GAME_SERVER_URL: ws://sp-game-gateway:8080

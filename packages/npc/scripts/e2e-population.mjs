@@ -35,6 +35,9 @@ delete process.env.API_BASE_URL;
 
 const { start } = await import('../../game-server/dist/game-server/src/index.js');
 const { signDevToken } = await import('../../game-server/dist/game-server/src/auth/AuthProvider.js');
+const { shiftOf } = await import('../dist/npc/src/roster.js');
+const { seedOf } = await import('../dist/npc/src/mind.js');
+const { worldMinutesAt, formatClock } = await import('../dist/shared/src/index.js');
 
 let failures = 0;
 let checks = 0;
@@ -64,7 +67,19 @@ function sessionToken(sub, name, perms, avatar = {}) {
 
 // ------------------------------------------------------------------ banco
 const db = new pg.Pool({ connectionString: DATABASE_URL, options: '-c search_path=streampolis,pg_catalog' });
-const { rows: roster } = await db.query(`SELECT id, slug, display_name, scene_id, kind, avatar FROM npc_agents ORDER BY created_at`);
+const { rows: roster } = await db.query(`SELECT id, slug, display_name, scene_id, kind, avatar, profile FROM npc_agents ORDER BY created_at`);
+/** Quem está em que cena a esta hora do mundo (a mesma regra do worker, com o mesmo deslocamento pessoal). */
+function onDuty(minutes) {
+  return roster.map((r) => {
+    const row = { id: r.id, slug: r.slug, displayName: r.display_name, sceneId: r.scene_id, kind: r.kind, profile: r.profile ?? {}, enabled: true };
+    const sh = shiftOf(row, minutes, (seedOf(r.id) % 41) - 20);
+    return { ...r, shift: sh.key, scene: sh.sceneId };
+  }).filter((r) => r.shift !== 'off');
+}
+const minutesNow = worldMinutesAt(Date.now());
+const duty = onDuty(minutesNow);
+const expected = duty.length;
+console.log(`hora do mundo ${formatClock(minutesNow)}: ${expected} de ${roster.length} em serviço (${duty.filter((r) => r.scene === 'central_plaza').length} na praça, ${duty.filter((r) => r.scene === 'noir_district').length} no distrito)`);
 const bySlug = new Map(roster.map((r) => [r.slug, r]));
 const total = roster.length;
 const count = (kind) => roster.filter((r) => r.kind === kind).length;
@@ -160,17 +175,24 @@ async function main() {
   await start(GAME_PORT, '127.0.0.1');
   const t0 = Date.now();
 
-  step(`1. O elenco inteiro entra (${total} corpos, um processo, lotação de pessoas = 4)`);
+  step(`1. O elenco em serviço entra (${expected} de ${total} corpos a esta hora, um processo, lotação de pessoas = 4)`);
   const allIn = await waitFor('todos conectados', async () => {
     const h = await health();
-    return h && h.agents.length === total && h.agents.every((a) => a.connected);
+    return h && h.agents.length === total && h.agents.filter((a) => a.connected).length >= expected - 1 && h.agents.filter((a) => a.wanted).every((a) => a.connected);
   }, 90_000, 1000);
   const h = await health();
   const connected = h?.agents.filter((a) => a.connected).length ?? 0;
-  check(`todos os ${total} conectados (${connected}) em ${Math.round((Date.now() - t0) / 1000)} s`, allIn, JSON.stringify(h?.byKind));
+  check(`os ${expected} em serviço conectados (${connected}) em ${Math.round((Date.now() - t0) / 1000)} s`, allIn, JSON.stringify(h?.byKind));
+  check('o relógio do mundo no /health bate com o da sala (fórmula compartilhada)', Math.abs(((h.clock.minutes - worldMinutesAt(Date.now())) % 1440 + 1440) % 1440) < 5 || Math.abs(((h.clock.minutes - worldMinutesAt(Date.now())) % 1440 + 1440) % 1440) > 1435, JSON.stringify(h.clock));
+  const offDuty = h.agents.filter((a) => !a.wanted && a.kind === 'ambient').map((a) => a.npc);
+  const expectedOff = roster.filter((r) => !duty.some((d) => d.slug === r.slug)).map((r) => r.slug);
+  check(`fora do horário ficam fora (${offDuty.length}; esperado ${expectedOff.length})`, Math.abs(offDuty.length - expectedOff.length) <= 1, `${offDuty.join(',')} vs ${expectedOff.join(',')}`);
+  const shifted = h.agents.filter((a) => a.shift === 'night' && a.scene !== a.home);
+  const expectedShifted = duty.filter((r) => r.shift === 'night');
+  check(`turno noturno noutra cena (${shifted.length}; esperado ${expectedShifted.length})`, Math.abs(shifted.length - expectedShifted.length) <= 1, shifted.map((a) => `${a.npc}→${a.scene}`).join(','));
   check('nenhum erro de entrada', !h?.agents.some((a) => a.lastError), h?.agents.filter((a) => a.lastError).map((a) => `${a.npc}: ${a.lastError}`).join('; '));
   const rooms = new Map();
-  for (const a of h?.agents ?? []) rooms.set(a.scene, (rooms.get(a.scene) ?? new Set()).add(a.room));
+  for (const a of h?.agents ?? []) if (a.connected) rooms.set(a.scene, (rooms.get(a.scene) ?? new Set()).add(a.room));
   check('cada cena tem UM shard (personagem não abre shard)', [...rooms.values()].every((s) => s.size === 1), JSON.stringify([...rooms].map(([k, v]) => [k, v.size])));
 
   step('2. Ana entra na praça: vê os personagens, não vê "chegou" deles, e a lotação continua para gente');
@@ -178,17 +200,17 @@ async function main() {
   const ana = await joinAs(ANA_ID, 'Ana', 'central_plaza');
   ana.onMessage('chatMessage', (m) => inbox.push(m));
   ana.onMessage('*', () => {});
-  await waitFor('roster da praça', () => npcsIn(ana).length >= 20, 10_000);
+  const expectPlaza = duty.filter((r) => r.scene === 'central_plaza').length;
+  await waitFor('roster da praça', () => npcsIn(ana).length >= expectPlaza - 1, 10_000);
   const plazaNpcs = npcsIn(ana);
-  const expectPlaza = roster.filter((r) => r.scene_id === 'central_plaza').length;
-  check(`a praça tem os ${expectPlaza} personagens no roster (${plazaNpcs.length})`, plazaNpcs.length === expectPlaza);
+  check(`a praça tem os ${expectPlaza} personagens em serviço no roster (${plazaNpcs.length})`, Math.abs(plazaNpcs.length - expectPlaza) <= 1);
   check('Ana caiu no MESMO shard dos personagens', plazaNpcs.length > 0 && [...rooms.get('central_plaza')][0] === ana.roomId, `${ana.roomId}`);
   await sleep(1500);
   check('nenhuma linha de sistema "chegou" para personagem', !inbox.some((m) => m.system && /chegou|saiu/.test(m.text) && !/Ana/.test(m.text)), inbox.filter((m) => m.system).map((m) => m.text).join(' | '));
   // Lotação 4 de pessoas: mais três entram na mesma praça apesar dos 28 personagens.
   const others = [];
   for (const [i, n] of ['Beto', 'Caio', 'Dora'].entries()) others.push(await joinAs(`3333333${i}-3333-4333-8333-333333333333`, n, 'central_plaza'));
-  check('três pessoas a mais cabem no mesmo shard (28 personagens não ocupam vaga)', others.every((r) => r.roomId === ana.roomId));
+  check(`três pessoas a mais cabem no mesmo shard (${plazaNpcs.length} personagens não ocupam vaga)`, others.every((r) => r.roomId === ana.roomId));
   const fifth = await joinAs('44444444-4444-4444-8444-444444444444', 'Eva', 'central_plaza');
   check('a quinta pessoa vai para um shard novo (lotação de gente respeitada)', fifth.roomId !== ana.roomId);
   await fifth.leave();
@@ -199,7 +221,12 @@ async function main() {
   const positions = plazaNpcs.map((m) => bodyOf(ana, m.id)).filter(Boolean);
   const spread = new Set(positions.map((p) => `${Math.round(p.x / 3)}:${Math.round(p.z / 3)}`));
   check(`os corpos visíveis ocupam ${spread.size} células de 3 m (não estão empilhados)`, spread.size >= Math.min(8, positions.length * 0.5), `${positions.length} visíveis`);
-  const moving = positions.filter((p) => p.moving).length;
+  // Amostra ao longo de alguns segundos: de madrugada a praça tem menos gente e mais parada.
+  let moving = 0;
+  for (let k = 0; k < 6 && moving === 0; k++) {
+    moving = plazaNpcs.map((m) => bodyOf(ana, m.id)).filter((p) => p && p.moving).length;
+    if (!moving) await sleep(1000);
+  }
   check(`há gente andando na praça (${moving} de ${positions.length} visíveis)`, moving >= 1);
   // Separação local: ninguém em cima de ninguém (dois corpos a menos de 0,4 m).
   const piles = [];
@@ -211,10 +238,9 @@ async function main() {
 
   step('4. Ana fala com uma social: resposta sem modelo, relação criada, "vem comigo" recusado a desconhecida');
   const bia = bySlug.get('bia');
-  const biaBody = () => bodyOf(ana, bia.id);
-  await waitFor('Bia visível', () => biaBody() !== null, 15_000);
-  const near = biaBody();
-  check('Bia está no estado da sala', near !== null);
+  // No roster da sala (o corpo só entra nos patches dentro dos 24 m da área de interesse).
+  await waitFor('Bia na sala', () => npcsIn(ana).some((m) => m.id === bia.id), 15_000);
+  check('Bia está na sala', npcsIn(ana).some((m) => m.id === bia.id));
   const before = llmCalls;
   ana.send('chat', { text: 'Bia, oi! você é humana?' });
   // A Bia pode ter soltado uma fala espontânea antes (sala quieta, gente perto):
@@ -250,11 +276,12 @@ async function main() {
   // prova aqui é a REGRA — longe, ele não fala.
   const dNelson = nelsonBody ? Math.hypot(nelsonBody.x - 0, nelsonBody.z - 0) : null;
   check('longe do quiosque, o quiosqueiro não responde (fala de balcão só a 6 m)', !heardNelson || dNelson === null || dNelson < 6, `${dNelson}`);
-  const marcos = bySlug.get('marcos');
+  // O Gustavo (olhando o telão) está na praça o dia inteiro; os passantes trocam de turno à noite.
+  const gustavo = bySlug.get('gustavo');
   const n3 = inbox.length;
-  ana.send('chat', { text: 'Marcos!' });
+  ana.send('chat', { text: 'Gustavo!' });
   await sleep(2_500);
-  check('o passante (mudo) não fala', !inbox.slice(n3).some((m) => m.senderId === marcos.id));
+  check('o figurante mudo não fala', !inbox.slice(n3).some((m) => m.senderId === gustavo.id));
   check('o cognitivo da praça (Nilo) continua respondendo pelo modelo', await (async () => {
     const nilo = bySlug.get('nilo');
     const n4 = inbox.length;
@@ -283,7 +310,7 @@ async function main() {
   await db.query(`UPDATE feature_flags SET enabled = TRUE WHERE key = 'npc_ambient_enabled'`);
   const back = await waitFor('ambiente de volta', async () => {
     const hh = await health();
-    return hh && hh.agents.every((a) => a.connected);
+    return hh && hh.agents.filter((a) => a.wanted).every((a) => a.connected) && hh.agents.filter((a) => a.connected).length >= expected - 1;
   }, 60_000, 1000);
   check('e voltam quando o freio solta', back);
 

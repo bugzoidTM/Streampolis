@@ -6,6 +6,8 @@ import {
   SCENE_COLLIDERS,
   penetrates,
   TICK_MS,
+  worldClockRate,
+  worldMinutesAt,
   type AnimState,
   type ChatMessage,
   type Collider,
@@ -531,6 +533,11 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
   private tick(): void {
     this.state.tick = (this.state.tick + 1) >>> 0;
     if (this.humanCapacity !== Infinity) this.reconcileLock();
+    // O relógio do mundo, uma vez por segundo: um número por sala, não por tique.
+    if (this.state.tick % 24 === 0 || this.state.clockRate !== worldClockRate(config.worldDayMinutes)) {
+      this.state.clock = Math.round(worldMinutesAt(Date.now(), config.worldDayMinutes) * 10) / 10;
+      this.state.clockRate = worldClockRate(config.worldDayMinutes);
+    }
 
     for (const client of this.clients) {
       const session = this.sessions.get(client.sessionId);

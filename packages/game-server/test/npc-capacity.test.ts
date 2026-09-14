@@ -123,3 +123,18 @@ it('o teto físico (lotação + folga) continua valendo para personagens', async
   assert.notEqual(extra.roomId, first, 'acima do teto físico o próximo vai para outra sala');
   await Promise.all([...bodies, extra].map((b) => b.leave()));
 });
+
+it('o relógio do mundo chega no estado da sala, dentro do dia, com a taxa configurada', async () => {
+  const { worldClockRate, worldMinutesAt } = await import('../src/shared.js');
+  const { config } = await import('../src/config.js');
+  const ana = await join('relogio');
+  // O default do schema já é um número: espera a PRIMEIRA escrita da sala (tick a andar e clock a mexer).
+  await until(() => ana.state.tick >= 24 && ana.state.clock > 0, 'relógio no estado');
+  assert.ok(ana.state.clock >= 0 && ana.state.clock < 1440);
+  assert.equal(ana.state.clockRate, worldClockRate(config.worldDayMinutes));
+  // O que a sala escreveu é o que a fórmula compartilhada dá para agora (com folga de escrita).
+  const expected = worldMinutesAt(Date.now(), config.worldDayMinutes);
+  const diff = Math.abs(((expected - ana.state.clock) % 1440 + 1440) % 1440);
+  assert.ok(Math.min(diff, 1440 - diff) < worldClockRate(config.worldDayMinutes) * 0.1, `desvio ${diff} min`);
+  await ana.leave();
+});

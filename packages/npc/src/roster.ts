@@ -1,5 +1,5 @@
 import { pool } from './db.js';
-import type { AnimState, SceneId } from './shared.js';
+import { hourWithin, type AnimState, type SceneId } from './shared.js';
 import type { Point } from './walker.js';
 
 /**
@@ -40,6 +40,42 @@ export interface AmbientProfile {
   program: AmbientStep[];
   /** Falas de balcão para quem o chama pelo nome. Vazio = mudo. */
   lines?: string[];
+  /**
+   * Janela do dia em que ele está na cidade, em horas do mundo [de, até),
+   * com volta pela meia-noite quando de > até. Ausente = o dia inteiro.
+   * Fora dela o corpo sai da sala.
+   */
+  hours?: [number, number];
+  /**
+   * Turno noturno: noutra cena, com outro programa, na janela dada. É o que
+   * faz a circulação mudar com a hora — quem atravessa a praça de dia é quem
+   * anda pela avenida do Distrito Sombra de madrugada.
+   */
+  night?: { sceneId: SceneId; program: AmbientStep[]; hours: [number, number]; role?: string };
+}
+
+/** O que um personagem de ambiente está fazendo a esta hora: onde, com que programa — ou fora da cidade. */
+export interface Shift {
+  key: 'day' | 'night' | 'off';
+  sceneId: SceneId;
+  profile: AmbientProfile;
+}
+
+/**
+ * O turno de um personagem numa hora do mundo. Só os de ambiente têm agenda;
+ * sociais e cognitivos estão sempre no dia. `jitterMin` desloca a fronteira
+ * por personagem (± minutos do mundo): sem isso todos trocam de turno no
+ * mesmo segundo e a praça esvazia de uma vez.
+ */
+export function shiftOf(row: AgentRow, worldMinutes: number, jitterMin = 0): Shift {
+  if (row.kind !== 'ambient') return { key: 'day', sceneId: row.sceneId, profile: row.profile as AmbientProfile };
+  const p = row.profile as AmbientProfile;
+  const h = (((worldMinutes + jitterMin) % 1440) + 1440) % 1440 / 60;
+  if (p.night && hourWithin(h, p.night.hours[0], p.night.hours[1])) {
+    return { key: 'night', sceneId: p.night.sceneId, profile: { role: p.night.role ?? p.role, program: p.night.program, lines: p.lines } };
+  }
+  if (p.hours && !hourWithin(h, p.hours[0], p.hours[1])) return { key: 'off', sceneId: row.sceneId, profile: p };
+  return { key: 'day', sceneId: row.sceneId, profile: p };
 }
 
 // --------------------------------------------------------------- social ---

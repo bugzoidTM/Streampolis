@@ -486,3 +486,62 @@ const byScene = {};
 for (const r of rows) byScene[r.scene] = byScene[r.scene] ?? { ambient: 0, social: 0 }, byScene[r.scene][r.kind]++;
 console.log(`gerado ${out}: ${ambientN} ambiente + ${socialN} sociais + Dalva`);
 console.log(JSON.stringify(byScene));
+
+// ============================================================ AGENDA (0023) ==
+//
+// A rotina por horário (relógio do mundo, shared/clock.ts): quem está na
+// cidade em que janela, e quem troca de cena à noite. Sai numa migration à
+// parte para não tocar na 0022 já aplicada (o checksum dela é conferido).
+//
+// De dia: praça, comércio e circulação. À noite: a praça esvazia (9 dos 22),
+// o comércio e o escritório fecham, e a circulação muda para o Distrito
+// Sombra — cinco passantes da praça viram caminhantes da avenida, e o bairro
+// ganha os seus próprios noturnos (esquina do bar, fila do clube, travessa).
+const noirPath = (i) => NOIR.crowd[i].path.map((w) => ({ x: w.x, z: w.z, wait: w.wait }));
+const noirWalk = (path, reverse = false) => {
+  const pts = reverse ? [...path].reverse() : path;
+  const program = pts.map((w) => ({ do: 'walk', to: { x: w.x, z: w.z }, secs: w.wait ? [w.wait, w.wait + 5] : [1, 4] }));
+  for (const w of [...pts].reverse().slice(1)) program.push({ do: 'walk', to: { x: w.x, z: w.z }, secs: [1, 4] });
+  return fixSteps('noir_district', program, 'turno noturno');
+};
+const NIGHT = [19, 6];
+const SCHEDULE = {
+  // Praça → Distrito Sombra à noite (circulação noturna).
+  marcos: { night: { sceneId: 'noir_district', hours: NIGHT, role: 'caminhando pela avenida (noite)', program: noirWalk(noirPath(0)) } },
+  renata: { night: { sceneId: 'noir_district', hours: NIGHT, role: 'caminhando pela avenida (noite)', program: noirWalk(noirPath(1), true) } },
+  tiago: { night: { sceneId: 'noir_district', hours: NIGHT, role: 'caminhando pela travessa (noite)', program: noirWalk(noirPath(2)) } },
+  paula: { night: { sceneId: 'noir_district', hours: NIGHT, role: 'caminhando pela avenida (noite)', program: noirWalk([{ x: 40, z: 4.4 }, { x: 16, z: 5.2, wait: 3 }, { x: -8, z: 3.8 }, { x: -30, z: 5.0, wait: 2 }]) } },
+  ivo: { night: { sceneId: 'noir_district', hours: NIGHT, role: 'na esquina do bar (noite)', program: fixSteps('noir_district', [
+    { do: 'stand', at: { x: -48.6, z: -5.2 }, yaw: PI - 0.6, secs: [120, 300] }, { do: 'walk', to: { x: -44, z: 4 }, secs: [10, 25] },
+  ], 'ivo noite') } },
+  // Praça só de dia.
+  edu: { hours: [6, 23] }, cintia: { hours: [6, 23] },
+  'seu-antenor': { hours: [7, 21] }, 'dona-lurdes': { hours: [7, 20] },
+  henrique: { hours: [8, 20] }, simone: { hours: [8, 20] },
+  'seu-nelson': { hours: [7, 23] }, joana: { hours: [6, 22] },
+  // Distrito Sombra: os noturnos e o único diurno.
+  nando: { hours: [18, 6] }, cida: { hours: [18, 6] },
+  lipe: { hours: [19, 5] }, duda: { hours: [19, 5] },
+  genivaldo: { hours: [18, 6] }, rosa: { hours: [17, 7] }, vitor: { hours: [20, 6] },
+  toninho: { hours: [6, 18] },
+  // Comércio e escritório: horário comercial.
+  ronaldo: { hours: [8, 22] }, kesia: { hours: [8, 22] }, miguel: { hours: [8, 22] }, tania: { hours: [9, 21] },
+  anderson: { hours: [8, 19] }, sofia: { hours: [8, 19] }, leandro: { hours: [8, 19] }, claudio: { hours: [8, 19] },
+};
+for (const slug of Object.keys(SCHEDULE)) if (!usedSlugs.has(slug)) throw new Error(`agenda para slug desconhecido: ${slug}`);
+
+const sched = [];
+sched.push(`-- 0023_npc_schedule.sql — rotina por horário (relógio do mundo, shared/clock.ts).
+--
+-- GERADO por packages/npc/scripts/gen-population.mjs (bloco AGENDA); não
+-- edite à mão. Acrescenta ao \`profile\` dos personagens de ambiente:
+--   hours  [de, até) em horas do mundo — fora da janela o corpo sai da sala;
+--   night  {sceneId, program, hours} — turno noturno noutra cena.
+-- Quem não aparece aqui está na cidade o dia inteiro. Nenhum mapa, bico ou
+-- regra de jogo muda: só quem está onde, a que horas.`);
+for (const [slug, patch] of Object.entries(SCHEDULE)) {
+  sched.push(`UPDATE streampolis.npc_agents SET profile = profile || ${j(patch)} WHERE slug = ${q(slug)};`);
+}
+const out23 = join(HERE, '..', '..', 'api', 'migrations', '0023_npc_schedule.sql');
+writeFileSync(out23, sched.join('\n') + '\n');
+console.log(`gerado ${out23}: ${Object.keys(SCHEDULE).length} agendas`);

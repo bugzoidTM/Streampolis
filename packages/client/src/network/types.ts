@@ -42,6 +42,9 @@ export interface WorldStateView {
   sceneId: SceneId;
   shard: string;
   tick: number;
+  /** O relógio do mundo (shared/clock.ts), escrito pela sala a cada segundo: minutos do dia e taxa. */
+  clock?: number;
+  clockRate?: number;
   players: MapLike<PlayerView>;
   /** City roster stays room-wide while positional players are filtered by AOI. */
   members?: MapLike<Pick<PlayerView, 'id' | 'name' | 'gifterLevel' | 'agency' | 'role' | 'avatar' | 'npc'>>;

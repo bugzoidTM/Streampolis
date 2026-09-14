@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PORTALS, SCENE_AREA, type ChatMessage, type HomePlacement, type Portal } from '@streampolis/shared';
+import { PORTALS, SCENE_AREA, worldClockRate, worldMinutesAt, type ChatMessage, type HomePlacement, type Portal } from '@streampolis/shared';
 import { InteriorScene } from './scenes/InteriorScene.js';
 import {
   DEFAULT_AVATAR,
@@ -19,6 +19,7 @@ import { CameraManager } from './CameraManager.js';
 import { InputManager } from './InputManager.js';
 import type { AvatarLike, ProceduralFrame } from './avatar/AvatarLike.js';
 import { crowdParts } from './AmbientCrowd.js';
+import { useClockStore } from '../state/useClockStore.js';
 import { createAvatar, isPackaged, isProcedural, preloadAvatarBodies } from './avatar/createAvatar.js';
 import { NameTag, disposeNameTags } from './NameTag.js';
 import { SpeechBubble } from './SpeechBubble.js';
@@ -475,6 +476,7 @@ export class World {
     }
 
     this.camera.update(dt);
+    this.advanceClock(dt);
     this.scene?.update(dt, this.camera.camera);
     this.gifts?.update(dt);
     this.renderer.render(dt);
@@ -548,6 +550,51 @@ export class World {
   }
 
   private lastCrowdLimit = -1;
+  /** A hora do mundo suavizada para a cena (minutos do dia); nula até a primeira leitura. */
+  private tod: number | null = null;
+  private todMinuteShown = -1;
+  /**
+   * `?tod=19:30` (ou `?tod=19.5`) fixa a hora desenhada — SÓ em build de
+   * desenvolvimento. É a bancada da revisão visual: `tools/shoot.mjs`
+   * fotografa a praça a qualquer hora sem esperar o dia do mundo passar. Em
+   * produção o parâmetro é ignorado e vale só o que a sala publica.
+   */
+  private readonly todOverride: number | null = (() => {
+    if (typeof location === 'undefined' || !import.meta.env.DEV) return null;
+    const raw = new URLSearchParams(location.search).get('tod');
+    if (!raw) return null;
+    const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+    const hours = m ? Number(m[1]) + Number(m[2]) / 60 : Number(raw);
+    return Number.isFinite(hours) ? ((hours * 60) % 1440 + 1440) % 1440 : null;
+  })();
+
+  /**
+   * O relógio vem da sala (`state.clock`, escrito a cada segundo); o cliente
+   * só o desenha. Entre duas escritas a hora anda à taxa publicada, e um salto
+   * (reconexão, sala nova) é seguido em vez de ser cortado. Sem sala (modo
+   * offline) vale a fórmula compartilhada — a mesma que o servidor usa.
+   */
+  private advanceClock(dt: number): void {
+    const rate = this.connection?.state?.clockRate ?? worldClockRate();
+    const received: number | null = this.todOverride ?? (this.connection ? this.connection.worldClock : worldMinutesAt(Date.now()));
+    if (received === null && this.tod === null) return;
+    const tod: number = this.tod ?? received ?? 0;
+    let target = received ?? (tod + rate * (dt / 60));
+    if (this.tod === null) this.tod = target;
+    let diff = target - tod;
+    if (diff > 720) diff -= 1440;
+    if (diff < -720) diff += 1440;
+    // Segue a taxa do mundo; corrige o desvio para o valor recebido em ~2 s.
+    this.tod += (this.todOverride === null ? rate * (dt / 60) : 0) + diff * Math.min(1, dt * 0.5);
+    this.tod = ((this.tod % 1440) + 1440) % 1440;
+    target = this.tod;
+    this.scene?.setTimeOfDay?.(target, dt);
+    const minute = Math.floor(target);
+    if (minute !== this.todMinuteShown) {
+      this.todMinuteShown = minute;
+      useClockStore.getState().set(minute);
+    }
+  }
 
   /**
    * Quais PERSONAGENS da cidade ficam fora do quadro neste tier.
