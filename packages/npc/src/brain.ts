@@ -8,6 +8,7 @@ import type { Nearby, World } from './world.js';
 import { findPlace, perceptionBlock, type Place } from './places.js';
 import { fold } from './text.js';
 import type { Mind } from './mind.js';
+import { claim, decide, namesAny, type Candidate } from './arbiter.js';
 import { SCENE_LABEL, sceneKnowledge, weatherApplies } from './scenes.js';
 import { freeSeatNear } from './seats.js';
 
@@ -215,12 +216,26 @@ export class Brain implements Mind {
     }).catch((err) => warn('brain', 'não lembrou', { err: String(err) }));
 
     const speaker = this.world.people().find((p) => p.userId === msg.senderId);
-    const near = speaker ? speaker.distance <= NEAR_TALK_M : false;
-    const talking = this.conversations.get(msg.senderId);
-    const inConversation = talking ? Date.now() - talking.lastAt < CONVERSATION_TTL_MS : false;
-    if (!isAddressed(msg.text, this.npc.name) && !near && !inConversation) return;
+    if (!this.shouldAnswer(msg, speaker ?? null)) return;
 
     this.queueReply(msg.senderId, msg.senderName, msg.text, speaker ?? null);
+  }
+
+  /**
+   * Esta fala é para mim? Pelo nome, sim. Sem nome, o árbitro do processo
+   * escolhe UM personagem (quem já conversa com a pessoa, senão quem ela
+   * encara) — antes todo mundo a 4,5 m respondia junto. Fala com o nome de
+   * outro personagem não é minha, por perto que eu esteja.
+   */
+  private shouldAnswer(msg: ChatMessage, speaker: (Nearby & { distance: number }) | null): boolean {
+    if (isAddressed(msg.text, this.npc.name)) return true;
+    const others = this.world.people().filter((p) => p.npc);
+    if (namesAny(msg.text, others.map((p) => p.name))) return false;
+    if (!speaker) return false;
+    const candidates: Candidate[] = others.map((p) => ({ npcId: p.userId, x: p.x, z: p.z }));
+    const me = this.world.position;
+    if (me) candidates.push({ npcId: this.npc.id, x: me.x, z: me.z });
+    return decide(msg.id, msg.senderId, { x: speaker.x, z: speaker.z, yaw: speaker.yaw }, candidates) === this.npc.id;
   }
 
   onAppeared(p: Nearby): void {
@@ -566,6 +581,7 @@ export class Brain implements Mind {
     const sent = this.world.say(text);
     if (!sent) return false;
     this.lastSpokeAt = Date.now();
+    if (about) claim(about.userId, this.npc.id);
     await memory.remember(this.npc.id, {
       kind: 'said', userId: about?.userId ?? null, userName: about?.name ?? null, text, roomId: this.world.roomId,
     }).catch(() => {});

@@ -28,6 +28,8 @@ export interface Nearby {
   npc: boolean;
   /** O gesto em curso na sala ('sit', 'idle', 'walk'…); o corpo lê para sentar junto. */
   anim: string;
+  /** Para onde a pessoa está virada (rad, convenção da sala): é o que diz com QUEM ela fala. */
+  yaw: number;
 }
 
 interface PlayerLike {
@@ -173,7 +175,7 @@ export class World {
     state?.players?.forEach((p, sessionId) => {
       if (sessionId === this.room?.sessionId) return;
       out.push({
-        sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true, anim: p.anim ?? 'idle',
+        sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true, anim: p.anim ?? 'idle', yaw: p.yaw ?? 0,
         distance: Math.hypot(p.x - me.x, p.z - me.z),
       });
     });
@@ -221,9 +223,10 @@ export class World {
           known.z = p.z;
           known.name = p.name;
           known.anim = p.anim ?? 'idle';
+          known.yaw = p.yaw ?? 0;
           return;
         }
-        const entry: Nearby = { sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true, anim: p.anim ?? 'idle' };
+        const entry: Nearby = { sessionId, userId: p.id, name: p.name, x: p.x, z: p.z, npc: p.npc === true, anim: p.anim ?? 'idle', yaw: p.yaw ?? 0 };
         this.nearby.set(sessionId, entry);
         this.events.appeared(entry);
       });

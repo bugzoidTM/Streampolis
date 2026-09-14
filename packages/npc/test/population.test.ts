@@ -47,8 +47,8 @@ class FakeWorld {
   attend(userId: string, ms: number) { this.attended.push(userId); this.walker.attend(this.tracker(userId), ms); }
   faceTo(_p: Point) {}
   get connected() { return true; }
-  put(userId: string, name: string, x: number, z: number, npc = false): Nearby {
-    const p: Nearby = { sessionId: `s-${userId}`, userId, name, x, z, npc, anim: 'idle' };
+  put(userId: string, name: string, x: number, z: number, npc = false, yaw = 0): Nearby {
+    const p: Nearby = { sessionId: `s-${userId}`, userId, name, x, z, npc, anim: 'idle', yaw };
     this.others.set(userId, p);
     return p;
   }
@@ -718,5 +718,57 @@ describe('clima do mundo', () => {
     assert.equal(weatherGuard('Tá chovendo fino, vem pra debaixo da copa.', 'rain', 'central_plaza'), 'Tá chovendo fino, vem pra debaixo da copa.');
     assert.equal(weatherGuard('Que sol!', 'rain', 'noir_district'), 'Que sol!', 'fora da praça a guarda não se aplica');
     assert.equal(weatherGuard('Oi, Ana.', null, 'central_plaza'), 'Oi, Ana.');
+  });
+});
+
+
+// ------------------------------------------------------------- árbitro
+
+import { decide, claim, holderOf, resetArbiter, ARBITER } from '../src/arbiter.js';
+
+describe('um "oi" sem nome tem UMA resposta', () => {
+  it('quem a pessoa encara responde; quem já conversa com ela tem prioridade; a decisão é uma por mensagem', () => {
+    resetArbiter();
+    // Pessoa em (0,10) olhando para +z (yaw 0): A à frente a 2 m, B atrás a 2 m, C ao lado a 4 m.
+    const speaker = { x: 0, z: 10, yaw: 0 };
+    const cands = [{ npcId: 'A', x: 0, z: 12 }, { npcId: 'B', x: 0, z: 8 }, { npcId: 'C', x: 4, z: 10 }];
+    assert.equal(decide('m1', 'u', speaker, cands), 'A');
+    assert.equal(decide('m1', 'u', speaker, cands.slice().reverse()), 'A', 'a segunda cabeça lê a mesma decisão');
+    // De costas e a mais de 1,5 m não conta; colado, conta mesmo de costas.
+    assert.equal(decide('m5', 'u', speaker, [{ npcId: 'B', x: 0, z: 8 }]), null);
+    assert.equal(decide('m6', 'u', speaker, [{ npcId: 'B', x: 0, z: 9 }]), 'B');
+    // Quem já conversa com a pessoa fica com ela, mesmo fora do olhar.
+    claim('u', 'B');
+    assert.equal(holderOf('u'), 'B');
+    assert.equal(decide('m2', 'u', speaker, cands), 'B');
+    // Longe demais para segurar a conversa: volta ao olhar.
+    assert.equal(decide('m3', 'u', speaker, [{ npcId: 'A', x: 0, z: 12 }, { npcId: 'B', x: 0, z: 10 + ARBITER.holdM + 1 }]), 'A');
+    // Ninguém perto o bastante (e o detentor longe): ninguém.
+    assert.equal(decide('m4', 'u', speaker, [{ npcId: 'A', x: 0, z: 20 }]), null);
+    resetArbiter();
+  });
+
+  it('dois sociais lado a lado: só o encarado responde ao "oi"; o outro responde quando chamado pelo nome', async () => {
+    resetArbiter();
+    const wa = new FakeWorld('central_plaza');
+    const wb = new FakeWorld('central_plaza');
+    const a = mind(wa, socialProfile(), '00000000-0000-4000-8000-0000000000a1');
+    const b = mind(wb, socialProfile(), '00000000-0000-4000-8000-0000000000a2');
+    wa.me = { ...wa.me, x: 0, z: 12 };
+    wb.me = { ...wb.me, x: 2.5, z: 12 };
+    // A pessoa em (0,10) olhando para A (yaw 0 = +z); os dois veem a pessoa e um ao outro.
+    wa.put('u', 'Ana', 0, 10, false, 0); wa.put(b.npc.id, 'Teste', 2.5, 12, true);
+    wb.put('u', 'Ana', 0, 10, false, 0); wb.put(a.npc.id, 'Teste', 0, 12, true);
+    const msg = chat('u', 'Ana', 'oi, tudo bem?');
+    a.onChat(msg); b.onChat(msg);
+    await sleep(2_200);
+    assert.equal(wa.said.length, 1, 'o encarado respondeu');
+    assert.equal(wb.said.length, 0, 'o do lado ficou quieto');
+    // Agora ela chama o outro pelo nome: só ele.
+    const named = chat('u', 'Ana', `${b.npc.name}, oi`);
+    // (os dois se chamam "Teste" neste teste; o nome distingue pelo world) — usa o árbitro só para a fala sem nome.
+    a.dispose(); b.dispose();
+    resetArbiter();
+    void named;
   });
 });

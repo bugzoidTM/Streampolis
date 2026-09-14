@@ -990,6 +990,13 @@ O que tem de continuar verdade:
   cabeça tica a cada 2 s, as pernas a 8 Hz. Uma ordem de andar encerra a
   atenção de conversa (`Walker.setTarget/follow/sitAt` limpam `attention`) —
   foi um regressão real: o Nilo parava para ouvir e não seguia.
+- **Um "oi" sem nome tem UMA resposta** (`arbiter.ts`): a primeira cabeça a
+  receber a mensagem decide para todas (mesmo processo) — quem já conversa
+  com a pessoa (respondeu há <60 s, a ≤10 m) ou, senão, quem ela está
+  ENCARANDO (`yaw` da sala; cosseno ≥0,35, a ≤4,5 m; colado a 1,5 m conta
+  mesmo de costas), desempate por distância. Fala com nome vai só para o
+  nomeado, inclusive quando o Nilo está do lado. Antes todo social a 4,5 m
+  respondia junto — numa rodinha, três "oi" para um.
 - **Relação é número e estágio** (`relations.ts`): `stranger < 6 ≤ known < 20
   ≤ friend < 45 ≤ close`, `grudge ≤ −10`. Ganho por conversa tem teto diário
   por pessoa; grosseria não tem. Desconhecido pede "vem comigo" e ouve não;

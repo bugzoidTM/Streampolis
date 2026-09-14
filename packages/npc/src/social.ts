@@ -1,5 +1,6 @@
 import { isAddressed, sanitizeSay } from './brain.js';
 import { GATHER, GATHERINGS, type Gathering } from './gatherings.js';
+import { claim, decide, namesAny, type Candidate } from './arbiter.js';
 import { log, warn } from './log.js';
 import { mulberry32, seedOf, type Mind } from './mind.js';
 import { bearing, findPlace, placesOf } from './places.js';
@@ -209,20 +210,25 @@ export class SocialMind implements Mind {
     const now = Date.now();
     if ((this.ignoreUntil.get(msg.senderId) ?? 0) > now) return;
     const speaker = this.world.people().find((p) => p.userId === msg.senderId);
-    const near = speaker ? speaker.distance <= NEAR_TALK_M : false;
-    const talking = this.conversations.get(msg.senderId);
-    const inConversation = talking ? now - talking.lastAt < CONVERSATION_TTL_MS : false;
-    if (!isAddressed(msg.text, this.npc.name) && !near && !inConversation) return;
-    // Alguém falou com outro personagem pelo nome: não é comigo.
-    if (!isAddressed(msg.text, this.npc.name) && this.addressedToAnotherNpc(msg.text)) return;
+    if (!this.shouldAnswer(msg, speaker ?? null)) return;
     this.queueReply(msg.senderId, msg.senderName, msg.text, speaker ?? null);
   }
 
-  private addressedToAnotherNpc(text: string): boolean {
-    for (const p of this.world.people()) {
-      if (p.npc && p.userId !== this.npc.id && isAddressed(text, p.name)) return true;
-    }
-    return false;
+  /**
+   * Esta fala é para mim? Pelo nome, sim. Sem nome, o árbitro do processo
+   * (`arbiter.ts`) escolhe UM personagem: quem já conversa com a pessoa, ou
+   * quem ela está encarando. Antes, todo social a 4,5 m respondia junto — numa
+   * rodinha, três "oi" para um.
+   */
+  private shouldAnswer(msg: ChatMessage, speaker: (Nearby & { distance: number }) | null): boolean {
+    if (isAddressed(msg.text, this.npc.name)) return true;
+    const others = this.world.people().filter((p) => p.npc);
+    if (namesAny(msg.text, others.map((p) => p.name))) return false;
+    if (!speaker) return false;
+    const candidates: Candidate[] = others.map((p) => ({ npcId: p.userId, x: p.x, z: p.z }));
+    const me = this.world.position;
+    if (me) candidates.push({ npcId: this.npc.id, x: me.x, z: me.z });
+    return decide(msg.id, msg.senderId, { x: speaker.x, z: speaker.z, yaw: speaker.yaw }, candidates) === this.npc.id;
   }
 
   // ---------------------------------------------------------------- tique
@@ -583,6 +589,7 @@ export class SocialMind implements Mind {
       const stage = stageOf(rel.affinity);
       const line = this.talk.say(greetKey(stage), userId, this.slots(name, rel));
       if (line && this.speak(line)) {
+        claim(userId, this.npc.id);
         this.relations.greeted(rel);
         this.socialNeed = Math.max(0, this.socialNeed - 0.4);
       }
@@ -756,7 +763,7 @@ export class SocialMind implements Mind {
 
       if (key) {
         const line = this.talk.say(key, c.userId, this.slots(c.name, rel, extra), { fallback: 'unknown' });
-        if (line) this.speak(line);
+        if (line && this.speak(line)) claim(c.userId, this.npc.id);
       }
       if (followUp) {
         const text2 = followUp;
