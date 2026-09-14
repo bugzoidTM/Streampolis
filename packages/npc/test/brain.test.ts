@@ -179,7 +179,10 @@ describe('as pernas', () => {
     const stuck = { x: -10, z: -10 };
     const t0 = Date.now();
     w.intents(stuck, 3);
-    // Simula 3 s sem sair do lugar.
+    // Simula 3 s sem sair do lugar: a primeira vez recalcula o caminho e insiste…
+    (w as unknown as { lastProgressAt: number }).lastProgressAt = t0 - 3_000;
+    assert.ok(w.intents(stuck, 3).length > 0, 'tenta de novo com caminho novo');
+    // …a segunda, desiste.
     (w as unknown as { lastProgressAt: number }).lastProgressAt = t0 - 3_000;
     const out = w.intents(stuck, 3);
     assert.equal(out.length, 0);

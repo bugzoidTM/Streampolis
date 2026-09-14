@@ -950,6 +950,11 @@ O que tem de continuar verdade:
   personagens — ambientes que passeiam e sociais — num ponto social da cena,
   virados para o centro, por 2–5 min, no máximo duas por sala, e dispersam.
   Quem tem posto fixo não sai do posto.
+- **Caminho por grade** (`nav.ts`): quando a reta até o alvo esbarra em algo,
+  um A* numa grade de 0,5 m da cena dá os pontos intermediários e o Walker os
+  segue um a um (local avoidance por trecho). Sem isto, três postos atrás de
+  balcão (DJ, recepção do saguão, balcão da loja) eram inalcançáveis e o beco
+  do bairro dependia de sorte. Preso, recalcula uma vez; só depois desiste.
 - **Separação local** (`SEPARATION` em `walker.ts`): o servidor não colide
   corpo com corpo, então as pernas desviam de quem está a <1,1 m (com parcela
   lateral — repulsão de frente não desvia), não sorteiam destino em cima de

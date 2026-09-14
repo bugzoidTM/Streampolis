@@ -541,3 +541,36 @@ describe('rodinhas', () => {
     GATHERINGS.reset();
   });
 });
+
+// ------------------------------------------------------------ caminho
+
+import { findPath, segmentFree } from '../src/nav.js';
+
+describe('caminho por grade quando a reta não serve', () => {
+  it('leva para trás do balcão do clube, do saguão e da loja — e usa a reta quando ela serve', () => {
+    const cases: Array<[SceneId, Point, Point]> = [
+      ['noir_club', { x: 0, z: -6 }, { x: 0, z: -11.2 }],
+      ['residential_lobby', { x: -4.5, z: -6 }, { x: -4.2, z: -9.25 }],
+      ['stream_store', { x: 5.6, z: -5 }, { x: 5.6, z: -8.2 }],
+      ['noir_district', { x: -50, z: 0 }, { x: 6.6, z: -17.2 }],
+    ];
+    for (const [id, from, to] of cases) {
+      assert.ok(!segmentFree(id, from, to), `${id}: a reta está bloqueada (o caso precisa de caminho)`);
+      const path = findPath(id, from, to)!;
+      assert.ok(path && path.length >= 2, `${id}: achou caminho com desvio (${path?.length})`);
+      let prev = from;
+      for (const p of path) { assert.ok(segmentFree(id, prev, p), `${id}: trecho livre até (${p.x}, ${p.z})`); prev = p; }
+      assert.deepEqual(path[path.length - 1], to);
+    }
+    assert.deepEqual(findPath('central_plaza', { x: 0, z: 10 }, { x: 0, z: 20 }), [{ x: 0, z: 20 }]);
+  });
+
+  it('as pernas seguem o caminho: o primeiro passo rumo ao posto atrás do balcão não é para dentro dele', () => {
+    const w = new Walker('noir_club');
+    w.setTarget({ x: 0, z: -11.2 });
+    const out = w.intents({ x: 0, z: -6 }, 3);
+    assert.ok(out.length);
+    // Direto seria dz < 0 e dx ≈ 0 (para dentro do balcão); com caminho, abre para um dos lados.
+    assert.ok(Math.abs(out[0]!.dx) > 0.5, `contornou: ${JSON.stringify(out[0])}`);
+  });
+});

@@ -2,6 +2,7 @@ import {
   FIXED_DT, MAX_SPEED, PLAY_AREA, PLAZA, SCENE_AREA, SCENE_COLLIDERS, PLAYER_RADIUS,
   penetrates, type AnimState, type Collider, type MoveIntent, type SceneId,
 } from './shared.js';
+import { findPath } from './nav.js';
 
 /**
  * As pernas (e a postura) do personagem.
@@ -140,6 +141,13 @@ export function plazaDestinations(): Point[] {
 
 export class Walker {
   private target: Point | null = null;
+  /**
+   * Pontos intermediários até `target` quando a reta não serve (ver `nav.ts`);
+   * `undefined` = ainda não calculado para este alvo; vazio = reta direta.
+   */
+  private path: Point[] = [];
+  private pathFor: Point | null = null;
+  private pathRetried = false;
   private seq = 0;
   private lastProgressAt = Date.now();
   private lastPos: Point = { x: 0, z: 0 };
@@ -524,18 +532,35 @@ export class Walker {
       return out;
     }
 
+    // O caminho até o alvo, calculado uma vez por alvo: a reta quando ela
+    // serve; pontos intermediários quando há um balcão ou um beco no meio.
+    if (this.pathFor !== target) {
+      this.pathFor = target;
+      this.path = findPath(this.sceneId, current, target) ?? [];
+      this.pathRetried = false;
+    }
+    while (this.path.length > 1 && Math.hypot(this.path[0]!.x - current.x, this.path[0]!.z - current.z) <= 0.6) this.path.shift();
+    const sub = this.path[0] ?? target;
+
     // Preso? A sala devolveu (quase) a mesma posição por tempo demais.
     if (Math.hypot(current.x - this.lastPos.x, current.z - this.lastPos.z) > STUCK_EPS_M) {
       this.lastProgressAt = Date.now();
       this.lastPos = { ...current };
     } else if (Date.now() - this.lastProgressAt > STUCK_MS) {
-      this.target = null;
-      this.escort = null;
-      this.stuckCount++;
-      return out;
+      if (!this.pathRetried) {
+        // Uma segunda tentativa, com caminho novo a partir de onde ficou.
+        this.pathRetried = true;
+        this.path = findPath(this.sceneId, current, target) ?? [];
+        this.lastProgressAt = Date.now();
+      } else {
+        this.target = null;
+        this.escort = null;
+        this.stuckCount++;
+        return out;
+      }
     }
 
-    const steered = this.steer(current, target);
+    const steered = this.steer(current, sub);
     if (!steered) {
       this.target = null;
       this.escort = null;
