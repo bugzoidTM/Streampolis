@@ -31,6 +31,8 @@ const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://streampolis:streamp
 
 process.env.AUTH_JWT_SECRET = SECRET;
 process.env.CITY_CAPACITY = '4';
+// Chove durante o roteiro inteiro: prova o abrigo (turno `rain`) e a percepção do clima.
+process.env.WORLD_WEATHER = 'rain';
 delete process.env.API_BASE_URL;
 
 const { start } = await import('../../game-server/dist/game-server/src/index.js');
@@ -72,7 +74,7 @@ const { rows: roster } = await db.query(`SELECT id, slug, display_name, scene_id
 function onDuty(minutes) {
   return roster.map((r) => {
     const row = { id: r.id, slug: r.slug, displayName: r.display_name, sceneId: r.scene_id, kind: r.kind, profile: r.profile ?? {}, enabled: true };
-    const sh = shiftOf(row, minutes, (seedOf(r.id) % 41) - 20);
+    const sh = shiftOf(row, minutes, (seedOf(r.id) % 41) - 20, 'rain');
     return { ...r, shift: sh.key, scene: sh.sceneId };
   }).filter((r) => r.shift !== 'off');
 }
@@ -190,6 +192,10 @@ async function main() {
   const shifted = h.agents.filter((a) => a.shift === 'night' && a.scene !== a.home);
   const expectedShifted = duty.filter((r) => r.shift === 'night');
   check(`turno noturno noutra cena (${shifted.length}; esperado ${expectedShifted.length})`, Math.abs(shifted.length - expectedShifted.length) <= 1, shifted.map((a) => `${a.npc}→${a.scene}`).join(','));
+  check('o clima publicado pela sala chegou ao worker: chuva', h.clock.weather === 'rain', JSON.stringify(h.clock));
+  const sheltered = h.agents.filter((a) => a.shift === 'rain');
+  const expectedSheltered = duty.filter((r) => r.shift === 'rain');
+  check(`quem tem abrigo foi para o interior na chuva (${sheltered.length}; esperado ${expectedSheltered.length})`, sheltered.length === expectedSheltered.length && sheltered.every((a) => a.scene !== 'central_plaza'), sheltered.map((a) => `${a.npc}→${a.scene}`).join(','));
   check('nenhum erro de entrada', !h?.agents.some((a) => a.lastError), h?.agents.filter((a) => a.lastError).map((a) => `${a.npc}: ${a.lastError}`).join('; '));
   const rooms = new Map();
   for (const a of h?.agents ?? []) if (a.connected) rooms.set(a.scene, (rooms.get(a.scene) ?? new Set()).add(a.room));

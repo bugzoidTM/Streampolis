@@ -12,7 +12,7 @@ import { loadActivePersona, type PersonaVersion } from './persona.js';
 import { describeOutcome, reflect, unreflectedCount } from './reflect.js';
 import { kindEnabled, loadRoster, readFlags, shiftOf, type AgentRow, type AmbientProfile, type NpcKind, type Shift, type SocialProfile } from './roster.js';
 import { seedOf } from './mind.js';
-import { formatClock, isNight, worldMinutesAt } from './shared.js';
+import { formatClock, isNight, weatherAt, worldMinutesAt, type Weather } from './shared.js';
 import { SocialMind } from './social.js';
 import { World } from './world.js';
 
@@ -78,6 +78,15 @@ function worldMinutesNow(): number {
     if (typeof c === 'number') return c;
   }
   return worldMinutesAt(Date.now(), WORLD_DAY_MINUTES);
+}
+
+/** O clima do mundo: o publicado por qualquer sala, ou a fórmula (só no arranque). */
+function worldWeatherNow(): Weather {
+  for (const a of agents.values()) {
+    const w = a.world?.weather;
+    if (w) return w;
+  }
+  return weatherAt(Date.now(), WORLD_DAY_MINUTES, process.env.WORLD_WEATHER);
 }
 let flags: Record<string, boolean> = { npc_enabled: true, npc_ambient_enabled: true, npc_social_enabled: true };
 const startedAt = Date.now();
@@ -187,6 +196,7 @@ async function control(): Promise<void> {
   const only = wantedSlugs();
   const seen = new Set<string>();
   const minutes = worldMinutesNow();
+  const weather = worldWeatherNow();
   for (const row of rows) {
     if (only && !only.has(row.slug)) continue;
     seen.add(row.id);
@@ -201,7 +211,7 @@ async function control(): Promise<void> {
     } else {
       agent.row = row;
     }
-    const shift = shiftOf(row, minutes, agent.jitter);
+    const shift = shiftOf(row, minutes, agent.jitter, weather);
     const want = row.enabled && kindEnabled(row.kind, flags) && shift.key !== 'off';
     // Mudou de turno (cena ou programa): sai da sala e volta noutra, com cabeça nova.
     if (want && agent.wanted && agent.shift && (agent.shift.key !== shift.key || agent.shift.sceneId !== shift.sceneId)) {
@@ -320,7 +330,7 @@ function summary(): Record<string, unknown> {
     lastReflection: first?.lastReflection ?? null,
     lastError: first?.lastError ?? null,
     flags,
-    clock: { minutes: Math.round(worldMinutesNow() * 10) / 10, time: formatClock(worldMinutesNow()), night: isNight(worldMinutesNow()) },
+    clock: { minutes: Math.round(worldMinutesNow() * 10) / 10, time: formatClock(worldMinutesNow()), night: isNight(worldMinutesNow()), weather: worldWeatherNow() },
     byKind,
     gatherings: GATHERINGS.all().map((g) => ({ id: g.id, scene: g.sceneId, room: g.roomId, members: [...g.members.keys()].length, secondsLeft: Math.max(0, Math.round((g.until - Date.now()) / 1000)) })),
     agents: list,

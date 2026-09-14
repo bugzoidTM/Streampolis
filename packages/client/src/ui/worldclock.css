@@ -30,3 +30,15 @@
   box-shadow: inset -3px -1px 0 0 #6e7bb0, 0 0 6px rgba(207, 216, 255, 0.5);
 }
 .wclock__time { letter-spacing: 0.02em; }
+
+/* Chuva: três traços caindo ao lado da hora (CSS, nunca emoji). */
+.wclock__rain { display: inline-flex; gap: 3px; margin-left: 2px; height: 12px; align-items: flex-end; }
+.wclock__rain i {
+  display: block; width: 2px; height: 8px; border-radius: 2px;
+  background: #9fc2ff; opacity: 0.85; transform: skewX(-12deg);
+  animation: wclock-drop 0.9s linear infinite;
+}
+.wclock__rain i:nth-child(2) { height: 6px; animation-delay: 0.3s; }
+.wclock__rain i:nth-child(3) { height: 9px; animation-delay: 0.6s; }
+@keyframes wclock-drop { from { transform: translateY(-3px) skewX(-12deg); opacity: 0.2; } 40% { opacity: 0.9; } to { transform: translateY(3px) skewX(-12deg); opacity: 0; } }
+.wclock.is-rain .wclock__orb { filter: saturate(0.4) brightness(0.8); }

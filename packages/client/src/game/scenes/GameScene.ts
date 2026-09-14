@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { resolveCollision, type Area, type Collider, type SceneId } from '@streampolis/shared';
+import { resolveCollision, type Area, type Collider, type SceneId, type Weather } from '@streampolis/shared';
 import type { Framing } from '../CameraManager.js';
 import type { GradeLook } from '../Renderer.js';
 import type { QualityTier } from '../QualityManager.js';
@@ -48,6 +48,8 @@ export interface GameScene {
    * as outras ignoram. Só desenho: nenhuma regra de jogo lê isto aqui.
    */
   setTimeOfDay?(minutes: number, dt: number): void;
+  /** O clima do mundo como a sala o publicou. Só desenho. */
+  setWeather?(weather: Weather): void;
   /** Simple collision: returns the corrected position. */
   clamp(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3;
   dispose(): void;

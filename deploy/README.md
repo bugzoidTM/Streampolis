@@ -385,7 +385,10 @@ migration 0022 validando cada posto contra a planta da cena — para mudar um
 personagem de lugar, mude o gerador e gere de novo (ou dê um UPDATE em
 `npc_agents.profile`, que o processo relê em meio minuto).
 
-O relógio do mundo (`WORLD_DAY_MINUTES`, igual em `sp-game`, `sp-game-2` e
+O clima do mundo (`WORLD_WEATHER=auto|rain|clear` no game server; `auto` é
+sorteio determinístico por janela de 3 h do mundo) chega ao cliente (chuva na
+praça) e ao worker (figurantes se abrigam; cinco vão para interiores —
+migration 0024). O relógio do mundo (`WORLD_DAY_MINUTES`, igual em `sp-game`, `sp-game-2` e
 `sp-npc`; 120 = um dia a cada duas horas reais) dita a rotina: fora da janela
 do personagem o corpo sai da sala, e os de turno noturno trocam de cena
 (migration 0023). O `/health` do `sp-npc` mostra `clock` e o `shift` de cada um.

@@ -9,12 +9,19 @@ import './worldclock.css';
  */
 export function WorldClock({ hidden }: { hidden?: boolean }) {
   const minutes = useClockStore((s) => s.minutes);
+  const weather = useClockStore((s) => s.weather);
   if (hidden || minutes === null) return null;
   const day = daylight(minutes) > 0.5;
+  const rain = weather === 'rain';
   return (
-    <div className={`wclock${day ? ' is-day' : ' is-night'}`} aria-label={`Hora do mundo: ${formatClock(minutes)}`} title="Hora do mundo">
+    <div
+      className={`wclock${day ? ' is-day' : ' is-night'}${rain ? ' is-rain' : ''}`}
+      aria-label={`Hora do mundo: ${formatClock(minutes)}${rain ? ', chovendo' : ''}`}
+      title={rain ? 'Hora do mundo · chovendo' : 'Hora do mundo'}
+    >
       <span className="wclock__orb" aria-hidden />
       <span className="wclock__time">{formatClock(minutes)}</span>
+      {rain && <span className="wclock__rain" aria-hidden><i /><i /><i /></span>}
     </div>
   );
 }

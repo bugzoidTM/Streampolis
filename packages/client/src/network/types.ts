@@ -45,6 +45,8 @@ export interface WorldStateView {
   /** O relógio do mundo (shared/clock.ts), escrito pela sala a cada segundo: minutos do dia e taxa. */
   clock?: number;
   clockRate?: number;
+  /** O clima do mundo ('clear' | 'rain'), escolhido pela sala (shared/weather.ts). */
+  weather?: string;
   players: MapLike<PlayerView>;
   /** City roster stays room-wide while positional players are filtered by AOI. */
   members?: MapLike<Pick<PlayerView, 'id' | 'name' | 'gifterLevel' | 'agency' | 'role' | 'avatar' | 'npc'>>;

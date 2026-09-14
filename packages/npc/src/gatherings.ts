@@ -104,10 +104,11 @@ class Registry {
   }
 
   /** Abre uma rodinha nova num ponto social livre da cena, se a sala comportar. */
-  open(sceneId: SceneId, roomId: string, near: Point, maxDist: number, rng: () => number, now = Date.now()): Gathering | null {
+  open(sceneId: SceneId, roomId: string, near: Point, maxDist: number, rng: () => number, now = Date.now(), only: ((p: Point) => boolean) | null = null): Gathering | null {
     const mine = this.inRoom(roomId);
     if (mine.length >= GATHER.maxPerRoom) return null;
     const candidates = socialPoints(sceneId)
+      .filter((p) => !only || only(p))
       .filter((p) => Math.hypot(p.x - near.x, p.z - near.z) <= maxDist)
       .filter((p) => mine.every((g) => Math.hypot(g.center.x - p.x, g.center.z - p.z) >= GATHER.apartM));
     if (!candidates.length) return null;

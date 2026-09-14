@@ -1,7 +1,7 @@
 import { Client, type Room } from 'colyseus.js';
 import { config } from './config.js';
 import { log, warn } from './log.js';
-import { MSG, TICK_MS, type AnimState, type ChatMessage, type MoveIntent, type SceneId } from './shared.js';
+import { MSG, TICK_MS, isWeather, type AnimState, type ChatMessage, type MoveIntent, type SceneId, type Weather } from './shared.js';
 import { sceneKnowledge } from './scenes.js';
 import { Walker, type Point, type Someone } from './walker.js';
 
@@ -47,6 +47,7 @@ interface StateLike {
   tick?: number;
   clock?: number;
   clockRate?: number;
+  weather?: string;
   players: {
     get(key: string): PlayerLike | undefined;
     forEach(cb: (value: PlayerLike, key: string) => void): void;
@@ -125,6 +126,13 @@ export class World {
    * da primeira escrita. O worker nunca calcula a hora por conta própria
    * enquanto tem uma sala: quem manda no dia é o game server.
    */
+  /** O clima como a SALA o publica ('clear' | 'rain'); nulo antes da primeira escrita. */
+  get weather(): Weather | null {
+    const st = this.room?.state;
+    if (!st || !((st.tick ?? 0) >= 24) || !isWeather(st.weather)) return null;
+    return st.weather;
+  }
+
   get clock(): number | null {
     const st = this.room?.state;
     if (!st || !((st.tick ?? 0) >= 24) || typeof st.clock !== 'number') return null;

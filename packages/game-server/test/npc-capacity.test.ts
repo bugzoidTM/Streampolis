@@ -138,3 +138,18 @@ it('o relógio do mundo chega no estado da sala, dentro do dia, com a taxa confi
   assert.ok(Math.min(diff, 1440 - diff) < worldClockRate(config.worldDayMinutes) * 0.1, `desvio ${diff} min`);
   await ana.leave();
 });
+
+it('o clima do mundo chega no estado e é o que a fórmula compartilhada (ou o operador) escolhe', async () => {
+  const { weatherAt, weatherOfSlot, isWeather } = await import('../src/shared.js');
+  const { config } = await import('../src/config.js');
+  const ana = await join('clima');
+  await until(() => ana.state.tick >= 24 && ana.state.clock > 0, 'primeira escrita');
+  assert.ok(isWeather(ana.state.weather));
+  assert.equal(ana.state.weather, weatherAt(Date.now(), config.worldDayMinutes, config.worldWeather));
+  // O sorteio por janela é determinístico e tem os dois lados.
+  const slots = Array.from({ length: 200 }, (_, i) => weatherOfSlot(i));
+  assert.ok(slots.includes('rain') && slots.includes('clear'));
+  assert.deepEqual(slots, Array.from({ length: 200 }, (_, i) => weatherOfSlot(i)));
+  assert.equal(weatherAt(0, 120, 'rain'), 'rain');
+  await ana.leave();
+});

@@ -545,3 +545,35 @@ for (const [slug, patch] of Object.entries(SCHEDULE)) {
 const out23 = join(HERE, '..', '..', 'api', 'migrations', '0023_npc_schedule.sql');
 writeFileSync(out23, sched.join('\n') + '\n');
 console.log(`gerado ${out23}: ${Object.keys(SCHEDULE).length} agendas`);
+
+// ============================================================ CHUVA (0024) ==
+//
+// Abrigo da chuva: quem passeia pela praça de dia ganha um interior para onde
+// ir quando a sala diz que chove (turno `rain`, ver roster.ts). Os outros da
+// praça ficam — debaixo das copas, dos toldos e das marquises (coveredPoints)
+// — porque é chuva, não tempestade, e uma praça vazia na chuva lê como bug.
+const lobbyWalk = fixSteps('residential_lobby', [
+  { do: 'walk', to: { x: 0, z: 5.5 }, secs: [20, 50] }, { do: 'walk', to: { x: -6, z: -4 }, secs: [15, 40] }, { do: 'walk', to: { x: 6, z: -4 }, secs: [15, 40] },
+], 'abrigo saguão');
+const storeWalk = fixSteps('stream_store', [
+  { do: 'walk', to: { x: -1.6, z: -3.0 }, secs: [15, 40] }, { do: 'walk', to: { x: 1.6, z: 0.3 }, secs: [15, 40] }, { do: 'walk', to: { x: 0, z: 4.6 }, secs: [20, 50] },
+], 'abrigo loja');
+const RAIN_SHELTER = {
+  edu: { rain: { sceneId: 'residential_lobby', role: 'abrigado da chuva no saguão', program: lobbyWalk } },
+  cintia: { rain: { sceneId: 'stream_store', role: 'abrigada da chuva na loja', program: storeWalk } },
+  wagner: { rain: { sceneId: 'stream_store', role: 'abrigado da chuva na loja', program: storeWalk } },
+  larissa: { rain: { sceneId: 'residential_lobby', role: 'abrigada da chuva no saguão', program: lobbyWalk } },
+  joana: { rain: { sceneId: 'residential_lobby', role: 'abrigada da chuva no saguão', program: lobbyWalk } },
+};
+for (const slug of Object.keys(RAIN_SHELTER)) if (!usedSlugs.has(slug)) throw new Error(`abrigo para slug desconhecido: ${slug}`);
+const rainSql = [`-- 0024_npc_rain.sql — abrigo da chuva (clima do mundo, shared/weather.ts).
+--
+-- GERADO por packages/npc/scripts/gen-population.mjs (bloco CHUVA); não edite
+-- à mão. Acrescenta \`rain\` {sceneId, program} ao profile de cinco figurantes
+-- da praça: quando a sala publica chuva, eles trocam para um interior
+-- disponível; os outros se abrigam nos pontos cobertos da própria praça
+-- (copas, toldos, marquises — regra em packages/npc/src/scenes.ts).`];
+for (const [slug, patch] of Object.entries(RAIN_SHELTER)) rainSql.push(`UPDATE streampolis.npc_agents SET profile = profile || ${j(patch)} WHERE slug = ${q(slug)};`);
+const out24 = join(HERE, '..', '..', 'api', 'migrations', '0024_npc_rain.sql');
+writeFileSync(out24, rainSql.join('\n') + '\n');
+console.log(`gerado ${out24}: ${Object.keys(RAIN_SHELTER).length} abrigos`);

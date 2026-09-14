@@ -164,3 +164,53 @@ function destinationsOf(id: SceneId): Point[] {
 export function ahead(from: Point, yaw: number, d = 3): Point {
   return { x: from.x + Math.sin(yaw) * d, z: from.z + Math.cos(yaw) * d };
 }
+
+/** Onde o clima do mundo é desenhado (e sentido): só a praça. O Distrito Sombra chove sempre, por desenho; interiores têm teto. */
+export function weatherApplies(id: SceneId): boolean {
+  return id === 'central_plaza';
+}
+
+const coveredCache = new Map<SceneId, Point[]>();
+
+/**
+ * Pontos cobertos da cena: onde um figurante se abriga quando chove. Na
+ * praça: debaixo das copas do anel interno de árvores, encostado aos
+ * quiosques (que têm toldo) e nas entradas das portas (marquise). Só a
+ * praça precisa disto — é a única cena onde chove de verdade.
+ */
+export function coveredPoints(id: SceneId): Point[] {
+  const hit = coveredCache.get(id);
+  if (hit) return hit;
+  const out: Point[] = [];
+  if (id === 'central_plaza') {
+    for (const t of PLAZA.trees) {
+      const r = Math.hypot(t.x, t.z);
+      if (r < 1e-6 || r > PLAZA.radius - 3) continue;
+      // Um passo para dentro do tronco: sob a copa, fora do colisor.
+      const k = (r - 1.1) / r;
+      out.push(nearestFree(id, { x: t.x * k, z: t.z * k }));
+    }
+    for (const k of PLAZA.kiosks) {
+      const r = Math.hypot(k.x, k.z);
+      for (const [d, side] of [[2.3, 0.9], [2.3, -0.9]] as Array<[number, number]>) {
+        const kk = (r - d) / r;
+        const tx = -k.z / r;
+        const tz = k.x / r;
+        out.push(nearestFree(id, { x: k.x * kk + tx * side, z: k.z * kk + tz * side }));
+      }
+    }
+    for (const portal of PORTALS.central_plaza ?? []) {
+      const r = Math.hypot(portal.x, portal.z);
+      const kk = (r - 3.2) / r;
+      out.push(nearestFree(id, { x: portal.x * kk, z: portal.z * kk }));
+    }
+  }
+  const free = out.filter((p) => isFree(id, p, 0));
+  coveredCache.set(id, free);
+  return free;
+}
+
+/** Este ponto está coberto (a menos de 1,6 m de um abrigo)? */
+export function isCovered(id: SceneId, p: Point): boolean {
+  return coveredPoints(id).some((c) => Math.hypot(c.x - p.x, c.z - p.z) <= 1.6);
+}

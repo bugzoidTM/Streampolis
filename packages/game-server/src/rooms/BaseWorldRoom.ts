@@ -6,6 +6,7 @@ import {
   SCENE_COLLIDERS,
   penetrates,
   TICK_MS,
+  weatherAt,
   worldClockRate,
   worldMinutesAt,
   type AnimState,
@@ -537,6 +538,8 @@ export abstract class BaseWorldRoom<S extends WorldState = WorldState> extends R
     if (this.state.tick % 24 === 0 || this.state.clockRate !== worldClockRate(config.worldDayMinutes)) {
       this.state.clock = Math.round(worldMinutesAt(Date.now(), config.worldDayMinutes) * 10) / 10;
       this.state.clockRate = worldClockRate(config.worldDayMinutes);
+      const weather = weatherAt(Date.now(), config.worldDayMinutes, config.worldWeather);
+      if (this.state.weather !== weather) this.state.weather = weather;
     }
 
     for (const client of this.clients) {

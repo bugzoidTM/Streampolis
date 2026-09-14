@@ -53,6 +53,8 @@ export const config = {
 
   /** Quantos minutos reais dura um dia do mundo (ver shared/clock.ts). 1440 = tempo real. */
   worldDayMinutes: num('WORLD_DAY_MINUTES', 120),
+  /** 'auto' (sorteio determinístico por janela, shared/weather.ts) ou forçado: 'rain' | 'clear'. */
+  worldWeather: str('WORLD_WEATHER', 'auto'),
   cityCapacity: num('CITY_CAPACITY', 36),
   /**
    * Quantos PERSONAGENS (PRD §25) cabem numa sala além da lotação de pessoas.

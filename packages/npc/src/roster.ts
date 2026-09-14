@@ -1,5 +1,6 @@
 import { pool } from './db.js';
-import { hourWithin, type AnimState, type SceneId } from './shared.js';
+import { hourWithin, type AnimState, type SceneId, type Weather } from './shared.js';
+import { weatherApplies } from './scenes.js';
 import type { Point } from './walker.js';
 
 /**
@@ -52,14 +53,20 @@ export interface AmbientProfile {
    * anda pela avenida do Distrito Sombra de madrugada.
    */
   night?: { sceneId: SceneId; program: AmbientStep[]; hours: [number, number]; role?: string };
+  /**
+   * Abrigo da chuva: um interior disponível (saguão, loja) com um programa
+   * curto, para quem estava na praça quando começou a chover. Vale só no
+   * turno diurno e só quando a cena de origem sente o clima.
+   */
+  rain?: { sceneId: SceneId; program: AmbientStep[]; role?: string };
 }
 
-/** O que um personagem de ambiente está fazendo a esta hora: onde, com que programa — ou fora da cidade. */
 export interface Shift {
-  key: 'day' | 'night' | 'off';
+  key: 'day' | 'night' | 'rain' | 'off';
   sceneId: SceneId;
   profile: AmbientProfile;
 }
+
 
 /**
  * O turno de um personagem numa hora do mundo. Só os de ambiente têm agenda;
@@ -67,7 +74,7 @@ export interface Shift {
  * por personagem (± minutos do mundo): sem isso todos trocam de turno no
  * mesmo segundo e a praça esvazia de uma vez.
  */
-export function shiftOf(row: AgentRow, worldMinutes: number, jitterMin = 0): Shift {
+export function shiftOf(row: AgentRow, worldMinutes: number, jitterMin = 0, weather: Weather | null = null): Shift {
   if (row.kind !== 'ambient') return { key: 'day', sceneId: row.sceneId, profile: row.profile as AmbientProfile };
   const p = row.profile as AmbientProfile;
   const h = (((worldMinutes + jitterMin) % 1440) + 1440) % 1440 / 60;
@@ -75,6 +82,9 @@ export function shiftOf(row: AgentRow, worldMinutes: number, jitterMin = 0): Shi
     return { key: 'night', sceneId: p.night.sceneId, profile: { role: p.night.role ?? p.role, program: p.night.program, lines: p.lines } };
   }
   if (p.hours && !hourWithin(h, p.hours[0], p.hours[1])) return { key: 'off', sceneId: row.sceneId, profile: p };
+  if (weather === 'rain' && p.rain && weatherApplies(row.sceneId)) {
+    return { key: 'rain', sceneId: p.rain.sceneId, profile: { role: p.rain.role ?? `${p.role} (abrigado da chuva)`, program: p.rain.program, lines: p.lines } };
+  }
   return { key: 'day', sceneId: row.sceneId, profile: p };
 }
 

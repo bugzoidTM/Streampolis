@@ -112,6 +112,8 @@ export class WorldState extends Schema {
    */
   @type('float32') clock = 0;
   @type('float32') clockRate = 12;
+  /** O clima do mundo ('clear' | 'rain'), escolhido pela sala (shared/weather.ts). Só desenho e rotina. */
+  @type('string') weather = 'clear';
 }
 
 /** Social roster: stays visible across the city without streaming distant poses. */
@@ -148,6 +150,7 @@ export class CityState extends Schema {
   @type('uint32') tick = 0;
   @type('float32') clock = 0;
   @type('float32') clockRate = 12;
+  @type('string') weather = 'clear';
   @type({ map: CityMemberState }) members = new MapSchema<CityMemberState>();
 }
 

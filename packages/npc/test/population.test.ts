@@ -29,6 +29,8 @@ class FakeWorld {
   said: string[] = [];
   attended: string[] = [];
   roomId = 'room-test';
+  weather: string | null = null;
+  clock: number | null = null;
   constructor(readonly sceneId: SceneId) {
     this.walker = new Walker(sceneId, sceneKnowledge(sceneId).destinations);
   }
@@ -621,5 +623,100 @@ describe('relógio do mundo e turnos', () => {
     assert.equal(shiftOf(onlyDay, 20 * 60 - 5, 10).key, 'off');
     // Social e cognitivo não têm agenda.
     assert.equal(shiftOf({ ...row, kind: 'social' }, 23 * 60).key, 'day');
+  });
+});
+
+// ------------------------------------------------------------------ chuva
+
+import { coveredPoints, isCovered } from '../src/scenes.js';
+import { weatherLine } from '../src/places.js';
+import { weatherGuard } from '../src/brain.js';
+import { weatherAt, weatherOfSlot } from '../src/shared.js';
+
+describe('clima do mundo', () => {
+  it('é determinístico por janela, tem os dois estados, e o operador força', () => {
+    const a = Array.from({ length: 300 }, (_, i) => weatherOfSlot(i));
+    assert.ok(a.includes('rain') && a.includes('clear'));
+    const rainy = a.filter((w) => w === 'rain').length / a.length;
+    assert.ok(rainy > 0.15 && rainy < 0.45, `chuva em ${Math.round(rainy * 100)}% das janelas`);
+    assert.equal(weatherAt(123_456_789, 120), weatherAt(123_456_789, 120));
+    assert.equal(weatherAt(0, 120, 'rain'), 'rain');
+    assert.equal(weatherAt(0, 120, 'clear'), 'clear');
+  });
+
+  it('a praça tem pontos cobertos livres (copas, toldos, marquises); o distrito e os interiores não precisam', () => {
+    const c = coveredPoints('central_plaza');
+    assert.ok(c.length >= 20, `${c.length} pontos cobertos`);
+    for (const p of c) assert.ok(isFree('central_plaza', p, 0));
+    assert.ok(isCovered('central_plaza', c[0]!));
+    assert.ok(!isCovered('central_plaza', { x: 0, z: 9 }), 'o pátio do monumento é aberto');
+    assert.equal(coveredPoints('noir_district').length, 0);
+  });
+
+  it('o figurante na chuva vai para debaixo de algo, demora pouco no aberto e não senta', () => {
+    let s = 21;
+    const w = new FakeWorld('central_plaza');
+    (w as unknown as { weather: string }).weather = 'rain';
+    const profile: AmbientProfile = {
+      role: 'teste', program: [
+        { do: 'walk' }, { do: 'stand', at: { x: 0, z: 9 }, secs: [100, 100] }, { do: 'sit', secs: [100, 100] }, { do: 'walk' },
+      ],
+    };
+    const m = ambient(w, '00000000-0000-4000-8000-0000000000d1', 'Chuva', profile);
+    // Semente do personagem é fixa; forço um rng que dá "coberto" e "pula o banco".
+    (m as unknown as { rng: () => number }).rng = () => { s = (s * 16807) % 2147483647; return 0.2; };
+    m.tick(); // passo 0: andar
+    const dest = w.walker.destination!;
+    assert.ok(isCovered('central_plaza', dest), `destino coberto: ${JSON.stringify(dest)}`);
+    // Chega e "permanece": num ponto aberto a permanência cai para 30 %.
+    w.me = { ...w.me, x: 0, z: 9 };
+    (m as unknown as { step: number; phase: string; doneAt: number; goingUntil: number; stuckMark: number }).step = 0;
+    m.tick();
+    w.walker.release();
+    (m as unknown as { advance: (me: Point) => void }).advance(w.me); // vai para o passo 1 (stand no pátio aberto)
+    w.me = { ...w.me, x: 0, z: 9 };
+    m.tick();
+    const st = m as unknown as { doneAt: number; phase: string };
+    assert.equal(st.phase, 'doing');
+    const dwell = st.doneAt - Date.now();
+    assert.ok(dwell > 20_000 && dwell < 40_000, `permanência encurtada no aberto: ${Math.round(dwell / 1000)} s`);
+    // Passo 2 é sentar: com chuva e rng 0,2 (< 0,7), pula direto para o passo 3.
+    st.doneAt = Date.now() - 1;
+    m.tick();
+    m.tick();
+    assert.equal(m.status().step, 3, 'não sentou no banco descoberto');
+    m.dispose();
+  });
+
+  it('turno de chuva só para quem tem abrigo, só de dia e só onde chove; a noite manda mais', () => {
+    const row: Row = {
+      id: '00000000-0000-4000-8000-0000000000d2', slug: 'y', displayName: 'Y', sceneId: 'central_plaza', kind: 'ambient', enabled: true,
+      profile: {
+        role: 'passante', program: [{ do: 'walk' }], hours: [6, 23],
+        rain: { sceneId: 'residential_lobby', program: [{ do: 'walk' }] },
+        night: { sceneId: 'noir_district', hours: [19, 6], program: [{ do: 'walk' }] },
+      },
+    };
+    assert.equal(shiftOf(row, 12 * 60, 0, 'clear').key, 'day');
+    const r = shiftOf(row, 12 * 60, 0, 'rain');
+    assert.equal(r.key, 'rain');
+    assert.equal(r.sceneId, 'residential_lobby');
+    assert.equal(shiftOf(row, 22 * 60, 0, 'rain').key, 'night', 'de noite o turno noturno vale mais que o abrigo');
+    const noir: Row = { ...row, sceneId: 'noir_district' };
+    assert.equal(shiftOf(noir, 12 * 60, 0, 'rain').key, 'day', 'no distrito o clima do mundo não conta');
+  });
+
+  it('Nilo percebe o clima como fato e não pode inventar o contrário', () => {
+    assert.match(weatherLine('central_plaza', 'rain', 12 * 60), /CHOVENDO/);
+    assert.match(weatherLine('central_plaza', 'clear', 21 * 60), /ABERTO/);
+    assert.match(weatherLine('central_plaza', 'clear', 21 * 60), /21:00/);
+    assert.match(weatherLine('central_plaza', null, null), /não olhou/);
+    assert.equal(weatherLine('noir_district', 'rain', 0), '', 'no distrito chuvisca por desenho; a linha não entra');
+    assert.match(perceptionBlock({ x: 0, z: 9 }, 'central_plaza', 'rain', 600), /CLIMA AGORA: está CHOVENDO/);
+    assert.equal(weatherGuard('Que chuva boa, hein?', 'clear', 'central_plaza'), null);
+    assert.equal(weatherGuard('Dia de sol, aproveita.', 'rain', 'central_plaza'), null);
+    assert.equal(weatherGuard('Tá chovendo fino, vem pra debaixo da copa.', 'rain', 'central_plaza'), 'Tá chovendo fino, vem pra debaixo da copa.');
+    assert.equal(weatherGuard('Que sol!', 'rain', 'noir_district'), 'Que sol!', 'fora da praça a guarda não se aplica');
+    assert.equal(weatherGuard('Oi, Ana.', null, 'central_plaza'), 'Oi, Ana.');
   });
 });

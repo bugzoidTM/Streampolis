@@ -82,6 +82,8 @@ export interface RainOptions {
   streak?: number;
   color?: number;
   opacity?: number;
+  /** Intensidade inicial (0..1). O Distrito Sombra nasce chovendo; a praça nasce seca. */
+  intensity?: number;
 }
 
 export class Rain {
@@ -93,6 +95,14 @@ export class Rain {
   /** Reaproveitado a cada quadro: alocar um Vector3 por quadro é lixo por nada. */
   private readonly aim = new THREE.Vector3();
   private elapsed = 0;
+  /**
+   * Intensidade 0..1 que persegue um alvo em ~2,5 s: a praça liga e desliga a
+   * chuva pelo ESTADO da sala, e chuva começa e para como chuva, não como
+   * interruptor. O Distrito Sombra nunca mexe nisto (chove sempre, a 1).
+   */
+  private intensity = 1;
+  private target = 1;
+  private readonly baseOpacity: number;
 
   constructor(opts: RainOptions = {}) {
     const count = opts.count ?? 2600;
@@ -122,6 +132,8 @@ export class Rain {
     this.geometry = geo;
     quad.dispose();
 
+    this.baseOpacity = opts.opacity ?? 0.3;
+    this.intensity = this.target = opts.intensity ?? 1;
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -130,7 +142,7 @@ export class Rain {
         uBox: { value: this.box },
         uStreak: { value: opts.streak ?? 0.62 },
         uColor: { value: new THREE.Color(opts.color ?? 0xc9d6e8).convertSRGBToLinear() },
-        uOpacity: { value: opts.opacity ?? 0.3 },
+        uOpacity: { value: (opts.opacity ?? 0.3) * (opts.intensity ?? 1) },
       },
       vertexShader: RAIN_VERT,
       fragmentShader: RAIN_FRAG,
@@ -151,8 +163,25 @@ export class Rain {
     this.mesh.renderOrder = 3;
   }
 
+  /** Chover ou não, a partir do estado da sala. */
+  set(raining: boolean): void {
+    this.target = raining ? 1 : 0;
+  }
+
+  /** Quanto está chovendo agora (0..1), para a luz da cena acompanhar. */
+  get level(): number {
+    return this.intensity;
+  }
+
   update(dt: number, camera: THREE.Camera): void {
     this.elapsed += dt;
+    if (this.intensity !== this.target) {
+      this.intensity += (this.target - this.intensity) * (1 - Math.exp(-dt / 2.5));
+      if (Math.abs(this.intensity - this.target) < 0.01) this.intensity = this.target;
+      this.material.uniforms.uOpacity.value = this.baseOpacity * this.intensity;
+    }
+    this.mesh.visible = this.intensity > 0.005;
+    if (!this.mesh.visible) return;
     const u = this.material.uniforms;
     u.uTime.value = this.elapsed;
     camera.getWorldPosition(u.uOrigin.value as THREE.Vector3);

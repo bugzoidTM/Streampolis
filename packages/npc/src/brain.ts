@@ -3,12 +3,12 @@ import { budgetLeft, call, parseJsonObject, type ChatTurn } from './llm.js';
 import { log, warn } from './log.js';
 import * as memory from './memory.js';
 import { CONDUCT, WORLD_FACTS, renderPersona, type PersonaVersion } from './persona.js';
-import type { ChatMessage, SceneId } from './shared.js';
+import type { ChatMessage, SceneId, Weather } from './shared.js';
 import type { Nearby, World } from './world.js';
 import { findPlace, perceptionBlock, type Place } from './places.js';
 import { fold } from './text.js';
 import type { Mind } from './mind.js';
-import { SCENE_LABEL, sceneKnowledge } from './scenes.js';
+import { SCENE_LABEL, sceneKnowledge, weatherApplies } from './scenes.js';
 import { freeSeatNear } from './seats.js';
 
 /**
@@ -119,6 +119,22 @@ export function sanitizeSay(raw: unknown): string | null {
     s = end > 60 ? cut.slice(0, end + 1) : cut.slice(0, cut.lastIndexOf(' ') > 60 ? cut.lastIndexOf(' ') : MAX_SAY_CHARS).trim() + '…';
   }
   return s;
+}
+
+/**
+ * O modelo não decide o clima. Onde o clima do mundo vale (a praça), uma fala
+ * que afirma chuva com tempo aberto — ou sol com chuva — não sai: melhor o
+ * silêncio de um turno que um personagem descrevendo um tempo que ninguém vê.
+ * Fora da praça (Dalva, no bairro que chuvisca por desenho) não se aplica.
+ */
+export function weatherGuard(say: string | null, weather: Weather | null, scene: SceneId): string | null {
+  if (!say || !weather || !weatherApplies(scene)) return say;
+  const f = fold(say);
+  const saysRain = /\b(chuv\w*|chove\w*|garoa\w*|molhad\w*|guarda[- ]chuva|temporal|tempestade|trovo\w*|raio(s)?)\b/.test(f);
+  const saysClear = /\b(tempo aberto|ceu (limpo|aberto|azul)|sem chuva|ensolarad\w*|sol forte|dia de sol|que sol|parou de chover)\b/.test(f);
+  if (weather === 'clear' && saysRain) return null;
+  if (weather === 'rain' && saysClear) return null;
+  return say;
 }
 
 function horaBrasilia(): string {
@@ -470,7 +486,7 @@ export class Brain implements Mind {
       ...WORLD_FACTS.map((f) => `- ${f}`),
       '',
       `AGORA: ${horaBrasilia()} (horário de Brasília).`,
-      me ? perceptionBlock(me, this.npc.sceneId) : `ONDE VOCÊ ESTÁ: em ${this.here}.`,
+      me ? perceptionBlock(me, this.npc.sceneId, this.world.weather, this.world.clock) : `ONDE VOCÊ ESTÁ: em ${this.here}.`,
       `PESSOAS PERTO DE VOCÊ: ${people.length ? people.join('; ') : 'ninguém'}.`,
       `O QUE VOCÊ ESTÁ FAZENDO AGORA: ${this.doingNow()}.`,
       '',
@@ -537,12 +553,12 @@ export class Brain implements Mind {
     }
     const json = parseJsonObject(r.text);
     if (json) {
-      const say = sanitizeSay(json.say);
+      const say = weatherGuard(sanitizeSay(json.say), this.world.weather, this.npc.sceneId);
       const note = typeof json.note === 'string' && json.note.trim() && json.note.trim().toLowerCase() !== 'null' ? json.note.trim() : null;
       return { say, note, action: json.action ?? null };
     }
     // Sem JSON: se veio uma frase curta, é a fala; se veio um ensaio, silêncio.
-    const say = r.text.length <= MAX_SAY_CHARS * 1.5 ? sanitizeSay(r.text) : null;
+    const say = weatherGuard(r.text.length <= MAX_SAY_CHARS * 1.5 ? sanitizeSay(r.text) : null, this.world.weather, this.npc.sceneId);
     return { say, note: null, action: null };
   }
 

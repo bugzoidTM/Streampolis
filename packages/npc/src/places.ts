@@ -1,5 +1,6 @@
 import { NOIR, PLAZA, PORTALS, SCENE_COLLIDERS, penetrates, type SceneId } from './shared.js';
-import { nearestFree, SCENE_LABEL } from './scenes.js';
+import { nearestFree, SCENE_LABEL, weatherApplies } from './scenes.js';
+import { formatClock, isNight, type Weather } from './shared.js';
 import type { Point } from './walker.js';
 import { fold } from './text.js';
 
@@ -252,7 +253,7 @@ const SCENE_FACTS: Partial<Record<SceneId, { where: (from: Point) => string; fix
       '- bancos de pedra: em dois anéis em volta do monumento; sempre há um perto.',
       'O TELÃO: passa em laço, sem som, um único vídeo curto de um compositor de música — o mesmo o dia inteiro, todo dia. É tudo o que você sabe dizer dele; nunca diga que "hoje tem algo novo".',
     ],
-    absent: 'O QUE NÃO EXISTE NA PRAÇA (não invente): comida, café, bebida, vendas, música ambiente, clima, vento, pôr do sol, "lives" acontecendo aqui, gente sentada nos bancos que você não vê na lista de pessoas.',
+    absent: 'O QUE NÃO EXISTE NA PRAÇA (não invente): comida, café, bebida, vendas, música ambiente, vento, tempestade, raio, pôr do sol descrito além do que a hora diz, "lives" acontecendo aqui, gente sentada nos bancos que você não vê na lista de pessoas. O único fato de clima é o da linha CLIMA AGORA: nunca diga que chove se ela diz tempo aberto, nem o contrário.',
   },
   noir_district: {
     where: (from) => {
@@ -270,12 +271,28 @@ const SCENE_FACTS: Partial<Record<SceneId, { where: (from: Point) => string; fix
 };
 
 /** Bloco de percepção para o prompt: onde está, o que há à volta, para onde dá para ir. */
-export function perceptionBlock(from: Point, scene: SceneId = 'central_plaza'): string {
+/**
+ * O clima como FATO para o prompt. Só onde o clima do mundo é desenhado (a
+ * praça); no Distrito Sombra chuvisca sempre por desenho e isso já está nos
+ * fatos fixos. Sem clima conhecido (antes da primeira escrita da sala) a
+ * linha diz isso — melhor "não sei" do que o modelo escolher.
+ */
+export function weatherLine(scene: SceneId, weather: Weather | null, minutes: number | null): string {
+  if (!weatherApplies(scene)) return '';
+  const when = minutes === null ? '' : ` Hora do relógio da cidade: ${formatClock(minutes)} (${isNight(minutes) ? 'noite' : 'dia'}; o dia da cidade passa mais rápido que o de Brasília).`;
+  if (weather === 'rain') return `CLIMA AGORA: está CHOVENDO na praça — chuva fina e contínua, sem trovoada, sem vento, sem tempestade. As pessoas se abrigam sob as copas, os toldos dos quiosques e as marquises das portas.${when}`;
+  if (weather === 'clear') return `CLIMA AGORA: tempo ABERTO, sem chuva.${when}`;
+  return `CLIMA AGORA: você ainda não reparou no tempo; se perguntarem, diga que não olhou.${when}`;
+}
+
+export function perceptionBlock(from: Point, scene: SceneId = 'central_plaza', weather: Weather | null = null, minutes: number | null = null): string {
   const facts = SCENE_FACTS[scene];
   const around = surroundings(from, scene);
   const label = SCENE_LABEL[scene];
+  const climate = weatherLine(scene, weather, minutes);
   const lines = [
     `ONDE VOCÊ ESTÁ: ${facts ? facts.where(from) : `em ${label}.`}`,
+    ...(climate ? [climate] : []),
     `AO SEU LADO: ${around.length ? around.join('; ') : 'chão livre'}.`,
     `LUGARES DE ${label.toUpperCase()} (e onde estão em relação a você):`,
     ...placesOf(scene).map((p) => `- ${p.name}: ${bearing(from, p.at)}. ${p.about}`),

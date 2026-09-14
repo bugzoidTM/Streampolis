@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PORTALS, SCENE_AREA, worldClockRate, worldMinutesAt, type ChatMessage, type HomePlacement, type Portal } from '@streampolis/shared';
+import { PORTALS, SCENE_AREA, isWeather, weatherAt, worldClockRate, worldMinutesAt, type ChatMessage, type HomePlacement, type Portal, type Weather } from '@streampolis/shared';
 import { InteriorScene } from './scenes/InteriorScene.js';
 import {
   DEFAULT_AVATAR,
@@ -553,6 +553,13 @@ export class World {
   /** A hora do mundo suavizada para a cena (minutos do dia); nula até a primeira leitura. */
   private tod: number | null = null;
   private todMinuteShown = -1;
+  private weatherShown: Weather | null = null;
+  /** `?weather=rain` fixa o clima desenhado — só em build de desenvolvimento, como `?tod=`. */
+  private readonly weatherOverride: Weather | null = (() => {
+    if (typeof location === 'undefined' || !import.meta.env.DEV) return null;
+    const raw = new URLSearchParams(location.search).get('weather');
+    return isWeather(raw) ? raw : null;
+  })();
   /**
    * `?tod=19:30` (ou `?tod=19.5`) fixa a hora desenhada — SÓ em build de
    * desenvolvimento. É a bancada da revisão visual: `tools/shoot.mjs`
@@ -589,6 +596,14 @@ export class World {
     this.tod = ((this.tod % 1440) + 1440) % 1440;
     target = this.tod;
     this.scene?.setTimeOfDay?.(target, dt);
+    // O clima: um estado, sem interpolação aqui (a cena suaviza o efeito).
+    const weather: Weather | null = this.weatherOverride
+      ?? (this.connection ? this.connection.worldWeather : weatherAt(Date.now()));
+    if (weather && weather !== this.weatherShown) {
+      this.weatherShown = weather;
+      this.scene?.setWeather?.(weather);
+      useClockStore.getState().setWeather(weather);
+    }
     const minute = Math.floor(target);
     if (minute !== this.todMinuteShown) {
       this.todMinuteShown = minute;

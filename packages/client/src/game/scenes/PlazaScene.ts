@@ -3,6 +3,7 @@ import {
   PLAZA, SCENE_AREA, SCENE_COLLIDERS, SCENE_SPAWNS, type Placement, type SceneId,
 } from '@streampolis/shared';
 import { LOOK_DAY, type GradeLook } from '../Renderer.js';
+import type { Weather } from '@streampolis/shared';
 import { GOLDEN_HOUR, type Environment } from '../Environment.js';
 import {
   bakeProps, boxUV, disposeProp, instanceProp, ringSlab, singleProp, xform, type Prop,
@@ -13,6 +14,7 @@ import {
   awning, banner, bench, bollard, flowerBush, fountain, kiosk, lampPost, litterBin, palm, planter, shrub, stairRing, tree,
 } from '../props/Urban.js';
 import { AmbientCrowd } from '../AmbientCrowd.js';
+import { Rain } from '../fx/Rain.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { AssetLibrary } from '../assets/AssetLibrary.js';
 import { assetManager } from '../assets/loading.js';
@@ -61,6 +63,8 @@ export class PlazaScene extends SceneBase {
   private lastTod = -1;
   private lastRebakeAt = 0;
   private lastRebakeTod = -1;
+  private rain: Rain | null = null;
+  private lastRainLevel = -1;
 
   private tier: QualityTier = 'high';
 
@@ -110,6 +114,10 @@ export class PlazaScene extends SceneBase {
     this.buildPerimeter();
     this.buildOutskirts();
     this.buildScreen();
+    // Começa seca: é o estado da sala que liga a chuva (`setWeather`).
+    this.rain = new Rain({ count: this.tier === 'low' ? 900 : 2000, box: [30, 18, 30], opacity: 0.4, intensity: 0 });
+    this.scene.add(this.rain.mesh);
+    this.own(this.rain);
 
     // The spawn markers ARE the server's: shared table, one ring, no drift. A
     // client that predicts from a different spawn than the server assigned
@@ -491,21 +499,30 @@ export class PlazaScene extends SceneBase {
    * HDRI, o rebote do céu procedural é re-assado no máximo a cada 12 s quando
    * a hora andou o bastante.
    */
+  setWeather(weather: Weather): void {
+    this.rain?.set(weather === 'rain');
+  }
+
   setTimeOfDay(minutes: number, _dt: number): void {
     if (!this.sky) return;
-    if (Math.abs(minutes - this.lastTod) < 0.05) return;
+    const rain = this.rain?.level ?? 0;
+    if (Math.abs(minutes - this.lastTod) < 0.05 && Math.abs(rain - this.lastRainLevel) < 0.01) return;
     this.lastTod = minutes;
+    this.lastRainLevel = rain;
     const p = timeOfDayParams(minutes);
     const withLib = this.lib !== null;
+    // Chuva: céu carregado, sol coberto, névoa mais perto e mais cinza. Uma
+    // mistura por intensidade — a chuva chega e vai embora em segundos.
+    const grey = (c: number, k: number) => mixHex(c, 0x8a94a8, k);
     this.sky.applyLive({
-      turbidity: p.turbidity, rayleigh: p.rayleigh, mieCoefficient: p.mie, mieDirectionalG: 0.82,
+      turbidity: p.turbidity + 6 * rain, rayleigh: p.rayleigh, mieCoefficient: p.mie + 0.012 * rain, mieDirectionalG: 0.82,
       elevation: p.elevation, azimuth: p.azimuth,
       lightElevation: p.lightElevation, lightAzimuth: p.lightAzimuth,
-      sunIntensity: p.sunIntensity, sunColor: p.sunColor,
-      skyColor: p.skyColor, groundColor: p.groundColor,
-      ambientIntensity: p.ambient * (withLib ? 0.8 : 1),
-      fogColor: p.fogColor, fogNear: p.fogNear, fogFar: p.fogFar,
-      envIntensity: p.env * (withLib ? 0.7 : 1),
+      sunIntensity: p.sunIntensity * (1 - 0.65 * rain), sunColor: grey(p.sunColor, 0.5 * rain),
+      skyColor: grey(p.skyColor, 0.6 * rain), groundColor: p.groundColor,
+      ambientIntensity: p.ambient * (withLib ? 0.8 : 1) * (1 - 0.1 * rain),
+      fogColor: grey(p.fogColor, 0.7 * rain), fogNear: p.fogNear * (1 - 0.45 * rain), fogFar: p.fogFar * (1 - 0.4 * rain),
+      envIntensity: p.env * (withLib ? 0.7 : 1) * (1 - 0.3 * rain),
     });
     if (!withLib) {
       const now = performance.now();
@@ -538,6 +555,7 @@ export class PlazaScene extends SceneBase {
     this.crowd?.update(dt);
     super.update(dt, camera);
     this.wall?.update(dt);
+    this.rain?.update(dt, camera);
     this.lampPick += dt;
     if (this.lampPick > 1) { this.lampPick = 0; this.relampLights(camera); }
   }

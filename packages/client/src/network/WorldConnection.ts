@@ -20,6 +20,8 @@ import {
   type SceneId,
   type StageInvite,
   type SystemNotice,
+  type Weather,
+  isWeather,
 } from '@streampolis/shared';
 import { RemoteBuffer } from './Interpolation.js';
 import { Predictor } from './Predictor.js';
@@ -233,6 +235,13 @@ export class WorldConnection<S extends WorldStateView = WorldStateView> {
     const st = this.room.state;
     if (!st || !(st.tick >= 24) || typeof st.clock !== 'number') return null;
     return st.clock;
+  }
+
+  /** O clima como a sala o publicou; nulo antes da primeira escrita. */
+  get worldWeather(): Weather | null {
+    const st = this.room.state;
+    if (!st || !(st.tick >= 24) || !isWeather(st.weather)) return null;
+    return st.weather;
   }
 
   get localPlayer(): PlayerView | undefined {

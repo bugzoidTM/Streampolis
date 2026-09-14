@@ -937,6 +937,35 @@ comércio e escritório; à noite a praça fica com 9 dos 22, cinco passantes
 viram caminhantes do Distrito Sombra e o bairro ganha os seus noturnos
 (bar, fila do clube, travessa). Noite = 19 h–6 h (`isNight`).
 
+## O clima do mundo
+
+`shared/weather.ts`: um estado só, `clear` | `rain`, escolhido pelo game
+server (`WORLD_WEATHER=auto|rain|clear`; em `auto`, sorteio determinístico
+por janela de 3 h do mundo, ~30 % de chuva — dois game servers concordam sem
+conversar) e escrito em `WorldState.weather` a cada segundo. Cliente e worker
+só leem. Sem tempestade: não há raio, vento nem som.
+
+- **Cliente**: `PlazaScene.setWeather` liga a `Rain` (o mesmo efeito de GPU do
+  Distrito Sombra, agora com `intensity` que persegue o estado em ~2,5 s) e
+  `setTimeOfDay` mistura céu carregado, sol coberto e névoa mais perto pela
+  intensidade. HUD mostra três traços na pílula da hora. `?weather=rain` só
+  em build de desenvolvimento. O clima do mundo só é desenhado na praça
+  (`weatherApplies`): o Distrito Sombra chuvisca sempre por desenho.
+- **Worker**: `World.weather` da sala. Figurante na praça em chuva
+  (`RAIN` em ambient.ts): 75 % das caminhadas livres vão a um ponto coberto
+  (`coveredPoints`: copas do anel de árvores, toldos dos quiosques, marquises
+  das portas), permanência em ponto aberto cai a 30 % e em coberto sobe a
+  160 %, 70 % dos passos de sentar são pulados, rodinhas só se formam sob
+  cobertura. Cinco passantes têm `profile.rain` (migration 0024) e trocam para
+  o saguão/loja enquanto chove — turno `rain` em `shiftOf`, que perde para a
+  noite e não vale fora da praça.
+- **Nilo**: `perceptionBlock` recebe `weather` e `clock` da sala e escreve a
+  linha `CLIMA AGORA` (fato, com "não olhou" antes da primeira escrita) e a
+  hora do relógio da cidade; a lista do que não existe proíbe clima diferente
+  do informado; e `weatherGuard` cala uma fala que afirme chuva com tempo
+  aberto ou sol com chuva (só na praça — a Dalva vive num bairro que chuvisca
+  por desenho).
+
 ## Personagens da cidade: três cabeças, um corpo
 
 A cidade tem população (PRD §25): 77 personagens que são clientes Colyseus

@@ -3,7 +3,7 @@ import { GATHER, GATHERINGS, type Gathering } from './gatherings.js';
 import { log } from './log.js';
 import { mulberry32, seedOf, type Mind } from './mind.js';
 import type { AmbientProfile, AmbientStep } from './roster.js';
-import { ahead, clearanceFor, nearestFree, sceneKnowledge } from './scenes.js';
+import { ahead, clearanceFor, coveredPoints, isCovered, nearestFree, sceneKnowledge, weatherApplies } from './scenes.js';
 import { freeSeatNear } from './seats.js';
 import type { AnimState, ChatMessage } from './shared.js';
 import type { Point } from './walker.js';
@@ -37,7 +37,23 @@ import type { Nearby, World } from './world.js';
  *
  * Nenhum dos dois usa chat nem modelo de linguagem, e nenhum toca no
  * servidor: é tudo intenção de movimento e gesto, como sempre.
+ *
+ * **Chuva** (estado da sala, `World.weather`; só onde o clima é desenhado —
+ * a praça): quem passeia escolhe destinos cobertos (copas, toldos dos
+ * quiosques, marquises das portas), demora pouco em posto aberto e muito em
+ * posto coberto, quase não senta em banco descoberto, e a rodinha só se forma
+ * debaixo de algo. Alguns continuam andando — é chuva, não tempestade.
  */
+const RAIN = {
+  /** Fração das caminhadas livres que vão para um ponto coberto. */
+  coveredWalks: 0.75,
+  /** Permanência em posto/parada ABERTA, em relação ao normal. */
+  openDwell: 0.3,
+  /** Permanência em ponto COBERTO, em relação ao normal. */
+  coveredDwell: 1.6,
+  /** Chance de pular um passo de sentar (banco descoberto). */
+  skipSit: 0.7,
+} as const;
 
 const CALL_M = 6;
 const LINE_GAP_MS = 60_000;
@@ -124,12 +140,23 @@ export class AmbientMind implements Mind {
     const s = this.current();
     return {
       role: this.profile.role, step: this.step, phase: this.phase, doing: s?.do ?? null, pose: this.world.pose,
-      encounter: this.encounterUntil > Date.now(), gathering: this.gathering ? this.gathering.g.id : null,
+      encounter: this.encounterUntil > Date.now(), gathering: this.gathering ? this.gathering.g.id : null, rain: this.raining(),
     };
   }
 
   private current(): AmbientStep | null {
     return this.profile.program[this.step] ?? null;
+  }
+
+  /** Está chovendo AQUI (a sala diz que chove e esta cena sente o clima)? */
+  private raining(): boolean {
+    return this.world.weather === 'rain' && weatherApplies(this.npc.sceneId);
+  }
+
+  /** Fator de permanência de um ponto, pela chuva e pela cobertura. */
+  private dwellFactor(at: Point): number {
+    if (!this.raining()) return 1;
+    return isCovered(this.npc.sceneId, at) ? RAIN.coveredDwell : RAIN.openDwell;
   }
 
   private secs(range: [number, number] | undefined, fallback: [number, number] = [8, 20]): number {
@@ -176,7 +203,7 @@ export class AmbientMind implements Mind {
         // separação local desloca o destino em até 2,5 m).
         if (d <= 1.0 || (walker.idle && walker.staying && d <= 2.8 && walker.stuckCount === this.stuckMark)) {
           this.phase = 'doing';
-          this.doneAt = now + this.secs(step.secs, [30, 90]);
+          this.doneAt = now + this.secs(step.secs, [30, 90]) * this.dwellFactor(at);
           if (typeof step.yaw === 'number') this.world.faceTo(ahead(me, step.yaw));
           this.world.pose = step.pose && step.pose !== 'idle' ? step.pose : null;
           walker.hold = step.pose === 'sit' ? 'seated' : this.world.pose ? 'gesture' : 'free';
@@ -198,7 +225,7 @@ export class AmbientMind implements Mind {
           const arrived = walker.stuckCount === this.stuckMark;
           if (arrived) {
             this.phase = 'doing';
-            this.doneAt = now + this.secs(step.secs, [2, 8]);
+            this.doneAt = now + this.secs(step.secs, [2, 8]) * this.dwellFactor(me);
           } else {
             this.stuck(me);
           }
@@ -211,6 +238,7 @@ export class AmbientMind implements Mind {
 
     // sit
     if (this.phase === 'going') {
+      if (this.doneAt === 0 && !walker.sitting && this.raining() && this.rng() < RAIN.skipSit) { this.advance(me); return; }
       if (walker.seated) {
         this.phase = 'doing';
         this.doneAt = now + this.secs(step.secs, [40, 120]);
@@ -265,6 +293,11 @@ export class AmbientMind implements Mind {
       if (step.to) {
         step.to = nearestFree(this.npc.sceneId, step.to);
         walker.setTarget(step.to);
+      } else if (this.raining() && this.rng() < RAIN.coveredWalks && coveredPoints(this.npc.sceneId).length) {
+        // Chovendo: para debaixo de alguma coisa (o mais das vezes).
+        const covered = coveredPoints(this.npc.sceneId).filter((c) => !walker.occupied(c));
+        const pool = covered.length ? covered : coveredPoints(this.npc.sceneId);
+        walker.setTarget(pool[Math.floor(this.rng() * pool.length)]!);
       } else {
         walker.pickDestination(me, this.rng);
       }
@@ -317,8 +350,10 @@ export class AmbientMind implements Mind {
     if (!this.roams || now < this.gatherCooldownUntil || !this.world.roomId) return false;
     if (this.rng() > GATHER_CHANCE) return false;
     const room = this.world.roomId;
+    const rain = this.raining();
     let g = GATHERINGS.joinable(room, me, GATHER_REACH_M, now);
-    if (!g && this.rng() < 0.5) g = GATHERINGS.open(this.npc.sceneId, room, me, GATHER_REACH_M, this.rng, now);
+    if (g && rain && !isCovered(this.npc.sceneId, g.center)) g = null;
+    if (!g && this.rng() < 0.5) g = GATHERINGS.open(this.npc.sceneId, room, me, GATHER_REACH_M, this.rng, now, rain ? (p) => isCovered(this.npc.sceneId, p) : null);
     if (!g) return false;
     return this.joinGathering(g, now);
   }
