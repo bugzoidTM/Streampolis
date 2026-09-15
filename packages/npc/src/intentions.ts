@@ -11,6 +11,45 @@ import { warn } from './log.js';
 export type IntentionSource = 'deliberation' | 'conversation' | 'default';
 export type IntentionOutcome = 'done' | 'expired' | 'failed' | 'replaced' | 'interrupted';
 
+/** Gente de verdade que cruzou a intenção (nomes, poucos; NPC não conta). */
+export interface IntentionInteractions {
+  /** Trocas de conversa (ele respondeu a alguém). */
+  exchanges: number;
+  /** Cumprimentos que ele fez. */
+  greetings: number;
+  /** Falas de gente por perto, dirigidas a ele ou não. */
+  heard: number;
+  spokeWith: string[];
+  /** Quem chegou a ficar a poucos metros dele. */
+  nearby: string[];
+  /** Quantas vezes chegou a um destino (patrol e visit_poi chegam a vários). */
+  arrivals: number;
+}
+
+/** Algo que aconteceu no mundo durante a intenção: aos `t` segundos do início. */
+export interface IntentionEvent {
+  t: number;
+  what: string;
+}
+
+/** O resultado de uma intenção, em partes (migration 0028). */
+export interface IntentionResult {
+  outcome: IntentionOutcome;
+  /** Chegou ao destino? Nulo quando a habilidade não tem destino. */
+  arrived: boolean | null;
+  arriveSec: number | null;
+  dwellSec: number | null;
+  interactions: IntentionInteractions;
+  events: IntentionEvent[];
+}
+
+/** O que o "why" afirmou sem dado observado correspondente (`grounding.ts`). */
+export interface WhyAudit {
+  unsupported: string[];
+}
+
+export const EMPTY_INTERACTIONS: IntentionInteractions = { exchanges: 0, greetings: 0, heard: 0, spokeWith: [], nearby: [], arrivals: 0 };
+
 export interface IntentionRow {
   id: number;
   goal: string;
@@ -24,18 +63,27 @@ export interface IntentionRow {
   endedAt: Date | null;
   /** O mundo quando começou (clima, noite, quem estava): a fadiga compara com o de agora. */
   world: WorldSnapshot | null;
+  arrived: boolean | null;
+  arriveSec: number | null;
+  dwellSec: number | null;
+  /** Nulo nas linhas de antes da migration 0028 (ou ainda em curso). */
+  interactions: IntentionInteractions | null;
+  events: IntentionEvent[] | null;
+  whyAudit: WhyAudit | null;
 }
 
 export async function beginIntention(npcId: string, input: {
   goal: string; why: string | null; skill: string; params: Record<string, unknown>;
   source: IntentionSource; trigger: string | null; plannedMin: number; roomId: string | null; world: WorldSnapshot | null;
+  whyAudit?: WhyAudit | null;
 }): Promise<number | null> {
   try {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO npc_intentions (npc_id, goal, why, skill, params, source, trigger, planned_min, room_id, world)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      `INSERT INTO npc_intentions (npc_id, goal, why, skill, params, source, trigger, planned_min, room_id, world, why_audit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
       [npcId, input.goal.slice(0, 200), input.why?.slice(0, 300) ?? null, input.skill, JSON.stringify(input.params),
-        input.source, input.trigger?.slice(0, 120) ?? null, input.plannedMin, input.roomId, input.world ? JSON.stringify(input.world) : null],
+        input.source, input.trigger?.slice(0, 120) ?? null, input.plannedMin, input.roomId, input.world ? JSON.stringify(input.world) : null,
+        input.whyAudit?.unsupported.length ? JSON.stringify(input.whyAudit) : null],
     );
     return Number(rows[0]!.id);
   } catch (err) {
@@ -44,11 +92,15 @@ export async function beginIntention(npcId: string, input: {
   }
 }
 
-export async function endIntention(id: number, outcome: IntentionOutcome, exchanges: number): Promise<void> {
+/** Encerra com o resultado em partes; `exchanges` continua na coluna própria (o soak e a experiência somam por ela). */
+export async function endIntention(id: number, result: IntentionResult): Promise<void> {
   try {
     await pool.query(
-      `UPDATE npc_intentions SET ended_at = now(), outcome = $2, exchanges = $3 WHERE id = $1 AND ended_at IS NULL`,
-      [id, outcome, exchanges],
+      `UPDATE npc_intentions
+          SET ended_at = now(), outcome = $2, exchanges = $3, arrived = $4, arrive_sec = $5, dwell_sec = $6, interactions = $7, events = $8
+        WHERE id = $1 AND ended_at IS NULL`,
+      [id, result.outcome, result.interactions.exchanges, result.arrived, result.arriveSec, result.dwellSec,
+        JSON.stringify(result.interactions), JSON.stringify(result.events.slice(0, 40))],
     );
   } catch (err) {
     warn('intent', 'não encerrou', { err: String(err) });
@@ -79,14 +131,19 @@ export async function recentIntentions(npcId: string, limit: number): Promise<In
   const { rows } = await pool.query<{
     id: string; goal: string; why: string | null; skill: string; params: Record<string, unknown>; source: IntentionSource;
     outcome: IntentionOutcome | null; exchanges: number; started_at: Date; ended_at: Date | null; world: WorldSnapshot | null;
+    arrived: boolean | null; arrive_sec: number | null; dwell_sec: number | null;
+    interactions: IntentionInteractions | null; events: IntentionEvent[] | null; why_audit: WhyAudit | null;
   }>(
-    `SELECT id, goal, why, skill, params, source, outcome, exchanges, started_at, ended_at, world
+    `SELECT id, goal, why, skill, params, source, outcome, exchanges, started_at, ended_at, world,
+            arrived, arrive_sec, dwell_sec, interactions, events, why_audit
        FROM npc_intentions WHERE npc_id = $1 ORDER BY id DESC LIMIT $2`,
     [npcId, limit],
   );
   return rows.map((r) => ({
     id: Number(r.id), goal: r.goal, why: r.why, skill: r.skill, params: r.params ?? {}, source: r.source,
     outcome: r.outcome, exchanges: r.exchanges, startedAt: r.started_at, endedAt: r.ended_at, world: r.world ?? null,
+    arrived: r.arrived, arriveSec: r.arrive_sec, dwellSec: r.dwell_sec,
+    interactions: r.interactions ?? null, events: r.events ?? null, whyAudit: r.why_audit ?? null,
   }));
 }
 

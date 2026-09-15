@@ -32,7 +32,8 @@ const agents = (await db.query(`SELECT id, slug, display_name, scene_id FROM npc
 const out = { since: since.toISOString(), until: until.toISOString(), dayMinutes, agents: [] };
 for (const a of agents) {
   const intentions = (await db.query(
-    `SELECT id, goal, why, skill, params, source, trigger, planned_min, started_at, ended_at, outcome, exchanges
+    `SELECT id, goal, why, skill, params, source, trigger, planned_min, started_at, ended_at, outcome, exchanges,
+            arrived, arrive_sec, dwell_sec, interactions, events, why_audit
        FROM npc_intentions WHERE npc_id = $1 AND started_at >= $2 AND started_at <= $3 ORDER BY id`, [a.id, since, until])).rows;
   const calls = (await db.query(
     `SELECT purpose, tier, count(*)::int AS n, count(*) FILTER (WHERE NOT ok)::int AS failed, round(avg(latency_ms))::int AS avg_ms, max(latency_ms)::int AS max_ms

@@ -931,7 +931,7 @@ describe('a biblioteca de habilidades do cognitivo', () => {
 // -------------------------------------------------- intenções: órfãs e fala
 
 import { pool } from '../src/db.js';
-import { beginIntention, closeOrphanIntentions, endIntention } from '../src/intentions.js';
+import { EMPTY_INTERACTIONS, beginIntention, closeOrphanIntentions, endIntention } from '../src/intentions.js';
 import { Brain } from '../src/brain.js';
 
 describe('intenções sem órfãs; toda fala passa pela guarda de clima', () => {
@@ -947,7 +947,7 @@ describe('intenções sem órfãs; toda fala passa pela guarda de clima', () => 
       assert.equal(rows[0]!.outcome, 'interrupted');
       assert.ok(rows[0]!.ended_at);
       // Encerrar de novo não reabre nem sobrescreve.
-      await endIntention(id!, 'done', 3);
+      await endIntention(id!, { outcome: 'done', arrived: null, arriveSec: null, dwellSec: null, interactions: { ...EMPTY_INTERACTIONS, exchanges: 3 }, events: [] });
       const again = await pool.query(`SELECT outcome FROM npc_intentions WHERE id = $1`, [id]);
       assert.equal(again.rows[0]!.outcome, 'interrupted');
     } finally {

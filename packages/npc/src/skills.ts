@@ -34,6 +34,11 @@ export interface SkillCtx {
   greet(userId: string, name: string): void;
   /** Pede uma reflexão agora (o processo decide se pode). */
   requestReflection(): void;
+  /**
+   * O corpo chegou a um destino (o `Goer` avisa; `sit`, ao sentar). O cérebro
+   * registra na intenção: chegou ou não, em quanto tempo, quanto ficou lá.
+   */
+  arrived?(at: Point): void;
 }
 
 export interface SkillRun {
@@ -72,7 +77,7 @@ class Goer {
     const me = ctx.world.position;
     if (!me) return 'going';
     if (this.arrived) return 'arrived';
-    if (dist(me, this.target) <= this.tolerance) { this.arrived = true; return 'arrived'; }
+    if (dist(me, this.target) <= this.tolerance) { this.arrived = true; ctx.arrived?.(this.target); return 'arrived'; }
     const w = ctx.world.walker;
     if (w.idle) {
       if (this.retries++ >= 3) return 'failed';
@@ -197,12 +202,17 @@ const sit: Skill = {
     const occupied = ctx.world.people().map((x) => ({ x: x.x, z: x.z }));
     const seat = freeSeatNear(seats, anchor, occupied) ?? freeSeatNear(seats, sceneKnowledge(ctx.npc.sceneId).destinations[0] ?? anchor, occupied);
     let failed = !seat;
+    let seatedOnce = false;
     if (seat) ctx.world.walker.sitAt({ at: seat.at, yaw: seat.yaw });
     return {
       tick(c) {
         if (failed) return 'failed';
         const w = c.world.walker;
-        if (w.seated) { w.hold = 'seated'; return 'running'; }
+        if (w.seated) {
+          w.hold = 'seated';
+          if (!seatedOnce && seat) { seatedOnce = true; c.arrived?.(seat.at); }
+          return 'running';
+        }
         if (!w.sitting) { failed = true; return 'failed'; }
         return 'running';
       },

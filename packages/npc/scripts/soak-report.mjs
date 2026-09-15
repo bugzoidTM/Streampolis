@@ -67,6 +67,17 @@ for (const a of data.agents) {
   const invalid = logCount(a.name, /deliberação (inválida|sem JSON)/);
   const fatigued = logCount(a.name, /plano recusado por fadiga/);
   const fatiguedGaveUp = logCount(a.name, /plano recusado por fadiga \(2ª vez/);
+  const ungrounded = logCount(a.name, /why afirmou o que não observou/);
+  // O resultado em partes (migration 0028): chegada, permanência, gente, eventos.
+  const withDest = delib.filter((i) => i.arrived !== null && i.arrived !== undefined);
+  const arrivedN = withDest.filter((i) => i.arrived).length;
+  const avg = (xs) => (xs.length ? (xs.reduce((s, x) => s + x, 0) / xs.length) : null);
+  const avgArrive = avg(withDest.filter((i) => i.arrive_sec != null).map((i) => i.arrive_sec));
+  const avgDwell = avg(withDest.filter((i) => i.dwell_sec != null).map((i) => i.dwell_sec));
+  const withPeople = delib.filter((i) => i.interactions && (i.interactions.nearby?.length || i.interactions.greetings || i.exchanges)).length;
+  const withEvents = delib.filter((i) => i.events && i.events.length).length;
+  const uneventfulN = delib.filter((i) => i.ended_at && i.outcome !== 'failed' && !(i.exchanges > 0) && !(i.interactions && (i.interactions.greetings || i.interactions.heard || i.interactions.nearby?.length)) && !(i.events && i.events.length)).length;
+  const auditedWhys = delib.filter((i) => i.why_audit && i.why_audit.unsupported?.length);
   const guarded = logCount(a.name, /fala calada pela guarda de clima/);
   const calls = a.calls.reduce((s, c) => s + c.n, 0);
   const callsFailed = a.calls.reduce((s, c) => s + c.failed, 0);
@@ -84,6 +95,9 @@ for (const a of data.agents) {
   row(`Repetição de objetivos: ${repeatedGoals.length ? repeatedGoals.map(([g, n]) => `"${g}" ${n}×`).join('; ') : 'nenhum objetivo repetido literalmente'}; mesma skill em seguida: ${sameSkillRuns}× de ${Math.max(0, delib.length - 1)} transições`);
   row(`Skills recusadas pela validação: ${rejected}; deliberações inválidas/sem JSON: ${invalid}`);
   row(`Planos recusados por fadiga de intenção: ${fatigued} (${fatiguedGaveUp} desistiram na 2ª recusa)`);
+  row(`Destino físico: ${arrivedN} de ${withDest.length} intenções com destino chegaram${avgArrive != null ? ` (chegada média ${avgArrive.toFixed(0)} s` : ''}${avgDwell != null ? `, permanência média ${(avgDwell / 60).toFixed(1)} min)` : avgArrive != null ? ')' : ''}`);
+  row(`Novidade por intenção: ${withPeople} com gente por perto, ${withEvents} com evento no mundo, ${uneventfulN} sem novidade nenhuma (de ${delib.length})`);
+  row(`"Why" que afirmou o que não observou: ${ungrounded} no log, ${auditedWhys.length} marcado(s) no registro${auditedWhys.length ? ` — ex.: ${auditedWhys.slice(0, 3).map((i) => `"${i.why_audit.unsupported[0]}"`).join('; ')}` : ''}`);
   row(`Skills que falharam (outcome failed): ${outcomes.failed ?? 0}; concluídas: ${outcomes.done ?? 0}; expiradas no prazo: ${outcomes.expired ?? 0}`);
   row(`Intenções interrompidas: ${(outcomes.interrupted ?? 0) + (outcomes.replaced ?? 0)} (interrupted ${outcomes.interrupted ?? 0}, replaced ${outcomes.replaced ?? 0}); vindas de conversa: ${conv.length}`);
   row(`Conversas geradas: ${a.said.length} falas ditas (${convosWith.size} pessoa(s): ${[...convosWith].join(', ') || '-'}), ${humanLines} falas ouvidas de gente, ${exchangesTotal} troca(s) creditadas a intenções`);
@@ -92,7 +106,7 @@ for (const a of data.agents) {
   row(`Falas caladas pela guarda de clima: ${guarded}`);
   if (a.callErrors.length) row(`Erros de modelo: ${a.callErrors.map((e) => `${e.purpose}: ${String(e.error).slice(0, 60)} (${e.n})`).join('; ')}`);
   if (a.diary.length) row(`Diário: ${a.diary.length} entrada(s); persona ativa v${a.persona.find((p) => p.status === 'active')?.version ?? '?'}${a.persona.some((p) => p.status === 'pending') ? ' (há versão pendente para aprovar)' : ''}`);
-  md.push('', '### Intenções (ordem)', ...its.map((i) => `- ${fmtBR(i.started_at)} [${i.source}] **${i.skill}** "${i.goal}" (${i.planned_min} min; motivo: ${i.trigger ?? '-'}) → ${i.outcome ?? 'em curso'}${i.exchanges ? `, ${i.exchanges} troca(s)` : ''}${i.why ? ` — _${i.why}_` : ''}`));
+  md.push('', '### Intenções (ordem)', ...its.map((i) => `- ${fmtBR(i.started_at)} [${i.source}] **${i.skill}** "${i.goal}" (${i.planned_min} min; motivo: ${i.trigger ?? '-'}) → ${i.outcome ?? 'em curso'}${i.arrived === true ? `, chegou em ${i.arrive_sec} s, ficou ${Math.round((i.dwell_sec ?? 0) / 60)} min` : i.arrived === false ? ', NÃO chegou' : ''}${i.exchanges ? `, ${i.exchanges} troca(s)` : ''}${i.interactions?.nearby?.length ? `, perto: ${i.interactions.nearby.join(', ')}` : ''}${i.events?.length ? `, aconteceu: ${i.events.map((e) => e.what).join(', ')}` : ''}${i.why ? ` — _${i.why}_` : ''}`));
   md.push('', '### Falas', ...a.said.map((s) => `- ${fmtBR(s.at)} (cidade ${s.worldTime}, ${s.weather}${s.night ? ', noite' : ''})${s.to ? ` → ${s.to}` : ''}: ${s.text}`));
   perAgent.push({ a, delib, its, bySkill, repeatedGoals, sameSkillRuns, withoutMin, rejected, invalid, guarded, calls, convosWith });
 }

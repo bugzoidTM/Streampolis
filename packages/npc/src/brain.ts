@@ -5,17 +5,19 @@ import * as memory from './memory.js';
 import { CONDUCT, WORLD_FACTS, renderPersona, type PersonaVersion } from './persona.js';
 import type { ChatMessage, SceneId, Weather } from './shared.js';
 import type { Nearby, World } from './world.js';
-import { findPlace, perceptionBlock, type Place } from './places.js';
+import { findPlace, perceptionBlock, placesOf, type Place } from './places.js';
 import { fold } from './text.js';
 import type { Mind } from './mind.js';
 import { claim, decide, namesAny, type Candidate } from './arbiter.js';
 import { SCENE_LABEL, sceneKnowledge, weatherApplies } from './scenes.js';
 import { freeSeatNear } from './seats.js';
 import { SKILLS, describeSkills, type SkillCtx, type SkillRun } from './skills.js';
-import { beginIntention, closeOrphanIntentions, endIntention, recentIntentions, skillExperience, type IntentionOutcome, type IntentionSource } from './intentions.js';
+import { beginIntention, closeOrphanIntentions, endIntention, recentIntentions, skillExperience, type IntentionEvent, type IntentionOutcome, type IntentionResult, type IntentionSource, type WhyAudit } from './intentions.js';
 import { mulberry32, seedOf } from './mind.js';
 import { isNight } from './shared.js';
 import { FATIGUE, assessFatigue, fatigueLines, keyLabel, type WorldSnapshot } from './fatigue.js';
+import { NOVELTY, noveltyLines } from './novelty.js';
+import { auditWhy, factLines, type Facts, type ObservedEvent } from './grounding.js';
 
 /**
  * A cabeça do personagem: percebe, decide, age.
@@ -63,6 +65,10 @@ const DELIBERATE = {
 } as const;
 /** Habilidades "passivas": um evento pode interrompê-las para deliberar de novo. */
 const PASSIVE_SKILLS = new Set(['wander', 'stay', 'rest', 'people_watch', 'watch_telao', 'visit_poi']);
+/** Habilidades sem destino físico: "chegou?" não se aplica (fica nulo no registro). */
+const NO_DESTINATION = new Set(['wander', 'stay', 'follow']);
+/** Por quanto tempo um evento observado (chuva, noite, alguém chegou) ainda é "fato recente" para o why. */
+const OBSERVED_WINDOW_MS = 2 * 60 * 60_000;
 /** A distância de acompanhamento mora nas pernas (`FOLLOW` em walker.ts): faixa 2–3 m, com desaceleração. */
 const FOLLOW_TTL_MS = 4 * 60_000;
 const GREET_COOLDOWN_MS = 30 * 60_000;
@@ -121,6 +127,15 @@ interface Intention {
   until: number;
   /** Trocas de conversa enquanto durou (mede se a habilidade rende encontro). */
   exchanges: number;
+  /** O resultado em partes (migration 0028): chegada, gente, eventos. */
+  arrivedAt: number | null;
+  arrivals: number;
+  greetings: number;
+  heard: number;
+  spokeWith: Set<string>;
+  nearby: Set<string>;
+  events: IntentionEvent[];
+  whyAudit: WhyAudit | null;
 }
 
 export { fold };
@@ -205,6 +220,12 @@ export class Brain implements Mind {
   private lastDeliberationOk = true;
   /** Planos recusados por fadiga de intenção (`fatigue.ts`) hoje: repetição sem mudança no mundo. */
   private fatigueRefusals = 0;
+  /** "Why" que afirmaram o que não foi observado (`grounding.ts`) hoje. */
+  private ungroundedWhys = 0;
+  /** O que ele viu acontecer (chuva, noite, gente chegando/saindo), janela de 2 h: os FATOS do why. */
+  private observed: Array<{ at: number; what: string }> = [];
+  /** Última saída anotada por pessoa (uma pessoa que oscila na borda da área não é dez saídas). */
+  private goneAt = new Map<string, number>();
   private lastWeather: string | null = null;
   private lastNight: boolean | null = null;
   /** A habilidade `reflect` pediu; `shouldReflect` atende quando puder. */
@@ -256,7 +277,7 @@ export class Brain implements Mind {
         minutesLeft: Math.max(0, Math.round((this.intention.until - Date.now()) / 60_000)),
         exchanges: this.intention.exchanges,
       } : null,
-      deliberations: { today: this.deliberationsToday, budget: config.deliberationBudget, lastAt: this.lastDeliberationAt, fatigueRefusals: this.fatigueRefusals },
+      deliberations: { today: this.deliberationsToday, budget: config.deliberationBudget, lastAt: this.lastDeliberationAt, fatigueRefusals: this.fatigueRefusals, ungroundedWhys: this.ungroundedWhys },
     };
   }
 
@@ -273,6 +294,7 @@ export class Brain implements Mind {
     // com dezenas de personagens na cidade, a memória dele seria só isso.
     if (msg.npc) return;
     this.lastAnyChatAt = Date.now();
+    if (this.intention && this.intention.source !== 'default') this.intention.heard++;
 
     void memory.remember(this.npc.id, {
       kind: 'heard', userId: msg.senderId, userName: msg.senderName, text: msg.text, roomId: this.world.roomId,
@@ -308,6 +330,7 @@ export class Brain implements Mind {
     const now = Date.now();
     if (now - (this.metAt.get(p.userId) ?? 0) < MEET_COOLDOWN_MS) return;
     this.metAt.set(p.userId, now);
+    this.noteEvent(`${p.name} chegou`);
     void memory.meet(this.npc.id, p.userId, p.name).then((person) => {
       // Só cumprimenta de novo quem já conhece — e uma vez por visita longa.
       // Cumprimentar todo desconhecido que passa a 20 m é um vendedor, não um
@@ -323,6 +346,10 @@ export class Brain implements Mind {
 
   onGone(p: Nearby): void {
     this.greetCandidates.delete(p.userId);
+    if (!p.npc && this.metAt.has(p.userId) && Date.now() - (this.goneAt.get(p.userId) ?? 0) > MEET_COOLDOWN_MS) {
+      this.goneAt.set(p.userId, Date.now());
+      this.noteEvent(`${p.name} saiu`);
+    }
     const c = this.conversations.get(p.userId);
     if (c && Date.now() - c.lastAt < CONVERSATION_TTL_MS) {
       void memory.remember(this.npc.id, {
@@ -362,6 +389,7 @@ export class Brain implements Mind {
 
     // Fala ambiente: gente por perto, praça quieta, e faz tempo que ele não fala.
     const near = this.world.people().filter((p) => !p.npc && p.distance <= AMBIENT_RADIUS_M);
+    if (this.intention && this.intention.source !== 'default') for (const p of near) this.intention.nearby.add(p.name);
     if (near.length > 0
       && now - this.lastAnyChatAt > AMBIENT_MIN_QUIET_MS
       && now - this.lastSpokeAt > AMBIENT_MIN_QUIET_MS
@@ -393,7 +421,33 @@ export class Brain implements Mind {
         void this.greet(userId, name, p);
       },
       requestReflection: () => { this.reflectionRequested = true; },
+      arrived: () => {
+        const it = this.intention;
+        if (!it) return;
+        it.arrivals++;
+        if (it.arrivedAt === null) it.arrivedAt = Date.now();
+      },
     };
+  }
+
+  /**
+   * Algo aconteceu no mundo: fica na janela de fatos observados (o que o
+   * "why" pode afirmar) e no registro da intenção em curso.
+   */
+  private noteEvent(what: string): void {
+    const now = Date.now();
+    this.observed.push({ at: now, what });
+    this.observed = this.observed.filter((e) => now - e.at < OBSERVED_WINDOW_MS).slice(-40);
+    const it = this.intention;
+    if (it && it.source !== 'default' && it.events.length < 40) it.events.push({ t: Math.round((now - it.startedAt) / 1000), what });
+  }
+
+  /** Os fatos observados, com idade, para o prompt e para a auditoria do why. */
+  private observedEvents(now: number): ObservedEvent[] {
+    return this.observed
+      .filter((e) => now - e.at < OBSERVED_WINDOW_MS)
+      .map((e) => ({ what: e.what, ageMin: Math.round((now - e.at) / 60_000) }))
+      .reverse();
   }
 
   /**
@@ -438,12 +492,20 @@ export class Brain implements Mind {
   /** Eventos que valem uma nova deliberação: mudança de clima, virada de noite/dia. */
   private watchEvents(now: number): void {
     const weather = this.world.weather;
-    if (weather && this.lastWeather && weather !== this.lastWeather) this.trigger(weather === 'rain' ? 'começou a chover' : 'parou de chover');
+    if (weather && this.lastWeather && weather !== this.lastWeather) {
+      const what = weather === 'rain' ? 'começou a chover' : 'parou de chover';
+      this.noteEvent(what);
+      this.trigger(what);
+    }
     if (weather) this.lastWeather = weather;
     const clock = this.world.clock;
     if (clock !== null) {
       const night = isNight(clock);
-      if (this.lastNight !== null && night !== this.lastNight) this.trigger(night ? 'anoiteceu' : 'amanheceu');
+      if (this.lastNight !== null && night !== this.lastNight) {
+        const what = night ? 'anoiteceu' : 'amanheceu';
+        this.noteEvent(what);
+        this.trigger(what);
+      }
       this.lastNight = night;
     }
     void now;
@@ -477,7 +539,7 @@ export class Brain implements Mind {
    * Começa uma intenção: valida a habilidade e os parâmetros (o modelo não
    * ganha uma habilidade por tê-la escrito), encerra a anterior, registra.
    */
-  private startIntention(plan: { goal: string; why: string | null; skill: string; params: Record<string, unknown>; minutes: number; source: IntentionSource; trigger: string | null; say: string | null }, now: number): boolean {
+  private startIntention(plan: { goal: string; why: string | null; skill: string; params: Record<string, unknown>; minutes: number; source: IntentionSource; trigger: string | null; say: string | null; whyAudit?: WhyAudit | null }, now: number): boolean {
     const skill = SKILLS[plan.skill];
     if (!skill) return false;
     const params = skill.validate(plan.params ?? {}, { scene: this.npc.sceneId, world: this.world });
@@ -490,6 +552,7 @@ export class Brain implements Mind {
     const it: Intention = {
       dbId: null, goal: plan.goal, why: plan.why, skill: plan.skill, params, run, source: plan.source,
       startedAt: now, until: now + minutes * 60_000, exchanges: 0,
+      arrivedAt: null, arrivals: 0, greetings: 0, heard: 0, spokeWith: new Set(), nearby: new Set(), events: [], whyAudit: plan.whyAudit ?? null,
     };
     this.intention = it;
     if (plan.source !== 'default') {
@@ -498,7 +561,7 @@ export class Brain implements Mind {
       // o encerramento espera o id em vez de deixar a linha aberta para sempre.
       it.dbId = beginIntention(this.npc.id, {
         goal: plan.goal, why: plan.why, skill: plan.skill, params, source: plan.source, trigger: plan.trigger,
-        plannedMin: Math.round(minutes), roomId: this.world.roomId, world: this.worldSnapshot(),
+        plannedMin: Math.round(minutes), roomId: this.world.roomId, world: this.worldSnapshot(), whyAudit: it.whyAudit,
       });
     }
     if (plan.say) void this.speak(plan.say, null);
@@ -511,14 +574,64 @@ export class Brain implements Mind {
     this.intention = null;
     try { it.run.stop(this.skillCtx(Date.now())); } catch (err) { warn('brain', 'habilidade não parou limpa', { err: String(err) }); }
     if (it.source === 'default') return;
+    const result = this.resultOf(it, outcome, Date.now());
     if (it.dbId) {
-      const done = it.dbId.then((id) => { if (id) return endIntention(id, outcome, it.exchanges); }).catch(() => {});
+      const done = it.dbId.then((id) => { if (id) return endIntention(id, result); }).catch(() => {});
       this.pendingEnd = this.pendingEnd ? this.pendingEnd.then(() => done) : done;
     }
+    log('brain', 'intenção encerrada', {
+      npc: this.npc.name, skill: it.skill, goal: it.goal, resultado: outcome, chegou: result.arrived, chegadaSeg: result.arriveSec, permanenciaSeg: result.dwellSec,
+      conversas: result.interactions.exchanges, cumprimentos: result.interactions.greetings, perto: result.interactions.nearby.length, eventos: result.events.length,
+    });
     const mins = Math.round((Date.now() - it.startedAt) / 60_000);
+    const bits = [
+      result.arrived === null ? null : result.arrived ? `chegou em ${result.arriveSec} s e ficou ${Math.round((result.dwellSec ?? 0) / 60)} min` : 'não chegou ao destino',
+      it.exchanges ? `${it.exchanges} troca(s) de conversa` : null,
+      result.interactions.greetings ? `${result.interactions.greetings} cumprimento(s)` : null,
+      result.interactions.nearby.length ? `gente perto: ${result.interactions.nearby.join(', ')}` : 'ninguém por perto',
+      result.events.length ? `aconteceu: ${result.events.map((e) => e.what).join(', ')}` : 'nada aconteceu no mundo',
+    ].filter(Boolean);
     void memory.remember(this.npc.id, {
-      kind: 'event', text: `Decidi: ${it.goal} (${it.skill}, ${mins} min). Resultado: ${outcome}${it.exchanges ? `, ${it.exchanges} troca(s) de conversa` : ''}.`, roomId: this.world.roomId,
+      kind: 'event', text: `Decidi: ${it.goal} (${it.skill}, ${mins} min). Resultado: ${outcome}; ${bits.join('; ')}.`, roomId: this.world.roomId,
     }).catch(() => {});
+  }
+
+  /** O resultado da intenção, em partes, para o registro. */
+  private resultOf(it: Intention, outcome: IntentionOutcome, now: number): IntentionResult {
+    const hasDestination = !NO_DESTINATION.has(it.skill);
+    const arrived = hasDestination ? it.arrivedAt !== null : null;
+    return {
+      outcome,
+      arrived,
+      arriveSec: it.arrivedAt !== null ? Math.round((it.arrivedAt - it.startedAt) / 1000) : null,
+      dwellSec: it.arrivedAt !== null ? Math.round((now - it.arrivedAt) / 1000) : null,
+      interactions: {
+        exchanges: it.exchanges, greetings: it.greetings, heard: it.heard,
+        spokeWith: [...it.spokeWith].slice(0, 8), nearby: [...it.nearby].slice(0, 12), arrivals: it.arrivals,
+      },
+      events: it.events,
+    };
+  }
+
+  /** Os fatos que o mundo forneceu — o que o "why" pode afirmar. */
+  private facts(recent: Awaited<ReturnType<typeof recentIntentions>>, now: number): Facts {
+    const clock = this.world.clock;
+    // "Hoje" é desde a meia-noite de Brasília (UTC−3, sem horário de verão desde 2019).
+    const brt = new Date(now - 3 * 3_600_000);
+    brt.setUTCHours(0, 0, 0, 0);
+    const todayMs = brt.getTime() + 3 * 3_600_000;
+    const today = recent.filter((r) => r.startedAt.getTime() >= todayMs && r.source !== 'default');
+    const seen = new Set<string>();
+    for (const r of today) for (const n of [...(r.interactions?.nearby ?? []), ...(r.interactions?.spokeWith ?? [])]) seen.add(n);
+    for (const p of this.world.people()) if (!p.npc) seen.add(p.name);
+    return {
+      weather: weatherApplies(this.npc.sceneId) ? this.world.weather : null,
+      night: clock === null ? null : isNight(clock),
+      people: this.world.people().filter((p) => !p.npc).map((p) => p.name).slice(0, 8),
+      events: this.observedEvents(now),
+      // Sem intenção registrada hoje, não se sabe quem passou: o why não pode afirmar que ninguém veio.
+      seenToday: today.length ? [...seen].slice(0, 12) : null,
+    };
   }
 
   /**
@@ -534,7 +647,7 @@ export class Brain implements Mind {
     this.chatCalls.push(Date.now());
     try {
       const [recent, experience] = await Promise.all([
-        recentIntentions(this.npc.id, FATIGUE.lookback).catch(() => []),
+        recentIntentions(this.npc.id, NOVELTY.lookback).catch(() => []),
         skillExperience(this.npc.id).catch(() => []),
       ]);
       const world = this.worldSnapshot();
@@ -546,6 +659,14 @@ export class Brain implements Mind {
         ? experience.map((e) => `${e.skill}: ${e.times}× (${e.exchanges} conversa(s)${e.failed ? `, ${e.failed} falha(s)` : ''})`).join('; ')
         : 'nenhuma ainda';
       const tired = fatigueLines(recent, world, Date.now());
+      const facts = this.facts(recent, Date.now());
+      const novelty = noveltyLines({
+        recent, now: Date.now(),
+        available: {
+          places: placesOf(this.npc.sceneId).map((p) => p.name),
+          skills: Object.values(SKILLS).filter((s) => s.name !== 'follow' && s.describe(this.npc.sceneId)).map((s) => s.name),
+        },
+      });
       const people = this.world.people().filter((p) => !p.npc).slice(0, 6);
       const known = await Promise.all(people.map(async (p) => {
         const person = await memory.person(this.npc.id, p.userId).catch(() => null);
@@ -559,12 +680,17 @@ export class Brain implements Mind {
         'SUAS ÚLTIMAS INTENÇÕES (mais recentes primeiro):',
         ...history,
         `SUA EXPERIÊNCIA nos últimos 7 dias, por habilidade: ${exp}.`,
+        '',
+        'FATOS OBSERVADOS (o que o mundo lhe deu; só isto pode ser afirmado como fato):',
+        ...factLines(facts, { weatherApplies: weatherApplies(this.npc.sceneId) }),
+        ...(novelty.length ? ['', 'NOVIDADE — o que você já viu e o que rendeu:', ...novelty] : []),
         ...(tired.length ? ['', 'SEU CANSAÇO (a mesma habilidade com o mesmo alvo, ou o mesmo objetivo dito de outro jeito, cansa — e o que está CANSADO será recusado, a não ser que algo tenha mudado de fato no mundo desde então: chuva, noite, alguém novo):', ...tired] : []),
         '',
         'HABILIDADES QUE VOCÊ TEM (escolha UMA; os parâmetros só destas):',
         ...describeSkills(this.npc.sceneId),
         '',
-        'Decida o que VOCÊ quer fazer nos próximos minutos, do seu jeito — um objetivo concreto e seu, não uma obrigação. Varie: não repita a última habilidade duas vezes seguidas sem um motivo dito no "why", e prefira um alvo ou uma habilidade que você não usou nas últimas horas. Se há gente perto e você é de puxar assunto, habilidades que aproximam rendem mais; se não há ninguém, vale cuidar de si (descansar, olhar o telão, dar uma volta). Duração entre 3 e 15 minutos. "say" é opcional: uma frase curta ao começar, só se houver gente perto para ouvir.',
+        'Decida o que VOCÊ quer fazer nos próximos minutos, do seu jeito — um objetivo concreto e seu, não uma obrigação. Varie: não repita a última habilidade duas vezes seguidas sem um motivo dito no "why", e prefira um alvo ou uma habilidade que você não usou nas últimas horas. PREFIRA o que ainda não explorou (lista NOVIDADE) quando não houver motivo REAL para repetir — motivo real é um FATO OBSERVADO (alguém chegou, choveu, anoiteceu), nunca uma impressão. Se há gente perto e você é de puxar assunto, habilidades que aproximam rendem mais; se não há ninguém, vale cuidar de si (descansar, olhar o telão, dar uma volta). Duração entre 3 e 15 minutos. "say" é opcional: uma frase curta ao começar, só se houver gente perto para ouvir.',
+        'No "why", separe FATO de IMPRESSÃO: fato é só o que está em FATOS OBSERVADOS; o resto diga como impressão sua ("acho que", "quero ver se"). Não afirme "ninguém esteve aqui hoje", "o letreiro mudou", "acendeu há pouco" nem nada parecido sem o dado correspondente na lista — afirmação sem dado será marcada como suposição.',
         'Devolva SOMENTE um JSON: {"goal": "objetivo em até 120 caracteres", "why": "por quê, em uma frase", "skill": "nome", "params": {…}, "minutes": N, "say": null ou "frase"}',
       ].join('\n');
       const messages: ChatTurn[] = [{ role: 'system', content: this.systemPrompt() }, { role: 'user', content: user }];
@@ -579,7 +705,7 @@ export class Brain implements Mind {
         warn('brain', 'plano recusado por fadiga', { npc: this.npc.name, alvo: fatigue.key, cansaco: Number(fatigue.score.toFixed(2)), vezes: fatigue.matches.length, goal: plan.goal });
         const last = fatigue.matches.reduce((a, b) => (a.ageMin <= b.ageMin ? a : b));
         messages.push({ role: 'assistant', content: JSON.stringify({ goal: plan.goal, skill: plan.skill, params: plan.params }) });
-        messages.push({ role: 'user', content: `RECUSADO POR CANSAÇO: você já fez "${last.past.goal}" (${keyLabel(plan.skill, plan.params)}) há ${last.ageMin} min, e nada mudou no mundo desde então (${fatigue.matches.length} vez(es) nas últimas ${Math.round(FATIGUE.windowMs / 60_000)} min). Escolha OUTRA habilidade ou OUTRO alvo — algo que não esteja na lista de cansaço. Devolva SOMENTE o JSON.` });
+        messages.push({ role: 'user', content: `RECUSADO POR CANSAÇO: você já fez "${last.past.goal}" (${keyLabel(plan.skill, plan.params)}) há ${last.ageMin} min, e nada mudou no mundo desde então (${fatigue.matches.length} vez(es) nas últimas ${Math.round(FATIGUE.windowMs / 60_000)} min). Escolha OUTRA habilidade ou OUTRO alvo — algo que não esteja na lista de cansaço; de preferência algo da lista NOVIDADE ainda não explorado. Devolva SOMENTE o JSON.` });
         this.chatCalls.push(Date.now());
         plan = await this.askPlan(messages);
         if (!plan) return;
@@ -590,9 +716,16 @@ export class Brain implements Mind {
           return;
         }
       }
+      // O why não afirma o que não observou: a frase sem dado vira suposição declarada no registro.
+      const audit = auditWhy(plan.why, this.facts(recent, Date.now()));
+      if (audit.unsupported.length) {
+        this.ungroundedWhys++;
+        warn('brain', 'why afirmou o que não observou', { npc: this.npc.name, goal: plan.goal, suposicoes: audit.unsupported });
+      }
       const ok = this.startIntention({
-        goal: plan.goal, why: plan.why, skill: plan.skill, params: plan.params,
+        goal: plan.goal, why: plan.why ? audit.why.slice(0, 300) : null, skill: plan.skill, params: plan.params,
         minutes: plan.minutes, source: 'deliberation', trigger: reason, say: this.world.people().some((p) => !p.npc && p.distance <= 12) ? plan.say : null,
+        whyAudit: audit.unsupported.length ? { unsupported: audit.unsupported } : null,
       }, Date.now());
       if (!ok) warn('brain', 'plano recusado pela validação', { npc: this.npc.name, skill: plan.skill, params: plan.params });
       this.lastDeliberationOk = ok;
@@ -852,7 +985,7 @@ export class Brain implements Mind {
         const ok = await this.speak(out.say, { userId: c.userId, name: c.name });
         if (ok) {
           this.exchangesSinceReflection++;
-          if (this.intention) this.intention.exchanges++;
+          if (this.intention) { this.intention.exchanges++; this.intention.spokeWith.add(c.name); }
           await memory.exchanged(this.npc.id, c.userId, c.name, out.note).catch(() => {});
         }
       } else if (out.note) {
@@ -877,7 +1010,7 @@ export class Brain implements Mind {
         this.outputSpec(null),
       ].join('\n');
       const out = await this.generate('greet', user);
-      if (out.say) await this.speak(out.say, { userId, name });
+      if (out.say && await this.speak(out.say, { userId, name }) && this.intention) this.intention.greetings++;
     } catch (err) {
       warn('brain', 'falha ao cumprimentar', { err: String(err) });
     }
