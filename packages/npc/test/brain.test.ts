@@ -392,7 +392,7 @@ describe('ações do modelo', () => {
 
   it('a ação em curso aparece no status e move as pernas', () => {
     brain.setAction(brain.parseAction({ type: 'go_to', place: 'monumento' }, null)!);
-    assert.match(brain.status().action, /go_to o monumento/);
+    assert.match(brain.status().action, /go_to.*monumento/);
     assert.ok(!fakeWorld.walker.idle);
     brain.dispose();
   });

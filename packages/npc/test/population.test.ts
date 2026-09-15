@@ -868,3 +868,62 @@ describe('pontos de interesse e rotinas por categoria', () => {
     });
   });
 });
+
+// ------------------------------------------------------------ habilidades
+
+import { SKILLS, describeSkills } from '../src/skills.js';
+
+describe('a biblioteca de habilidades do cognitivo', () => {
+  it('descreve por cena só o que existe lá, e valida parâmetros contra o mundo', () => {
+    const plaza = describeSkills('central_plaza').join('\n');
+    const noir = describeSkills('noir_district').join('\n');
+    assert.match(plaza, /watch_telao/);
+    assert.match(plaza, /queue_kiosk/);
+    assert.match(plaza, /- sit:/);
+    assert.doesNotMatch(noir, /watch_telao|queue_kiosk|- sit:/, 'o bairro não tem telão, quiosque nem banco');
+    assert.doesNotMatch(plaza, /- follow:/, 'seguir só nasce de conversa');
+    const w = new FakeWorld('central_plaza');
+    const ctx = { scene: 'central_plaza' as SceneId, world: w as unknown as World };
+    assert.deepEqual(SKILLS.go_to!.validate({ place: 'telão' }, ctx), { place: 'o telão' });
+    assert.equal(SKILLS.go_to!.validate({ place: 'marte' }, ctx), null);
+    assert.equal(SKILLS.patrol!.validate({ places: ['telão'] }, ctx), null, 'patrulha precisa de dois lugares');
+    assert.deepEqual(SKILLS.patrol!.validate({ places: ['telão', 'monumento', 'plutão'] }, ctx), { places: ['o telão', 'o monumento'] });
+    assert.equal(SKILLS.visit_poi!.validate({ kind: 'bar' }, ctx), null);
+    assert.deepEqual(SKILLS.visit_poi!.validate({ kind: 'landmark' }, ctx), { kind: 'landmark' });
+    assert.equal(SKILLS.follow!.validate({ userId: 'x', name: 'X' }, ctx), null, 'não se segue quem não está aqui');
+    w.put('u9', 'Nice', 1, 11);
+    assert.deepEqual(SKILLS.follow!.validate({ userId: 'u9', name: 'Nice' }, ctx), { userId: 'u9', name: 'Nice' });
+    assert.deepEqual(SKILLS.queue_kiosk!.validate({ kiosk: 7 }, ctx), {}, 'quiosque inexistente vira sorteio');
+    assert.equal(SKILLS.queue_kiosk!.validate({}, { scene: 'noir_district', world: w as unknown as World }), null);
+    assert.equal(SKILLS.watch_telao!.validate({}, { scene: 'noir_club', world: w as unknown as World }), null);
+  });
+
+  it('as habilidades correm sobre o corpo: patrulha anda e para; fila entra e sai; telão pega uma vaga', async () => {
+    QUEUES.reset();
+    const w = new FakeWorld('central_plaza');
+    const ctx = {
+      world: w as unknown as World, npc: { id: '00000000-0000-4000-8000-0000000000e9', name: 'T', sceneId: 'central_plaza' as SceneId },
+      rng: () => 0.3, now: Date.now(), say: async () => true, greet: () => {}, requestReflection: () => {},
+    };
+    const patrol = SKILLS.patrol!.start({ places: ['o telão', 'o monumento'] }, ctx);
+    assert.equal(patrol.tick(ctx), 'running');
+    assert.ok(w.walker.destination, 'saiu andando para o primeiro lugar');
+    assert.match(patrol.doing(), /telão/);
+    patrol.stop(ctx);
+
+    const q = SKILLS.queue_kiosk!.start({ kiosk: 0 }, ctx);
+    const kiosk = poiById('central_plaza', 'kiosk:0')!;
+    assert.equal(q.tick(ctx), 'running');
+    assert.equal(QUEUES.indexOf(w.roomId, kiosk, ctx.npc.id), 0);
+    q.stop(ctx);
+    assert.equal(QUEUES.length(w.roomId, kiosk), 0);
+
+    const t = SKILLS.watch_telao!.start({}, ctx);
+    assert.equal(t.tick(ctx), 'running');
+    const d = w.walker.destination!;
+    const telao = poiById('central_plaza', 'telao')!;
+    assert.ok(telao.spots.some((s) => Math.hypot(s.at.x - d.x, s.at.z - d.z) < 0.1), 'foi para uma vaga do telão');
+    t.stop(ctx);
+    QUEUES.reset();
+  });
+});

@@ -110,6 +110,10 @@ const llm = createServer((req, res) => {
     } else if (system.includes('escrevendo no seu diário')) {
       content = 'Hoje a Ana apareceu na praça e falou comigo. Foi a primeira conversa de verdade. Ela disse que veio testar; eu disse quem sou.';
       llmCalls.push('diary');
+    } else if (user.startsWith('DELIBERAÇÃO')) {
+      // Autonomia: o personagem decide o que fazer. O modelo de mentira manda-o olhar o telão por 3 min.
+      content = JSON.stringify({ goal: 'ver o que passa no telão hoje', why: 'a praça está quieta', skill: 'watch_telao', params: {}, minutes: 3, say: null });
+      llmCalls.push('deliberate');
     } else {
       // Conversa: a fala carrega uma frase que só o modelo de mentira diria.
       const who = /^(.+?) acabou de dizer/m.exec(user)?.[1] ?? 'você';
@@ -135,6 +139,7 @@ async function cleanup() {
   await db.query(`DELETE FROM npc_people WHERE npc_id = $1`, [NPC_ID]);
   await db.query(`DELETE FROM npc_diary WHERE npc_id = $1`, [NPC_ID]);
   await db.query(`DELETE FROM npc_calls WHERE npc_id = $1`, [NPC_ID]);
+  await db.query(`DELETE FROM npc_intentions WHERE npc_id = $1`, [NPC_ID]);
   await db.query(`DELETE FROM npc_persona_versions WHERE npc_id = $1 AND version > 1`, [NPC_ID]);
   await db.query(`UPDATE npc_persona_versions SET status = 'active' WHERE npc_id = $1 AND version = 1`, [NPC_ID]);
   await db.query(`UPDATE feature_flags SET enabled = TRUE WHERE key = 'npc_enabled'`);
@@ -205,6 +210,19 @@ async function main() {
   const h1 = await health();
   check('/health diz conectado', h1?.connected === true, JSON.stringify(h1));
 
+  step('1b. Livre e sem conversa, ele DECIDE o que fazer (uma deliberação, uma intenção que dura)');
+  const decided = await waitFor('intenção própria', async () => {
+    const r = await db.query(`SELECT skill, goal, source, planned_min FROM npc_intentions WHERE npc_id = $1 ORDER BY id DESC LIMIT 1`, [NPC_ID]);
+    return r.rows[0]?.source === 'deliberation';
+  }, 20_000, 500);
+  const intent = (await db.query(`SELECT skill, goal, source, planned_min, outcome FROM npc_intentions WHERE npc_id = $1 ORDER BY id DESC LIMIT 1`, [NPC_ID])).rows[0];
+  check('deliberou pelo modelo (uma chamada de propósito deliberate)', decided && llmCalls.includes('deliberate'), JSON.stringify(intent));
+  check('a intenção registrada é a que o modelo escolheu (watch_telao, 3 min)', intent?.skill === 'watch_telao' && intent?.planned_min === 3, JSON.stringify(intent));
+  const hd = await health();
+  check('/health mostra a intenção em curso com o objetivo', hd?.brain?.intention?.goal === 'ver o que passa no telão hoje', JSON.stringify(hd?.brain?.intention));
+  await sleep(4_000);
+  check('e não delibera de novo a cada tique (uma só em 4 s)', llmCalls.filter((c) => c === 'deliberate').length === 1, `${llmCalls.filter((c) => c === 'deliberate').length}`);
+
   step('2. Ana fala com ele; ele responde e a fala chega marcada como NPC');
   anaCity.send('chat', { text: 'oi Nilo, tudo bem?' });
   const replied = await waitFor('resposta do Nilo', () => inbox.some((m) => m.senderId === NPC_ID), 15_000);
@@ -256,7 +274,7 @@ async function main() {
   settled = await waitFor('personagem para de novo na faixa', () => gap() >= 1.85 && gap() <= 3.3, 15_000, 100);
   check(`parou de novo na faixa (${gap().toFixed(2)} m)`, settled);
   const hf = await health();
-  check(`status diz que está seguindo ${PLAYER_NAME}`, hf?.brain?.action === `follow ${PLAYER_NAME}`, JSON.stringify(hf?.brain?.action ?? hf));
+  check(`status diz que está seguindo ${PLAYER_NAME}`, typeof hf?.brain?.action === 'string' && hf.brain.action.startsWith('follow'), JSON.stringify(hf?.brain?.action ?? hf));
 
   step('3. Reflexão: diário → proposta → auditor → persona v2 no ar');
   const reflected = await waitFor('reflexão', async () => (await health())?.reflections >= 1, 20_000, 300);

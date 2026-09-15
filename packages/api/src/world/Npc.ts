@@ -365,3 +365,15 @@ export async function relations(idOrSlug: string, limit: number): Promise<unknow
   );
   return rows;
 }
+
+/** As intenções de um personagem COGNITIVO (migration 0026): o que decidiu fazer, por quê, e deu em quê. */
+export async function intentions(idOrSlug: string, limit: number): Promise<unknown[]> {
+  const row = await loadAgent(idOrSlug);
+  if (!row) throw new NpcError('NOT_FOUND', 'Personagem não existe.', 404);
+  const { rows } = await pool.query(
+    `SELECT id, goal, why, skill, params, source, trigger, planned_min, started_at, ended_at, outcome, exchanges, room_id
+       FROM npc_intentions WHERE npc_id = $1 ORDER BY id DESC LIMIT $2`,
+    [row.id, Math.max(1, Math.min(limit, 500))],
+  );
+  return rows;
+}

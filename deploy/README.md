@@ -410,6 +410,7 @@ POST /admin/npc/nilo/persona/:v/activate         aprovar uma pendente OU reverte
 POST /admin/npc/nilo/persona/:v/reject           recusar uma pendente
 PUT  /admin/npc/bia/enabled                      {enabled:false} tira SÓ este personagem
 GET  /admin/npc/nilo/memory|diary|people|calls   o que um cognitivo viveu, escreveu, conhece e gastou
+GET  /admin/npc/nilo/intentions                  o que ele DECIDIU fazer sozinho (objetivo, habilidade, resultado)
 GET  /admin/npc/bia/relations                    com quem um social se dá, quanto, e o que anotou
 PUT  /admin/flags/npc_enabled                    o freio de mão de TODOS os personagens
 PUT  /admin/flags/npc_ambient_enabled            só os de ambiente (se 60 corpos pesarem, tira-se a classe)

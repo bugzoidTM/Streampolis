@@ -11,6 +11,10 @@ import type { Mind } from './mind.js';
 import { claim, decide, namesAny, type Candidate } from './arbiter.js';
 import { SCENE_LABEL, sceneKnowledge, weatherApplies } from './scenes.js';
 import { freeSeatNear } from './seats.js';
+import { SKILLS, describeSkills, type SkillCtx, type SkillRun } from './skills.js';
+import { beginIntention, endIntention, recentIntentions, skillExperience, type IntentionOutcome, type IntentionSource } from './intentions.js';
+import { mulberry32, seedOf } from './mind.js';
+import { isNight } from './shared.js';
 
 /**
  * A cabeça do personagem: percebe, decide, age.
@@ -39,6 +43,25 @@ const MAX_CHAT_CALLS_PER_MIN = 12;
 /** Guiando alguém: a espera por quem fica para trás mora nas pernas (`ESCORT` em walker.ts). */
 const GUIDE_TTL_MS = 4 * 60_000;
 const SIT_TTL_MS = 3 * 60_000;
+/**
+ * A deliberação (o personagem decidindo o que fazer quando está livre).
+ *
+ * Nunca a cada tique: uma intenção dura os minutos que o próprio modelo
+ * escolheu (3–15) e só então ele pensa de novo — ou antes, se um evento
+ * pedir (alguém conhecido chegou, começou a chover, anoiteceu) e já passou
+ * o intervalo mínimo. Com a sala sem gente, a mesma intenção dura 2,5× mais:
+ * a vida continua, mas o orçamento não vai embora com uma praça vazia.
+ */
+const DELIBERATE = {
+  minGapMs: 90_000,
+  minMinutes: 3,
+  maxMinutes: 15,
+  emptyRoomStretch: 2.5,
+  /** Sem orçamento (ou o modelo falhou): passeio padrão por este tanto antes de tentar de novo. */
+  fallbackMs: 12 * 60_000,
+} as const;
+/** Habilidades "passivas": um evento pode interrompê-las para deliberar de novo. */
+const PASSIVE_SKILLS = new Set(['wander', 'stay', 'rest', 'people_watch', 'watch_telao', 'visit_poi']);
 /** A distância de acompanhamento mora nas pernas (`FOLLOW` em walker.ts): faixa 2–3 m, com desaceleração. */
 const FOLLOW_TTL_MS = 4 * 60_000;
 const GREET_COOLDOWN_MS = 30 * 60_000;
@@ -81,6 +104,21 @@ export interface BrainStatus {
   lastReflectionAt: number;
   exchangesSinceReflection: number;
   action: string;
+}
+
+/** O que ele decidiu fazer, e a habilidade rodando por baixo. */
+interface Intention {
+  dbId: number | null;
+  goal: string;
+  why: string | null;
+  skill: string;
+  params: Record<string, unknown>;
+  run: SkillRun;
+  source: IntentionSource;
+  startedAt: number;
+  until: number;
+  /** Trocas de conversa enquanto durou (mede se a habilidade rende encontro). */
+  exchanges: number;
 }
 
 export { fold };
@@ -152,12 +190,22 @@ export class Brain implements Mind {
   private lastSpokeAt = 0;
   private lastAnyChatAt = 0;
   private lastAmbientAt = 0;
-  private lingerUntil = 0;
   private stoppedForTalkUntil = 0;
-  /** A ação em curso, decidida pelo modelo; `wander` é o padrão. */
-  private action: Action = { type: 'wander' };
-  private actionUntil = 0;
-  private goToRetries = 0;
+  /** A intenção em curso (ver `DELIBERATE`); nula só entre uma e a próxima. */
+  private intention: Intention | null = null;
+  private deliberating = false;
+  private lastDeliberationAt = 0;
+  private deliberationsToday = 0;
+  private deliberationDay = '';
+  /** Um evento pedindo deliberação antes do prazo (o motivo), se houver. */
+  private pendingTrigger: string | null = null;
+  /** A última deliberação virou plano? Sem plano válido, espera-se mais antes de tentar de novo. */
+  private lastDeliberationOk = true;
+  private lastWeather: string | null = null;
+  private lastNight: boolean | null = null;
+  /** A habilidade `reflect` pediu; `shouldReflect` atende quando puder. */
+  private reflectionRequested = false;
+  private readonly rng: () => number;
   lastReflectionAt = Date.now();
   exchangesSinceReflection = 0;
   /** Trocado por `reflect.ts` quando uma versão nova entra no ar. */
@@ -169,6 +217,7 @@ export class Brain implements Mind {
     persona: PersonaVersion,
   ) {
     this.persona = persona;
+    this.rng = mulberry32(seedOf(npc.id) ^ 0x51);
   }
 
   /** Como o lugar onde ele mora se chama, em prosa. */
@@ -181,7 +230,9 @@ export class Brain implements Mind {
     this.world = world;
     this.greetCandidates.clear();
     this.stoppedForTalkUntil = 0;
-    this.lingerUntil = 0;
+    // O corpo é outro: a habilidade em curso perdeu as pernas. Encerra e deixa
+    // o próximo tique deliberar (ou retomar o passeio padrão).
+    if (this.intention) this.finishIntention('interrupted');
   }
 
   status(): BrainStatus & Record<string, unknown> {
@@ -191,9 +242,13 @@ export class Brain implements Mind {
       lastSpokeAt: this.lastSpokeAt,
       lastReflectionAt: this.lastReflectionAt,
       exchangesSinceReflection: this.exchangesSinceReflection,
-      action: this.action.type === 'go_to' ? `go_to ${this.action.place.name}${this.action.guiding ? ` guiando ${this.action.guiding.name}` : ''}`
-        : this.action.type === 'follow' ? `follow ${this.action.name}`
-          : this.action.type === 'sit' ? `sit${this.action.near ? ` com ${this.action.near.name}` : ''}` : this.action.type,
+      action: this.intention ? `${this.intention.skill}: ${this.intention.run.doing()}` : 'nenhuma',
+      intention: this.intention ? {
+        goal: this.intention.goal, skill: this.intention.skill, source: this.intention.source,
+        minutesLeft: Math.max(0, Math.round((this.intention.until - Date.now()) / 60_000)),
+        exchanges: this.intention.exchanges,
+      } : null,
+      deliberations: { today: this.deliberationsToday, budget: config.deliberationBudget, lastAt: this.lastDeliberationAt },
     };
   }
 
@@ -252,6 +307,8 @@ export class Brain implements Mind {
       const last = this.greeted.get(p.userId) ?? 0;
       if (person.encounters > 1 && Date.now() - last > GREET_COOLDOWN_MS) {
         this.greetCandidates.set(p.userId, p);
+        // Alguém conhecido chegou: motivo para repensar o que estava fazendo.
+        this.trigger(`${p.name} chegou (já se conheciam)`);
       }
     }).catch((err) => warn('brain', 'não registrou encontro', { err: String(err) }));
   }
@@ -291,7 +348,9 @@ export class Brain implements Mind {
       void this.greet(p.userId, cand.name, p);
     }
 
-    this.act(me, now);
+    this.watchEvents(now);
+    // Conversando (ou virado para quem fala), o corpo é da conversa; a intenção espera.
+    if (!this.inConversation(now) && !this.world.walker.attending) this.runIntention(now);
 
     // Fala ambiente: gente por perto, praça quieta, e faz tempo que ele não fala.
     const near = this.world.people().filter((p) => !p.npc && p.distance <= AMBIENT_RADIUS_M);
@@ -306,111 +365,211 @@ export class Brain implements Mind {
 
   // ---------------------------------------------------------------- corpo
 
-  /** Troca a ação em curso. Vem do modelo (via `parseAction`) ou do próprio tique. */
-  setAction(action: Action): void {
-    if (this.action.type === 'go_to' && this.action.guiding) this.world.guide(null, null);
-    this.action = action;
-    const now = Date.now();
-    this.actionUntil = action.type === 'follow' ? now + FOLLOW_TTL_MS
-      : action.type === 'go_to' ? now + GUIDE_TTL_MS
-        : action.type === 'sit' ? now + SIT_TTL_MS : 0;
-    if (action.type === 'go_to') {
-      this.goToRetries = 0;
-      // Guiando: as pernas esperam quem fica para trás (`ESCORT`); sozinho, é só ir.
-      const who = action.guiding?.userId;
-      this.world.walker.guide(action.place.standing, who ? this.world.tracker(who) : null);
-      if (who) this.world.guide(who, action.place.standing);
-    }
-    if (action.type === 'sit') {
-      const me = this.world.position;
-      const anchor = action.near ? this.world.personAt(action.near.userId) ?? me : me;
-      const seats = sceneKnowledge(this.npc.sceneId).seats;
-      const occupied = this.world.people().map((p) => ({ x: p.x, z: p.z }));
-      const seat = anchor ? freeSeatNear(seats, anchor, occupied) : null;
-      if (seat) this.world.walker.sitAt({ at: seat.at, yaw: seat.yaw });
-      else { this.action = { type: 'stay' }; this.lingerUntil = now + 30_000; }
-    }
-    if (action.type === 'follow') {
-      // As pernas leem a posição viva da pessoa a cada lote; aqui só se decide quando parar de seguir.
-      const userId = action.userId;
-      this.world.walker.follow(() => this.world.personAt(userId));
-    }
-    if (action.type === 'stay') { this.world.walker.stop(); this.lingerUntil = now + 60_000; }
-    if (action.type === 'wander') this.lingerUntil = now + LINGER_MIN_MS;
-    log('brain', 'ação', { action: this.status().action });
+  /** Alguma conversa viva (alguém falou com ele há menos de 90 s)? */
+  private inConversation(now: number): boolean {
+    for (const c of this.conversations.values()) if (now - c.lastAt < CONVERSATION_TTL_MS) return true;
+    return false;
   }
 
-  /** As pernas, por ação. Roda a cada tique. */
-  private act(me: { x: number; z: number }, now: number): void {
-    const walker = this.world.walker;
-    const a = this.action;
+  private skillCtx(now: number): SkillCtx {
+    return {
+      world: this.world,
+      npc: this.npc,
+      rng: this.rng,
+      now,
+      say: (text) => this.speak(text, null),
+      greet: (userId, name) => {
+        const p = this.world.people().find((x) => x.userId === userId);
+        if (!p || (Date.now() - (this.greeted.get(userId) ?? 0)) < GREET_COOLDOWN_MS) return;
+        this.greeted.set(userId, Date.now());
+        void this.greet(userId, name, p);
+      },
+      requestReflection: () => { this.reflectionRequested = true; },
+    };
+  }
 
-    if (a.type === 'go_to') {
-      if (a.guiding && now > this.actionUntil) {
-        // Esperou demais por quem ficou para trás: chega sozinho e volta a passear.
-        a.guiding = null;
-        this.world.guide(null, null);
-        if (walker.destination) walker.guide(a.place.standing, null);
+  /**
+   * A intenção em curso roda; ao acabar (cumpriu, falhou, prazo venceu) o
+   * personagem delibera a próxima — ou, sem orçamento, passeia por um tempo.
+   */
+  private runIntention(now: number): void {
+    const it = this.intention;
+    if (it) {
+      const st = it.run.tick(this.skillCtx(now));
+      const trigger = this.pendingTrigger;
+      if (st === 'running' && now < it.until && !trigger) return;
+      if (trigger && st === 'running' && now < it.until) {
+        // Um evento no meio de algo passivo: vale repensar — se já se pode
+        // deliberar; senão o evento espera, e a intenção continua. No meio de
+        // algo ativo (guiando alguém, na fila), o evento espera o fim.
+        if (!PASSIVE_SKILLS.has(it.skill) || it.source === 'conversation' || !this.canDeliberate(now)) return;
+        this.finishIntention('replaced');
+      } else {
+        this.finishIntention(st === 'done' ? 'done' : st === 'failed' ? 'failed' : 'expired');
       }
-      if (walker.idle && Math.hypot(a.place.standing.x - me.x, a.place.standing.z - me.z) <= 1.2) {
-        this.world.guide(null, null);
-        // Chegou: fica um tempo ali antes de voltar a passear.
-        this.action = { type: 'stay' };
-        this.lingerUntil = now + 45_000;
-        log('brain', 'chegou', { place: a.place.name });
-      } else if (walker.idle) {
-        // Desistiu no caminho (preso, ou quem guiava sumiu): tenta de novo poucas vezes e para.
-        if (this.goToRetries++ < 3) walker.guide(a.place.standing, a.guiding ? this.world.tracker(a.guiding.userId) : null);
-        else { this.world.guide(null, null); this.action = { type: 'stay' }; this.lingerUntil = now + 20_000; }
-      }
-      return;
     }
+    if (this.deliberating) return;
+    const reason = this.pendingTrigger ?? (it ? `fim de "${it.goal}" (${it.skill})` : 'início');
+    this.pendingTrigger = null;
+    if (this.canDeliberate(now)) {
+      void this.deliberate(reason);
+      // Enquanto o modelo pensa, o corpo não fica plantado: passeio padrão,
+      // trocado assim que a resposta chegar.
+      this.startIntention({ goal: 'passear enquanto decide', why: null, skill: 'wander', params: {}, minutes: 30, source: 'default', trigger: reason, say: null }, now);
+    } else {
+      // Sem poder deliberar agora: passeia até poder — só o intervalo mínimo
+      // se foi cedo demais; mais tempo se o modelo acabou de falhar ou se o
+      // orçamento do dia acabou.
+      const gapLeft = Math.max(5_000, this.lastDeliberationAt + DELIBERATE.minGapMs - now);
+      const ms = !this.lastDeliberationOk ? 6 * 60_000 : this.deliberationsToday >= config.deliberationBudget ? DELIBERATE.fallbackMs : gapLeft + 2_000;
+      this.pendingTrigger = this.pendingTrigger ?? (reason.startsWith('fim de') ? null : reason);
+      this.startIntention({ goal: 'passear', why: null, skill: 'wander', params: {}, minutes: ms / 60_000, source: 'default', trigger: reason, say: null }, now);
+    }
+  }
 
-    if (a.type === 'sit') {
-      if (walker.seated) {
-        if (now > this.actionUntil) { walker.standUp(); this.action = { type: 'wander' }; this.lingerUntil = now + LINGER_MIN_MS; }
-        return;
-      }
-      if (!walker.sitting) {
-        // Não chegou à vaga (ocupada no caminho, preso): fica em pé onde está.
-        this.action = { type: 'stay' };
-        this.lingerUntil = now + 30_000;
-      }
-      return;
+  /** Eventos que valem uma nova deliberação: mudança de clima, virada de noite/dia. */
+  private watchEvents(now: number): void {
+    const weather = this.world.weather;
+    if (weather && this.lastWeather && weather !== this.lastWeather) this.trigger(weather === 'rain' ? 'começou a chover' : 'parou de chover');
+    if (weather) this.lastWeather = weather;
+    const clock = this.world.clock;
+    if (clock !== null) {
+      const night = isNight(clock);
+      if (this.lastNight !== null && night !== this.lastNight) this.trigger(night ? 'anoiteceu' : 'amanheceu');
+      this.lastNight = night;
     }
+    void now;
+  }
 
-    if (a.type === 'follow') {
-      const p = this.world.people().find((x) => x.userId === a.userId);
-      if (!p || now > this.actionUntil) {
-        walker.stop();
-        this.action = { type: 'wander' };
-        this.lingerUntil = now + LINGER_MIN_MS;
-        return;
-      }
-      // Distância, velocidade e paradas são das pernas (`Walker.follow`).
-      if (!walker.following) walker.follow(() => this.world.personAt(a.userId));
-      return;
-    }
+  /** Pede uma deliberação antes do prazo, se já passou o intervalo mínimo. */
+  private trigger(reason: string): void {
+    if (Date.now() - this.lastDeliberationAt < DELIBERATE.minGapMs) return;
+    if (!this.pendingTrigger) this.pendingTrigger = reason;
+  }
 
-    if (a.type === 'stay') {
-      if (now > this.lingerUntil) this.action = { type: 'wander' };
-      return;
-    }
+  private canDeliberate(now: number): boolean {
+    const day = new Date().toISOString().slice(0, 10);
+    if (this.deliberationDay !== day) { this.deliberationDay = day; this.deliberationsToday = 0; }
+    if (this.deliberationsToday >= config.deliberationBudget) return false;
+    if (budgetLeft() <= 20) return false; // os últimos 20 do dia ficam para a conversa
+    return now - this.lastDeliberationAt >= DELIBERATE.minGapMs;
+  }
 
-    // wander: só quando não está no meio de uma conversa.
-    if (now > this.stoppedForTalkUntil && walker.idle && now > this.lingerUntil) {
-      const dest = walker.pickDestination(me);
-      if (dest) this.lingerUntil = now + LINGER_MIN_MS + Math.random() * (LINGER_MAX_MS - LINGER_MIN_MS);
+  /**
+   * Começa uma intenção: valida a habilidade e os parâmetros (o modelo não
+   * ganha uma habilidade por tê-la escrito), encerra a anterior, registra.
+   */
+  private startIntention(plan: { goal: string; why: string | null; skill: string; params: Record<string, unknown>; minutes: number; source: IntentionSource; trigger: string | null; say: string | null }, now: number): boolean {
+    const skill = SKILLS[plan.skill];
+    if (!skill) return false;
+    const params = skill.validate(plan.params ?? {}, { scene: this.npc.sceneId, world: this.world });
+    if (!params) return false;
+    if (this.intention) this.finishIntention('replaced');
+    let minutes = Math.max(1, Math.min(60, plan.minutes));
+    const humans = this.world.people().some((p) => !p.npc);
+    if (plan.source === 'deliberation' && !humans) minutes *= DELIBERATE.emptyRoomStretch;
+    const run = skill.start(params, this.skillCtx(now));
+    const it: Intention = {
+      dbId: null, goal: plan.goal, why: plan.why, skill: plan.skill, params, run, source: plan.source,
+      startedAt: now, until: now + minutes * 60_000, exchanges: 0,
+    };
+    this.intention = it;
+    if (plan.source !== 'default') {
+      log('brain', 'intenção', { npc: this.npc.name, goal: plan.goal, skill: plan.skill, min: Math.round(minutes), fonte: plan.source, motivo: plan.trigger });
+      void beginIntention(this.npc.id, {
+        goal: plan.goal, why: plan.why, skill: plan.skill, params, source: plan.source, trigger: plan.trigger,
+        plannedMin: Math.round(minutes), roomId: this.world.roomId,
+      }).then((id) => { if (this.intention === it) it.dbId = id; });
     }
-    if (walker.idle && this.lingerUntil < now) {
-      this.lingerUntil = now + LINGER_MIN_MS + Math.random() * (LINGER_MAX_MS - LINGER_MIN_MS);
+    if (plan.say) void this.speak(plan.say, null);
+    return true;
+  }
+
+  private finishIntention(outcome: IntentionOutcome): void {
+    const it = this.intention;
+    if (!it) return;
+    this.intention = null;
+    try { it.run.stop(this.skillCtx(Date.now())); } catch (err) { warn('brain', 'habilidade não parou limpa', { err: String(err) }); }
+    if (it.source === 'default') return;
+    if (it.dbId) void endIntention(it.dbId, outcome, it.exchanges);
+    const mins = Math.round((Date.now() - it.startedAt) / 60_000);
+    void memory.remember(this.npc.id, {
+      kind: 'event', text: `Decidi: ${it.goal} (${it.skill}, ${mins} min). Resultado: ${outcome}${it.exchanges ? `, ${it.exchanges} troca(s) de conversa` : ''}.`, roomId: this.world.roomId,
+    }).catch(() => {});
+  }
+
+  /**
+   * A DELIBERAÇÃO: o modelo, com a persona, a percepção, as pessoas por perto,
+   * o que já tentou (e rendeu o quê) e a lista fechada de habilidades, decide
+   * um objetivo próprio e a habilidade para persegui-lo. Uma chamada da camada
+   * de conversa; o resultado vale minutos.
+   */
+  private async deliberate(reason: string): Promise<void> {
+    this.deliberating = true;
+    this.lastDeliberationAt = Date.now();
+    this.deliberationsToday++;
+    this.chatCalls.push(Date.now());
+    try {
+      const [recent, experience] = await Promise.all([
+        recentIntentions(this.npc.id, 8).catch(() => []),
+        skillExperience(this.npc.id).catch(() => []),
+      ]);
+      const ago = (d: Date) => `${Math.max(0, Math.round((Date.now() - d.getTime()) / 60_000))} min atrás`;
+      const history = recent.length
+        ? recent.map((r) => `- [${ago(r.startedAt)}] "${r.goal}" (${r.skill}) → ${r.outcome ?? 'em curso'}${r.exchanges ? `, ${r.exchanges} conversa(s)` : ''}`)
+        : ['- (nenhuma ainda)'];
+      const exp = experience.length
+        ? experience.map((e) => `${e.skill}: ${e.times}× (${e.exchanges} conversa(s)${e.failed ? `, ${e.failed} falha(s)` : ''})`).join('; ')
+        : 'nenhuma ainda';
+      const people = this.world.people().filter((p) => !p.npc).slice(0, 6);
+      const known = await Promise.all(people.map(async (p) => {
+        const person = await memory.person(this.npc.id, p.userId).catch(() => null);
+        return `${p.name} a ${p.distance.toFixed(0)} m${person && person.encounters > 1 ? ` (conhecida: ${person.encounters} encontros)` : ''}`;
+      }));
+      const user = [
+        'DELIBERAÇÃO. Você está livre: ninguém está falando com você agora.',
+        `Motivo de estar pensando nisso: ${reason}.`,
+        `Pessoas (de verdade) por perto: ${known.length ? known.join('; ') : 'ninguém'}.`,
+        '',
+        'SUAS ÚLTIMAS INTENÇÕES (mais recentes primeiro):',
+        ...history,
+        `SUA EXPERIÊNCIA nos últimos 7 dias, por habilidade: ${exp}.`,
+        '',
+        'HABILIDADES QUE VOCÊ TEM (escolha UMA; os parâmetros só destas):',
+        ...describeSkills(this.npc.sceneId),
+        '',
+        'Decida o que VOCÊ quer fazer nos próximos minutos, do seu jeito — um objetivo concreto e seu, não uma obrigação. Varie: não repita a última habilidade duas vezes seguidas sem um motivo dito no "why". Se há gente perto e você é de puxar assunto, habilidades que aproximam rendem mais; se não há ninguém, vale cuidar de si (descansar, olhar o telão, dar uma volta). Duração entre 3 e 15 minutos. "say" é opcional: uma frase curta ao começar, só se houver gente perto para ouvir.',
+        'Devolva SOMENTE um JSON: {"goal": "objetivo em até 120 caracteres", "why": "por quê, em uma frase", "skill": "nome", "params": {…}, "minutes": N, "say": null ou "frase"}',
+      ].join('\n');
+      const messages: ChatTurn[] = [{ role: 'system', content: this.systemPrompt() }, { role: 'user', content: user }];
+      const r = await call({ npcId: this.npc.id, tier: 'chat', purpose: 'deliberate', messages, maxTokens: 260 });
+      const json = r.ok ? parseJsonObject(r.text) : null;
+      this.lastDeliberationOk = false;
+      if (!json) { warn('brain', 'deliberação sem JSON', { npc: this.npc.name, error: r.error }); return; }
+      const goal = typeof json.goal === 'string' && json.goal.trim() ? json.goal.trim().slice(0, 120) : null;
+      const skill = typeof json.skill === 'string' ? json.skill.trim() : '';
+      const minutes = typeof json.minutes === 'number' && Number.isFinite(json.minutes)
+        ? Math.max(DELIBERATE.minMinutes, Math.min(DELIBERATE.maxMinutes, json.minutes)) : 6;
+      const say = sanitizeSay(json.say);
+      if (!goal || !SKILLS[skill]) { warn('brain', 'deliberação inválida', { npc: this.npc.name, skill, goal }); return; }
+      const ok = this.startIntention({
+        goal, why: typeof json.why === 'string' ? json.why.slice(0, 300) : null, skill,
+        params: (typeof json.params === 'object' && json.params !== null ? json.params : {}) as Record<string, unknown>,
+        minutes, source: 'deliberation', trigger: reason, say: this.world.people().some((p) => !p.npc && p.distance <= 12) ? say : null,
+      }, Date.now());
+      if (!ok) warn('brain', 'plano recusado pela validação', { npc: this.npc.name, skill, params: json.params });
+      this.lastDeliberationOk = ok;
+    } catch (err) {
+      warn('brain', 'falha ao deliberar', { err: String(err) });
+    } finally {
+      this.deliberating = false;
     }
   }
 
   /**
-   * O `action` que o modelo devolveu, conferido contra a lista fechada e
-   * contra os lugares que existem. Qualquer coisa fora disso é ignorada — o
-   * modelo não ganha um verbo novo por tê-lo escrito.
+   * O `action` que o modelo devolveu numa CONVERSA, conferido contra a lista
+   * fechada e contra os lugares que existem. Vira uma intenção de origem
+   * "conversa": ela vale mais que o plano próprio, por alguns minutos.
    */
   parseAction(raw: unknown, who: { userId: string; name: string } | null): Action | null {
     if (typeof raw !== 'object' || raw === null) return null;
@@ -435,6 +594,23 @@ export class Brain implements Mind {
       default:
         return null;
     }
+  }
+
+  /** Uma ação de conversa vira intenção. */
+  setAction(action: Action): void {
+    const now = Date.now();
+    const who = action.type === 'go_to' ? action.guiding : action.type === 'follow' ? { userId: action.userId, name: action.name } : action.type === 'sit' ? action.near : null;
+    const plan = action.type === 'go_to'
+      ? { goal: `levar ${who?.name ?? 'alguém'} até ${action.place.name}`.replace('levar alguém até', 'ir até'), skill: 'go_to', params: { place: action.place.name, ...(who ? { guiding: who } : {}) }, minutes: GUIDE_TTL_MS / 60_000 }
+      : action.type === 'follow'
+        ? { goal: `acompanhar ${action.name}`, skill: 'follow', params: { userId: action.userId, name: action.name }, minutes: FOLLOW_TTL_MS / 60_000 }
+        : action.type === 'sit'
+          ? { goal: who ? `sentar com ${who.name}` : 'sentar um pouco', skill: 'sit', params: who ? { near: who.userId } : {}, minutes: SIT_TTL_MS / 60_000 }
+          : action.type === 'stay'
+            ? { goal: 'ficar aqui', skill: 'stay', params: {}, minutes: 1 }
+            : { goal: 'voltar a passear', skill: 'wander', params: {}, minutes: 2 };
+    const ok = this.startIntention({ ...plan, why: 'pedido em conversa', source: 'conversation', trigger: 'conversa', say: null }, now);
+    if (!ok) log('brain', 'ação de conversa recusada', { action: action.type });
   }
 
   // ---------------------------------------------------------------- falas
@@ -482,12 +658,10 @@ export class Brain implements Mind {
   }
 
   private doingNow(): string {
-    const a = this.action;
-    if (a.type === 'go_to') return `indo até ${a.place.name}${a.guiding ? `, guiando ${a.guiding.name}` : ''}`;
-    if (a.type === 'follow') return `seguindo ${a.name}`;
-    if (a.type === 'sit') return this.world.walker.seated ? `sentado num banco${a.near ? `, com ${a.near.name}` : ''}` : 'indo sentar';
-    if (a.type === 'stay') return 'parado';
-    return this.world.walker.idle ? `parado, olhando ${this.here}` : `passeando por ${this.here}`;
+    const it = this.intention;
+    if (!it) return this.world.walker.idle ? `parado, olhando ${this.here}` : `passeando por ${this.here}`;
+    if (it.source === 'default') return this.world.walker.idle ? `parado, olhando ${this.here}` : `passeando por ${this.here}`;
+    return `${it.run.doing()} — seu objetivo agora: "${it.goal}"`;
   }
 
   private systemPrompt(): string {
@@ -614,6 +788,7 @@ export class Brain implements Mind {
         const ok = await this.speak(out.say, { userId: c.userId, name: c.name });
         if (ok) {
           this.exchangesSinceReflection++;
+          if (this.intention) this.intention.exchanges++;
           await memory.exchanged(this.npc.id, c.userId, c.name, out.note).catch(() => {});
         }
       } else if (out.note) {
@@ -664,6 +839,11 @@ export class Brain implements Mind {
   shouldReflect(unreflectedCount: number): boolean {
     const hours = (Date.now() - this.lastReflectionAt) / 3_600_000;
     if (this.exchangesSinceReflection >= config.reflectEveryExchanges) return true;
+    // A habilidade `reflect`: ele mesmo pediu — vale se há o que refletir e não acabou de fazê-lo.
+    if (this.reflectionRequested) {
+      this.reflectionRequested = false;
+      if (hours >= 1 && unreflectedCount >= 1) return true;
+    }
     return hours >= config.reflectEveryHours && unreflectedCount >= 3;
   }
 
@@ -672,5 +852,6 @@ export class Brain implements Mind {
       if (c.pending) clearTimeout(c.pending.timer);
     }
     this.conversations.clear();
+    if (this.intention) this.finishIntention('interrupted');
   }
 }

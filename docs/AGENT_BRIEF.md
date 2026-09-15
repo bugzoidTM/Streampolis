@@ -1041,6 +1041,24 @@ O que tem de continuar verdade:
   (registro por sala; avança quando o primeiro sai; sem compra). Rotinas do
   Clube Sombra na migration 0025 (pista/bar/lounge/bordas/porta). Geometria
   intocada: tudo é leitura da planta.
+- **Autonomia do cognitivo** (`skills.ts` + `intentions.ts` + a camada de
+  intenção em `brain.ts`): livre e sem conversa viva, ele DELIBERA — uma
+  chamada da camada de conversa (`purpose: deliberate`) com persona,
+  percepção, pessoas por perto, as últimas intenções e a experiência por
+  habilidade (7 dias) — e devolve `{goal, why, skill, params, minutes, say}`.
+  A habilidade é código (biblioteca fechada: wander, go_to, sit, stay, rest,
+  watch_telao, people_watch, greet_arrivals, join_gathering, queue_kiosk,
+  patrol, visit_poi, reflect; `follow` só nasce de conversa), validada contra
+  o mundo (lugar que existe, gente que está aqui) e corre por tiques até
+  `done/failed` ou o prazo (3–15 min, ×2,5 sem gente na sala). Nunca a cada
+  tique: intervalo mínimo de 90 s, teto diário `NPC_DELIBERATION_BUDGET`
+  (140/personagem), e os últimos 20 do orçamento geral ficam para a conversa.
+  Eventos (conhecido chegou, chuva, noite) interrompem só habilidades
+  passivas e só se já se pode deliberar. Ação de conversa ("me leva") vira
+  intenção de origem `conversation` e vale mais que o plano próprio. Cada
+  intenção vai a `npc_intentions` (com trocas de conversa que rendeu) e à
+  memória como evento — a reflexão a leva ao diário e à persona. Painel:
+  `GET /admin/npc/nilo/intentions`; `/health` mostra `brain.intention`.
 - **Um "oi" sem nome tem UMA resposta** (`arbiter.ts`): a primeira cabeça a
   receber a mensagem decide para todas (mesmo processo) — quem já conversa
   com a pessoa (respondeu há <60 s, a ≤10 m) ou, senão, quem ela está

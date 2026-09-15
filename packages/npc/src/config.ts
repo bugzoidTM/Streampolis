@@ -72,6 +72,14 @@ export const config = {
 
   healthPort: num('NPC_HEALTH_PORT', 8791),
 
+  /**
+   * Deliberações (o cognitivo decidindo o que fazer) por dia, por personagem.
+   * Saem do mesmo orçamento diário de chamadas; este teto é o que garante
+   * que a autonomia não come a conversa. ~140 dá uma a cada 10 min o dia
+   * inteiro — e na prática são menos, porque com a sala vazia ele delibera
+   * mais devagar.
+   */
+  deliberationBudget: num('NPC_DELIBERATION_BUDGET', 140),
   /** Quantas trocas de conversa (ou horas) entre uma reflexão e a próxima. */
   reflectEveryExchanges: num('NPC_REFLECT_EXCHANGES', 12),
   reflectEveryHours: num('NPC_REFLECT_HOURS', 6),
