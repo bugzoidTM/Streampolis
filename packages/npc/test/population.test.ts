@@ -927,3 +927,45 @@ describe('a biblioteca de habilidades do cognitivo', () => {
     QUEUES.reset();
   });
 });
+
+// -------------------------------------------------- intenções: órfãs e fala
+
+import { pool } from '../src/db.js';
+import { beginIntention, closeOrphanIntentions, endIntention } from '../src/intentions.js';
+import { Brain } from '../src/brain.js';
+
+describe('intenções sem órfãs; toda fala passa pela guarda de clima', () => {
+  const NILO = '5e1f0000-0000-4000-8000-000000000001';
+
+  it('uma intenção aberta de outra vida do processo é fechada como interrompida ao subir', async () => {
+    const id = await beginIntention(NILO, { goal: 'TESTE órfã', why: null, skill: 'wander', params: {}, source: 'deliberation', trigger: 'teste', plannedMin: 1, roomId: null });
+    assert.ok(id, 'o banco de dev está de pé');
+    try {
+      const closed = await closeOrphanIntentions(NILO);
+      assert.ok(closed >= 1);
+      const { rows } = await pool.query(`SELECT outcome, ended_at FROM npc_intentions WHERE id = $1`, [id]);
+      assert.equal(rows[0]!.outcome, 'interrupted');
+      assert.ok(rows[0]!.ended_at);
+      // Encerrar de novo não reabre nem sobrescreve.
+      await endIntention(id!, 'done', 3);
+      const again = await pool.query(`SELECT outcome FROM npc_intentions WHERE id = $1`, [id]);
+      assert.equal(again.rows[0]!.outcome, 'interrupted');
+    } finally {
+      await pool.query(`DELETE FROM npc_intentions WHERE goal = 'TESTE órfã'`);
+    }
+  });
+
+  it('o "say" de uma deliberação (e qualquer outra fala) cala se contradiz o clima', async () => {
+    const w = new FakeWorld('central_plaza');
+    w.weather = 'clear';
+    const persona = { version: 1, source: 'seed', persona: { name: 'Nilo', kind: 'npc' as const, essence: 'x'.repeat(12), traits: ['a', 'b'], voice: 'y'.repeat(12), likes: [], dislikes: [], history: [], opinions: [], relationships: [] } };
+    const brain = new Brain({ id: NILO, name: 'Nilo', sceneId: 'central_plaza' }, w as unknown as World, persona);
+    const speak = (brain as unknown as { speak: (t: string, a: null) => Promise<boolean> }).speak.bind(brain);
+    assert.equal(await speak('Que chuva boa hoje, hein?', null), false);
+    assert.equal(w.said.length, 0, 'nada saiu');
+    assert.equal(await speak('Tarde tranquila na praça.', null), true);
+    assert.deepEqual(w.said, ['Tarde tranquila na praça.']);
+    brain.dispose();
+    await brain.flush();
+  });
+});

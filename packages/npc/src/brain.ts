@@ -12,7 +12,7 @@ import { claim, decide, namesAny, type Candidate } from './arbiter.js';
 import { SCENE_LABEL, sceneKnowledge, weatherApplies } from './scenes.js';
 import { freeSeatNear } from './seats.js';
 import { SKILLS, describeSkills, type SkillCtx, type SkillRun } from './skills.js';
-import { beginIntention, endIntention, recentIntentions, skillExperience, type IntentionOutcome, type IntentionSource } from './intentions.js';
+import { beginIntention, closeOrphanIntentions, endIntention, recentIntentions, skillExperience, type IntentionOutcome, type IntentionSource } from './intentions.js';
 import { mulberry32, seedOf } from './mind.js';
 import { isNight } from './shared.js';
 
@@ -108,7 +108,8 @@ export interface BrainStatus {
 
 /** O que ele decidiu fazer, e a habilidade rodando por baixo. */
 interface Intention {
-  dbId: number | null;
+  /** A linha no banco, quando o INSERT voltar; o encerramento ESPERA por ela. */
+  dbId: Promise<number | null> | null;
   goal: string;
   why: string | null;
   skill: string;
@@ -205,6 +206,8 @@ export class Brain implements Mind {
   private lastNight: boolean | null = null;
   /** A habilidade `reflect` pediu; `shouldReflect` atende quando puder. */
   private reflectionRequested = false;
+  /** O último encerramento de intenção ainda a caminho do banco (a parada espera por ele antes de fechar o pool). */
+  private pendingEnd: Promise<void> | null = null;
   private readonly rng: () => number;
   lastReflectionAt = Date.now();
   exchangesSinceReflection = 0;
@@ -218,6 +221,8 @@ export class Brain implements Mind {
   ) {
     this.persona = persona;
     this.rng = mulberry32(seedOf(npc.id) ^ 0x51);
+    // O que ficou aberto de antes deste processo não está em curso: fecha.
+    void closeOrphanIntentions(npc.id).then((n) => { if (n) log('brain', 'intenções órfãs fechadas', { npc: npc.name, n }); });
   }
 
   /** Como o lugar onde ele mora se chama, em prosa. */
@@ -476,10 +481,12 @@ export class Brain implements Mind {
     this.intention = it;
     if (plan.source !== 'default') {
       log('brain', 'intenção', { npc: this.npc.name, goal: plan.goal, skill: plan.skill, min: Math.round(minutes), fonte: plan.source, motivo: plan.trigger });
-      void beginIntention(this.npc.id, {
+      // A promessa fica na intenção: se ela acabar antes de o INSERT voltar,
+      // o encerramento espera o id em vez de deixar a linha aberta para sempre.
+      it.dbId = beginIntention(this.npc.id, {
         goal: plan.goal, why: plan.why, skill: plan.skill, params, source: plan.source, trigger: plan.trigger,
         plannedMin: Math.round(minutes), roomId: this.world.roomId,
-      }).then((id) => { if (this.intention === it) it.dbId = id; });
+      });
     }
     if (plan.say) void this.speak(plan.say, null);
     return true;
@@ -491,7 +498,10 @@ export class Brain implements Mind {
     this.intention = null;
     try { it.run.stop(this.skillCtx(Date.now())); } catch (err) { warn('brain', 'habilidade não parou limpa', { err: String(err) }); }
     if (it.source === 'default') return;
-    if (it.dbId) void endIntention(it.dbId, outcome, it.exchanges);
+    if (it.dbId) {
+      const done = it.dbId.then((id) => { if (id) return endIntention(id, outcome, it.exchanges); }).catch(() => {});
+      this.pendingEnd = this.pendingEnd ? this.pendingEnd.then(() => done) : done;
+    }
     const mins = Math.round((Date.now() - it.startedAt) / 60_000);
     void memory.remember(this.npc.id, {
       kind: 'event', text: `Decidi: ${it.goal} (${it.skill}, ${mins} min). Resultado: ${outcome}${it.exchanges ? `, ${it.exchanges} troca(s) de conversa` : ''}.`, roomId: this.world.roomId,
@@ -755,8 +765,15 @@ export class Brain implements Mind {
     return { say, note: null, action: null };
   }
 
+  /**
+   * A única porta de saída da fala. Toda frase — resposta, cumprimento, fala
+   * ambiente, o "say" de uma deliberação, o que uma habilidade disser — passa
+   * pela guarda de clima aqui: o modelo não decide se chove.
+   */
   private async speak(text: string, about: { userId: string; name: string } | null): Promise<boolean> {
-    const sent = this.world.say(text);
+    const guarded = weatherGuard(text, this.world.weather, this.npc.sceneId);
+    if (!guarded) { log('brain', 'fala calada pela guarda de clima', { npc: this.npc.name, text }); return false; }
+    const sent = this.world.say(guarded);
     if (!sent) return false;
     this.lastSpokeAt = Date.now();
     if (about) claim(about.userId, this.npc.id);
@@ -845,6 +862,11 @@ export class Brain implements Mind {
       if (hours >= 1 && unreflectedCount >= 1) return true;
     }
     return hours >= config.reflectEveryHours && unreflectedCount >= 3;
+  }
+
+  /** O que ainda não chegou ao banco (encerramento de intenção). Chamado antes de o pool fechar. */
+  async flush(): Promise<void> {
+    if (this.pendingEnd) await this.pendingEnd;
   }
 
   dispose(): void {

@@ -52,6 +52,25 @@ export async function endIntention(id: number, outcome: IntentionOutcome, exchan
   }
 }
 
+/**
+ * Fecha o que ficou aberto de outra vida do processo. Uma intenção só corre
+ * na memória de quem a começou: depois de um reinício (ou de um INSERT que
+ * voltou tarde demais para o encerramento alcançá-lo) uma linha com
+ * `ended_at` nulo é órfã, e órfã vira 'interrupted'. Devolve quantas fechou.
+ */
+export async function closeOrphanIntentions(npcId: string): Promise<number> {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE npc_intentions SET ended_at = now(), outcome = 'interrupted' WHERE npc_id = $1 AND ended_at IS NULL`,
+      [npcId],
+    );
+    return rowCount ?? 0;
+  } catch (err) {
+    warn('intent', 'não fechou órfãs', { err: String(err) });
+    return 0;
+  }
+}
+
 /** As últimas intenções, mais recentes primeiro. */
 export async function recentIntentions(npcId: string, limit: number): Promise<IntentionRow[]> {
   const { rows } = await pool.query<{
