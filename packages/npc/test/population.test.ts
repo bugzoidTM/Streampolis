@@ -938,7 +938,7 @@ describe('intenções sem órfãs; toda fala passa pela guarda de clima', () => 
   const NILO = '5e1f0000-0000-4000-8000-000000000001';
 
   it('uma intenção aberta de outra vida do processo é fechada como interrompida ao subir', async () => {
-    const id = await beginIntention(NILO, { goal: 'TESTE órfã', why: null, skill: 'wander', params: {}, source: 'deliberation', trigger: 'teste', plannedMin: 1, roomId: null });
+    const id = await beginIntention(NILO, { goal: 'TESTE órfã', why: null, skill: 'wander', params: {}, source: 'deliberation', trigger: 'teste', plannedMin: 1, roomId: null, world: null });
     assert.ok(id, 'o banco de dev está de pé');
     try {
       const closed = await closeOrphanIntentions(NILO);

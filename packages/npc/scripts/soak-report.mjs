@@ -65,6 +65,8 @@ for (const a of data.agents) {
   const withoutMin = Math.max(0, (until.getTime() - Math.max(since.getTime(), spans[0]?.[0] ?? since.getTime())) - covered) / 60_000;
   const rejected = logCount(a.name, /plano recusado pela validação/);
   const invalid = logCount(a.name, /deliberação (inválida|sem JSON)/);
+  const fatigued = logCount(a.name, /plano recusado por fadiga/);
+  const fatiguedGaveUp = logCount(a.name, /plano recusado por fadiga \(2ª vez/);
   const guarded = logCount(a.name, /fala calada pela guarda de clima/);
   const calls = a.calls.reduce((s, c) => s + c.n, 0);
   const callsFailed = a.calls.reduce((s, c) => s + c.failed, 0);
@@ -81,6 +83,7 @@ for (const a of data.agents) {
   row(`Skills escolhidas: ${skillList}`);
   row(`Repetição de objetivos: ${repeatedGoals.length ? repeatedGoals.map(([g, n]) => `"${g}" ${n}×`).join('; ') : 'nenhum objetivo repetido literalmente'}; mesma skill em seguida: ${sameSkillRuns}× de ${Math.max(0, delib.length - 1)} transições`);
   row(`Skills recusadas pela validação: ${rejected}; deliberações inválidas/sem JSON: ${invalid}`);
+  row(`Planos recusados por fadiga de intenção: ${fatigued} (${fatiguedGaveUp} desistiram na 2ª recusa)`);
   row(`Skills que falharam (outcome failed): ${outcomes.failed ?? 0}; concluídas: ${outcomes.done ?? 0}; expiradas no prazo: ${outcomes.expired ?? 0}`);
   row(`Intenções interrompidas: ${(outcomes.interrupted ?? 0) + (outcomes.replaced ?? 0)} (interrupted ${outcomes.interrupted ?? 0}, replaced ${outcomes.replaced ?? 0}); vindas de conversa: ${conv.length}`);
   row(`Conversas geradas: ${a.said.length} falas ditas (${convosWith.size} pessoa(s): ${[...convosWith].join(', ') || '-'}), ${humanLines} falas ouvidas de gente, ${exchangesTotal} troca(s) creditadas a intenções`);

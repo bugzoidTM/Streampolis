@@ -15,6 +15,7 @@ import { SKILLS, describeSkills, type SkillCtx, type SkillRun } from './skills.j
 import { beginIntention, closeOrphanIntentions, endIntention, recentIntentions, skillExperience, type IntentionOutcome, type IntentionSource } from './intentions.js';
 import { mulberry32, seedOf } from './mind.js';
 import { isNight } from './shared.js';
+import { FATIGUE, assessFatigue, fatigueLines, keyLabel, type WorldSnapshot } from './fatigue.js';
 
 /**
  * A cabeça do personagem: percebe, decide, age.
@@ -202,6 +203,8 @@ export class Brain implements Mind {
   private pendingTrigger: string | null = null;
   /** A última deliberação virou plano? Sem plano válido, espera-se mais antes de tentar de novo. */
   private lastDeliberationOk = true;
+  /** Planos recusados por fadiga de intenção (`fatigue.ts`) hoje: repetição sem mudança no mundo. */
+  private fatigueRefusals = 0;
   private lastWeather: string | null = null;
   private lastNight: boolean | null = null;
   /** A habilidade `reflect` pediu; `shouldReflect` atende quando puder. */
@@ -253,7 +256,7 @@ export class Brain implements Mind {
         minutesLeft: Math.max(0, Math.round((this.intention.until - Date.now()) / 60_000)),
         exchanges: this.intention.exchanges,
       } : null,
-      deliberations: { today: this.deliberationsToday, budget: config.deliberationBudget, lastAt: this.lastDeliberationAt },
+      deliberations: { today: this.deliberationsToday, budget: config.deliberationBudget, lastAt: this.lastDeliberationAt, fatigueRefusals: this.fatigueRefusals },
     };
   }
 
@@ -460,6 +463,16 @@ export class Brain implements Mind {
     return now - this.lastDeliberationAt >= DELIBERATE.minGapMs;
   }
 
+  /** O mundo agora, no que importa para a fadiga: clima, noite e quem (de verdade) está na cena. */
+  private worldSnapshot(): WorldSnapshot {
+    const clock = this.world.clock;
+    return {
+      weather: this.world.weather,
+      night: clock === null ? null : isNight(clock),
+      people: this.world.people().filter((p) => !p.npc).map((p) => p.userId).slice(0, 8),
+    };
+  }
+
   /**
    * Começa uma intenção: valida a habilidade e os parâmetros (o modelo não
    * ganha uma habilidade por tê-la escrito), encerra a anterior, registra.
@@ -485,7 +498,7 @@ export class Brain implements Mind {
       // o encerramento espera o id em vez de deixar a linha aberta para sempre.
       it.dbId = beginIntention(this.npc.id, {
         goal: plan.goal, why: plan.why, skill: plan.skill, params, source: plan.source, trigger: plan.trigger,
-        plannedMin: Math.round(minutes), roomId: this.world.roomId,
+        plannedMin: Math.round(minutes), roomId: this.world.roomId, world: this.worldSnapshot(),
       });
     }
     if (plan.say) void this.speak(plan.say, null);
@@ -521,16 +534,18 @@ export class Brain implements Mind {
     this.chatCalls.push(Date.now());
     try {
       const [recent, experience] = await Promise.all([
-        recentIntentions(this.npc.id, 8).catch(() => []),
+        recentIntentions(this.npc.id, FATIGUE.lookback).catch(() => []),
         skillExperience(this.npc.id).catch(() => []),
       ]);
+      const world = this.worldSnapshot();
       const ago = (d: Date) => `${Math.max(0, Math.round((Date.now() - d.getTime()) / 60_000))} min atrás`;
       const history = recent.length
-        ? recent.map((r) => `- [${ago(r.startedAt)}] "${r.goal}" (${r.skill}) → ${r.outcome ?? 'em curso'}${r.exchanges ? `, ${r.exchanges} conversa(s)` : ''}`)
+        ? recent.slice(0, 8).map((r) => `- [${ago(r.startedAt)}] "${r.goal}" (${r.skill}) → ${r.outcome ?? 'em curso'}${r.exchanges ? `, ${r.exchanges} conversa(s)` : ''}`)
         : ['- (nenhuma ainda)'];
       const exp = experience.length
         ? experience.map((e) => `${e.skill}: ${e.times}× (${e.exchanges} conversa(s)${e.failed ? `, ${e.failed} falha(s)` : ''})`).join('; ')
         : 'nenhuma ainda';
+      const tired = fatigueLines(recent, world, Date.now());
       const people = this.world.people().filter((p) => !p.npc).slice(0, 6);
       const known = await Promise.all(people.map(async (p) => {
         const person = await memory.person(this.npc.id, p.userId).catch(() => null);
@@ -544,36 +559,68 @@ export class Brain implements Mind {
         'SUAS ÚLTIMAS INTENÇÕES (mais recentes primeiro):',
         ...history,
         `SUA EXPERIÊNCIA nos últimos 7 dias, por habilidade: ${exp}.`,
+        ...(tired.length ? ['', 'SEU CANSAÇO (a mesma habilidade com o mesmo alvo, ou o mesmo objetivo dito de outro jeito, cansa — e o que está CANSADO será recusado, a não ser que algo tenha mudado de fato no mundo desde então: chuva, noite, alguém novo):', ...tired] : []),
         '',
         'HABILIDADES QUE VOCÊ TEM (escolha UMA; os parâmetros só destas):',
         ...describeSkills(this.npc.sceneId),
         '',
-        'Decida o que VOCÊ quer fazer nos próximos minutos, do seu jeito — um objetivo concreto e seu, não uma obrigação. Varie: não repita a última habilidade duas vezes seguidas sem um motivo dito no "why". Se há gente perto e você é de puxar assunto, habilidades que aproximam rendem mais; se não há ninguém, vale cuidar de si (descansar, olhar o telão, dar uma volta). Duração entre 3 e 15 minutos. "say" é opcional: uma frase curta ao começar, só se houver gente perto para ouvir.',
+        'Decida o que VOCÊ quer fazer nos próximos minutos, do seu jeito — um objetivo concreto e seu, não uma obrigação. Varie: não repita a última habilidade duas vezes seguidas sem um motivo dito no "why", e prefira um alvo ou uma habilidade que você não usou nas últimas horas. Se há gente perto e você é de puxar assunto, habilidades que aproximam rendem mais; se não há ninguém, vale cuidar de si (descansar, olhar o telão, dar uma volta). Duração entre 3 e 15 minutos. "say" é opcional: uma frase curta ao começar, só se houver gente perto para ouvir.',
         'Devolva SOMENTE um JSON: {"goal": "objetivo em até 120 caracteres", "why": "por quê, em uma frase", "skill": "nome", "params": {…}, "minutes": N, "say": null ou "frase"}',
       ].join('\n');
       const messages: ChatTurn[] = [{ role: 'system', content: this.systemPrompt() }, { role: 'user', content: user }];
-      const r = await call({ npcId: this.npc.id, tier: 'chat', purpose: 'deliberate', messages, maxTokens: 260 });
-      const json = r.ok ? parseJsonObject(r.text) : null;
       this.lastDeliberationOk = false;
-      if (!json) { warn('brain', 'deliberação sem JSON', { npc: this.npc.name, error: r.error }); return; }
-      const goal = typeof json.goal === 'string' && json.goal.trim() ? json.goal.trim().slice(0, 120) : null;
-      const skill = typeof json.skill === 'string' ? json.skill.trim() : '';
-      const minutes = typeof json.minutes === 'number' && Number.isFinite(json.minutes)
-        ? Math.max(DELIBERATE.minMinutes, Math.min(DELIBERATE.maxMinutes, json.minutes)) : 6;
-      const say = sanitizeSay(json.say);
-      if (!goal || !SKILLS[skill]) { warn('brain', 'deliberação inválida', { npc: this.npc.name, skill, goal }); return; }
+      let plan = await this.askPlan(messages);
+      if (!plan) return;
+      // O portão da fadiga: repetir o que acabou de fazer, sem nada novo no
+      // mundo, é recusado — e o modelo repensa UMA vez sabendo o porquê.
+      let fatigue = assessFatigue(plan, recent, world, Date.now());
+      if (fatigue.blocked) {
+        this.fatigueRefusals++;
+        warn('brain', 'plano recusado por fadiga', { npc: this.npc.name, alvo: fatigue.key, cansaco: Number(fatigue.score.toFixed(2)), vezes: fatigue.matches.length, goal: plan.goal });
+        const last = fatigue.matches.reduce((a, b) => (a.ageMin <= b.ageMin ? a : b));
+        messages.push({ role: 'assistant', content: JSON.stringify({ goal: plan.goal, skill: plan.skill, params: plan.params }) });
+        messages.push({ role: 'user', content: `RECUSADO POR CANSAÇO: você já fez "${last.past.goal}" (${keyLabel(plan.skill, plan.params)}) há ${last.ageMin} min, e nada mudou no mundo desde então (${fatigue.matches.length} vez(es) nas últimas ${Math.round(FATIGUE.windowMs / 60_000)} min). Escolha OUTRA habilidade ou OUTRO alvo — algo que não esteja na lista de cansaço. Devolva SOMENTE o JSON.` });
+        this.chatCalls.push(Date.now());
+        plan = await this.askPlan(messages);
+        if (!plan) return;
+        fatigue = assessFatigue(plan, recent, world, Date.now());
+        if (fatigue.blocked) {
+          this.fatigueRefusals++;
+          warn('brain', 'plano recusado por fadiga (2ª vez, desiste)', { npc: this.npc.name, alvo: fatigue.key, cansaco: Number(fatigue.score.toFixed(2)), goal: plan.goal });
+          return;
+        }
+      }
       const ok = this.startIntention({
-        goal, why: typeof json.why === 'string' ? json.why.slice(0, 300) : null, skill,
-        params: (typeof json.params === 'object' && json.params !== null ? json.params : {}) as Record<string, unknown>,
-        minutes, source: 'deliberation', trigger: reason, say: this.world.people().some((p) => !p.npc && p.distance <= 12) ? say : null,
+        goal: plan.goal, why: plan.why, skill: plan.skill, params: plan.params,
+        minutes: plan.minutes, source: 'deliberation', trigger: reason, say: this.world.people().some((p) => !p.npc && p.distance <= 12) ? plan.say : null,
       }, Date.now());
-      if (!ok) warn('brain', 'plano recusado pela validação', { npc: this.npc.name, skill, params: json.params });
+      if (!ok) warn('brain', 'plano recusado pela validação', { npc: this.npc.name, skill: plan.skill, params: plan.params });
       this.lastDeliberationOk = ok;
     } catch (err) {
       warn('brain', 'falha ao deliberar', { err: String(err) });
     } finally {
       this.deliberating = false;
     }
+  }
+
+  /**
+   * Uma pergunta ao modelo e um plano de volta, já com a habilidade conferida
+   * na lista e os parâmetros normalizados por ela (lugar canônico) — para a
+   * fadiga comparar alvo com alvo, não texto com texto. Nulo = sem plano.
+   */
+  private async askPlan(messages: ChatTurn[]): Promise<{ goal: string; why: string | null; skill: string; params: Record<string, unknown>; minutes: number; say: string | null } | null> {
+    const r = await call({ npcId: this.npc.id, tier: 'chat', purpose: 'deliberate', messages, maxTokens: 260 });
+    const json = r.ok ? parseJsonObject(r.text) : null;
+    if (!json) { warn('brain', 'deliberação sem JSON', { npc: this.npc.name, error: r.error }); return null; }
+    const goal = typeof json.goal === 'string' && json.goal.trim() ? json.goal.trim().slice(0, 120) : null;
+    const skill = typeof json.skill === 'string' ? json.skill.trim() : '';
+    const minutes = typeof json.minutes === 'number' && Number.isFinite(json.minutes)
+      ? Math.max(DELIBERATE.minMinutes, Math.min(DELIBERATE.maxMinutes, json.minutes)) : 6;
+    if (!goal || !SKILLS[skill]) { warn('brain', 'deliberação inválida', { npc: this.npc.name, skill, goal }); return null; }
+    const raw = (typeof json.params === 'object' && json.params !== null ? json.params : {}) as Record<string, unknown>;
+    const params = SKILLS[skill]!.validate(raw, { scene: this.npc.sceneId, world: this.world });
+    if (!params) { warn('brain', 'plano recusado pela validação', { npc: this.npc.name, skill, params: raw }); return null; }
+    return { goal, why: typeof json.why === 'string' ? json.why.slice(0, 300) : null, skill, params, minutes, say: sanitizeSay(json.say) };
   }
 
   /**
